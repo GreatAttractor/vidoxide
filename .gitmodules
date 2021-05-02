@@ -1,0 +1,3 @@
+[submodule "ext/ga_image"]
+	path = ext/ga_image
+	url = https://github.com/GreatAttractor/ga_image.git
