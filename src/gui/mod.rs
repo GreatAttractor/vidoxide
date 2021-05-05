@@ -52,7 +52,7 @@ const MAX_ZOOM: f64 = 20.0;
 
 const ZOOM_CHANGE_FACTOR: f64 = 1.10;
 
-const DEFAULT_TOOLBAR_ICON_SIZE: i32 = 48;
+const DEFAULT_TOOLBAR_ICON_SIZE: i32 = 32;
 
 struct StatusBarFields {
     preview_fps: gtk::Label,
@@ -368,7 +368,12 @@ fn create_toolbar(
 ) -> (gtk::Toolbar, gtk::RadioToolButton) {
     let toolbar = gtk::Toolbar::new();
 
-    let icon_size = program_data_rc.borrow().config.toolbar_icon_size().unwrap_or(DEFAULT_TOOLBAR_ICON_SIZE);
+    let icon_size = if let Some(s) = program_data_rc.borrow().config.toolbar_icon_size() {
+        s
+    } else {
+        program_data_rc.borrow().config.set_toolbar_icon_size(DEFAULT_TOOLBAR_ICON_SIZE);
+        DEFAULT_TOOLBAR_ICON_SIZE
+    };
 
     let btn_zoom_in = gtk::ToolButton::new(Some(&resources::load_svg(resources::ToolbarIcon::ZoomIn, icon_size).unwrap()), None);
     btn_zoom_in.set_tooltip_text(Some("Zoom in"));
