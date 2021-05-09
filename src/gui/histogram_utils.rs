@@ -67,9 +67,11 @@ fn find_min_max_value<T: 'static + Bounded + Copy + Default + PartialOrd>(image:
 ///
 fn scale_values<T, Product>(image: &mut Image, area: &Option<Rect>, min: T, max: T, full_range: T)
 where
-    T: 'static + Copy + Default + Sub<Output = T>,
+    T: 'static + Copy + Default + Sub<Output = T> + PartialOrd,
     Product: std::convert::From<T> + Div<Output = Product> + Mul<Output = Product> + AsPrimitive<T>
 {
+    if max.partial_cmp(&min) != Some(core::cmp::Ordering::Greater) { return; }
+
     let area = area.unwrap_or(image.img_rect());
     let num_ch = image.pixel_format().num_channels();
 
