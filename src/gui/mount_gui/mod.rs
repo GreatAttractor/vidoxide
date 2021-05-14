@@ -242,7 +242,7 @@ pub fn create_mount_box(program_data_rc: &Rc<RefCell<ProgramData>>) -> MountWidg
     upper_box.pack_start(&slew_speed, false, false, PADDING);
 
     let btn_calibrate = gtk::ButtonBuilder::new()
-        .label("c")
+        .label("calibrate")
         .tooltip_text("Calibrate guiding by establishing mount-camera orientation (uses the selected slewing speed)")
         .build();
     btn_calibrate.connect_clicked(clone!(@weak program_data_rc
