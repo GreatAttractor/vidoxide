@@ -124,20 +124,24 @@ fn count_cfa_values<T: 'static + Copy + Default + Into<usize>>(values: &mut [[us
     let dy_b = dy_r ^ 1;
 
     for y in (0..img_view.height()).step_by(2) {
-        let line_red = img_view.line::<T>(y + dy_r as u32);
-        for red in line_red.iter().skip(dx_r).step_by(2) {
-            unsafe { values.get_unchecked_mut(Into::<usize>::into(*red))[RED] += 1; }
-        }
-        for green in line_red.iter().skip(dx_r ^ 1).step_by(2) {
-            unsafe { values.get_unchecked_mut(Into::<usize>::into(*green))[GREEN] += 1; }
+        if (y + dy_r as u32) < img_view.height() {
+            let line_red = img_view.line::<T>(y + dy_r as u32);
+            for red in line_red.iter().skip(dx_r).step_by(2) {
+                unsafe { values.get_unchecked_mut(Into::<usize>::into(*red))[RED] += 1; }
+            }
+            for green in line_red.iter().skip(dx_r ^ 1).step_by(2) {
+                unsafe { values.get_unchecked_mut(Into::<usize>::into(*green))[GREEN] += 1; }
+            }
         }
 
-        let line_blue = img_view.line::<T>(y + dy_b as u32);
-        for blue in line_blue.iter().skip(dx_b).step_by(2) {
-            unsafe { values.get_unchecked_mut(Into::<usize>::into(*blue))[BLUE] += 1; }
-        }
-        for green in line_blue.iter().skip(dx_b ^ 1).step_by(2) {
-            unsafe { values.get_unchecked_mut(Into::<usize>::into(*green))[GREEN] += 1; }
+        if (y + dy_b as u32) < img_view.height() {
+            let line_blue = img_view.line::<T>(y + dy_b as u32);
+            for blue in line_blue.iter().skip(dx_b).step_by(2) {
+                unsafe { values.get_unchecked_mut(Into::<usize>::into(*blue))[BLUE] += 1; }
+            }
+            for green in line_blue.iter().skip(dx_b ^ 1).step_by(2) {
+                unsafe { values.get_unchecked_mut(Into::<usize>::into(*green))[GREEN] += 1; }
+            }
         }
     }
 }
