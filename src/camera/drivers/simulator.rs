@@ -177,7 +177,7 @@ impl Camera for SimCamera {
                 }
             },
 
-            _ => panic!("Invalid control ID.")
+            _ => ()
         }
 
         Ok(vec![])
