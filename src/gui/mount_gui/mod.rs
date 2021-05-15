@@ -10,6 +10,9 @@
 //! Telescope mount GUI.
 //!
 
+#[cfg(feature = "mount_ascom")]
+mod ascom;
+mod skywatcher;
 pub mod connection_dialog;
 
 use crate::{MountCalibration, ProgramData};

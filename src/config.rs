@@ -31,6 +31,7 @@ mod keys {
     pub const TOOLBAR_ICON_SIZE: &str = "ToolbarIconSize";
 
     pub const SW_LAST_DEVICE: &str = "SkyWatcherLastDevice";
+    pub const ASCOM_LAST_DRIVER: &str = "AscomLastDriver";
 }
 
 pub struct Configuration {
@@ -93,6 +94,14 @@ impl Configuration {
 
     pub fn set_info_overlay_font_size(&self, value: f64)  {
         self.key_file.set_double(groups::UI, keys::INFO_OVERLAY_FONT_SIZE, value);
+    }
+
+    pub fn ascom_last_driver(&self) -> Option<String> {
+        self.key_file.get_string(groups::MOUNT, keys::ASCOM_LAST_DRIVER).ok().map(|s| s.to_string())
+    }
+
+    pub fn set_ascom_last_driver(&self, value: &str) {
+        self.key_file.set_string(groups::MOUNT, keys::ASCOM_LAST_DRIVER, value);
     }
 
     pub fn skywatcher_last_device(&self) -> Option<String> {

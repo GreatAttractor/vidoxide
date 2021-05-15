@@ -15,7 +15,7 @@
 
 use serialport::prelude::*;
 use std::f64::consts::PI;
-use super::{Axis, Mount, MountError, SIDEREAL_RATE};
+use crate::mount::{Axis, Mount, MountError, SIDEREAL_RATE};
 
 const AXIS_STOP_MOTION_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 

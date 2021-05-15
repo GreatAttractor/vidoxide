@@ -224,6 +224,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "com"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a83b2ef792ce8b5bec244429c0e220ff04f4671096f459f7c0aad92fa1b05383"
+dependencies = [
+ "com_macros",
+]
+
+[[package]]
+name = "com_macros"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "76388f89faa52b555bb20bf1cbed9fcf6ca136d46567d374ed5a7d66f850ab14"
+dependencies = [
+ "com_macros_support",
+ "proc-macro2",
+ "syn",
+]
+
+[[package]]
+name = "com_macros_support"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5a95a92322c5d51cb04ff11e21355ccc9ee56ef6f6b9bfc159a41972ac5435b2"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "constant_time_eq"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1188,6 +1219,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "826e7639553986605ec5979c7dd957c7895e93eabed50ab2ffa7f6128a75097c"
 
 [[package]]
+name = "uuid"
+version = "0.8.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bc5cf98d8186244414c848017f0e2676b3fcb46807f6668a97dfe67359a3c4b7"
+
+[[package]]
 name = "v4l2-sys"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1214,6 +1251,7 @@ version = "0.1.0"
 dependencies = [
  "cairo-rs",
  "chrono",
+ "com",
  "crossbeam",
  "dirs",
  "enum_dispatch",
@@ -1233,7 +1271,9 @@ dependencies = [
  "serialport",
  "strum",
  "strum_macros",
+ "uuid",
  "v4l2-sys",
+ "winapi",
 ]
 
 [[package]]
@@ -1259,9 +1299,9 @@ dependencies = [
 
 [[package]]
 name = "winapi"
-version = "0.3.8"
+version = "0.3.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8093091eeb260906a183e6ae1abdba2ef5ef2257a21801128899c3fc699229c6"
+checksum = "5c839a674fcd7a98952e593242ea400abe93992746761e38641405d28b00f419"
 dependencies = [
  "winapi-i686-pc-windows-gnu",
  "winapi-x86_64-pc-windows-gnu",

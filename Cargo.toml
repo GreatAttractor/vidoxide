@@ -9,9 +9,12 @@ camera_flycap2 = ["libflycapture2-sys"]
 camera_iidc = ["libdc1394-sys"]
 camera_v4l2 = ["ioctl-rs", "mmap", "v4l2-sys"]
 
+mount_ascom = ["com", "uuid", "winapi"]
+
 [dependencies]
 cairo-rs = { version = "0.8.0", features = ["png"] }
 chrono = "0.4.12"
+com = { version = "0.3.0", optional = true }
 crossbeam = "0.7.3"
 dirs = "2.0.2"
 enum_dispatch = "0.2.1"
@@ -29,6 +32,7 @@ os_info = "3.0"
 serialport = "3.3.0"
 strum = "0.18.0"
 strum_macros = "0.18.0"
+uuid = { version = "0.8", optional = true }
 v4l2-sys = { version = "1.1.0", optional = true }
 
 [dependencies.gtk]
@@ -38,3 +42,15 @@ features = ["v3_16"]
 [dependencies.gio]
 version = "0.8.1"
 features = ["v2_44"]
+
+[dependencies.winapi]
+version = "0.3.9"
+features = [
+    "combaseapi",
+    "objbase",
+    "winerror",
+    "wtypesbase",
+    "oleauto",
+    "impl-default"
+]
+optional = true

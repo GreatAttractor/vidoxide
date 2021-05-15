@@ -10,7 +10,11 @@
 //! Telescope mount module.
 //!
 
-pub mod skywatcher;
+#[cfg(feature = "mount_ascom")]
+mod ascom;
+mod skywatcher;
+
+use strum::IntoEnumIterator;
 
 #[derive(Copy, Clone)]
 pub enum Axis { RA, Dec }
@@ -18,11 +22,21 @@ pub enum Axis { RA, Dec }
 #[derive(Debug)]
 pub enum MountError {
     CannotConnect,
-    SkyWatcherError(skywatcher::SWError)
+
+    SkyWatcherError(skywatcher::SWError),
+
+    #[cfg(feature = "mount_ascom")]
+    AscomError(ascom::AscomError)
 }
 
+#[derive(strum_macros::EnumIter)]
 pub enum MountConnection {
-    SkyWatcherSerial(String)
+    /// Contains device name of serial port.
+    SkyWatcherSerial(String),
+
+    /// Contains ProgID of telescope (e.g., "EQMOD.Telescope").
+    #[cfg(feature = "mount_ascom")]
+    Ascom(String)
 }
 
 pub const SECONDS_PER_DAY: f64 = 86164.09065;
@@ -54,6 +68,11 @@ pub fn connect_to_mount(connection: MountConnection) -> Result<Box<dyn Mount>, M
     match connection {
         MountConnection::SkyWatcherSerial(device) => {
             Ok(Box::new(skywatcher::SkyWatcher::new(&device)?))
+        },
+
+        #[cfg(feature = "mount_ascom")]
+        MountConnection::Ascom(progid) => {
+            Ok(Box::new(ascom::Ascom::new(&progid)?))
         }
     }
 }
