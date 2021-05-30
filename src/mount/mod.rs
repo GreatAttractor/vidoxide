@@ -17,7 +17,7 @@ mod skywatcher;
 use strum::IntoEnumIterator;
 
 #[derive(Copy, Clone)]
-pub enum Axis { RA, Dec }
+pub enum Axis { Primary, Secondary }
 
 #[derive(Debug)]
 pub enum MountError {

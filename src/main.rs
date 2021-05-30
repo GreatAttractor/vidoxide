@@ -61,12 +61,12 @@ pub struct CameraControlChange {
 
 pub struct MountCalibration {
     origin: Point,
-    /// Image-space unit vector corresponding to positive RA slewing.
-    ra_dir: Option<(f64, f64)>,
-    /// Image-space unit vector corresponding to positive dec slewing.
-    dec_dir: Option<(f64, f64)>,
-    /// Image-space-to-ra&dec-space slewing dir transformation matrix.
-    img_to_radec: Option<[[f64; 2]; 2]>
+    /// Image-space unit vector corresponding to positive slew around primary axis.
+    primary_dir: Option<(f64, f64)>,
+    /// Image-space unit vector corresponding to positive slew around secondary axis.
+    secondary_dir: Option<(f64, f64)>,
+    /// Image-space-to-mount-axes-space slewing dir transformation matrix.
+    img_to_mount_axes: Option<[[f64; 2]; 2]>
 }
 
 pub struct MountData {
@@ -84,7 +84,7 @@ pub struct MountData {
 impl MountData {
     pub fn calibration_in_progress(&self) -> bool {
         if let Some(calibration) = &self.calibration {
-            calibration.ra_dir.is_none() || calibration.dec_dir.is_none()
+            calibration.primary_dir.is_none() || calibration.secondary_dir.is_none()
         } else {
             false
         }

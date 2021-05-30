@@ -159,6 +159,7 @@ struct ITelescopeVTbl {
     dummy71: unsafe extern "system" fn(This: *mut ITelescope) -> winapi::um::winnt::HRESULT,
     dummy72: unsafe extern "system" fn(This: *mut ITelescope) -> winapi::um::winnt::HRESULT,
 
+    // Rate: degrees/second
     MoveAxis: unsafe extern "system" fn(This: *mut ITelescope, Axis: TelescopeAxes, Rate: f64) -> winapi::um::winnt::HRESULT,
 
     dummy74: unsafe extern "system" fn(This: *mut ITelescope) -> winapi::um::winnt::HRESULT,
@@ -261,8 +262,8 @@ impl Ascom {
 
 fn ascom_axis_from(axis: Axis) -> TelescopeAxes {
     match axis {
-        Axis::RA => TelescopeAxes::axisPrimary,
-        Axis::Dec => TelescopeAxes::axisSecondary
+        Axis::Primary => TelescopeAxes::axisPrimary,
+        Axis::Secondary => TelescopeAxes::axisSecondary
     }
 }
 

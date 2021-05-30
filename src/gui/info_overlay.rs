@@ -140,7 +140,7 @@ fn draw_screen_selection(ctx: &cairo::Context, zoom: f64, sel: &ScreenSelection)
 }
 
 fn draw_calibration(ctx: &cairo::Context, zoom: f64, calibration: &MountCalibration, target_pos: Point) {
-    if calibration.ra_dir.is_some() && calibration.dec_dir.is_some() { return; }
+    if calibration.primary_dir.is_some() && calibration.secondary_dir.is_some() { return; }
 
     ctx.set_line_width(1.0);
     ctx.set_source_rgb(1.0, 0.0, 0.0);

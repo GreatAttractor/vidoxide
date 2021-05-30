@@ -40,15 +40,15 @@ pub enum SWError {
 impl Axis {
     fn as_char(&self) -> char {
         match self {
-            Axis::RA => '1',
-            Axis::Dec => '2'
+            Axis::Primary => '1',
+            Axis::Secondary => '2'
         }
     }
 
     fn as_index(&self) -> usize {
         match self {
-            Axis::RA => 0,
-            Axis::Dec => 1
+            Axis::Primary => 0,
+            Axis::Secondary => 1
         }
     }
 }
@@ -143,19 +143,19 @@ impl SkyWatcher {
 
         let mut rad_to_step = [0.0; 2];
 
-        let response = send_cmd_and_get_reply(&mut serial_port, Axis::RA, Opcode::GetGearRatio, "")?;
-        rad_to_step[Axis::RA.as_index()] = skywatcher_hex_str_to_u32(&extract_hex_number(&response))? as f64 / (2.0 * PI);
+        let response = send_cmd_and_get_reply(&mut serial_port, Axis::Primary, Opcode::GetGearRatio, "")?;
+        rad_to_step[Axis::Primary.as_index()] = skywatcher_hex_str_to_u32(&extract_hex_number(&response))? as f64 / (2.0 * PI);
 
-        let response = send_cmd_and_get_reply(&mut serial_port, Axis::Dec, Opcode::GetGearRatio, "")?;
-        rad_to_step[Axis::Dec.as_index()] = skywatcher_hex_str_to_u32(&extract_hex_number(&response))? as f64 / (2.0 * PI);
+        let response = send_cmd_and_get_reply(&mut serial_port, Axis::Secondary, Opcode::GetGearRatio, "")?;
+        rad_to_step[Axis::Secondary.as_index()] = skywatcher_hex_str_to_u32(&extract_hex_number(&response))? as f64 / (2.0 * PI);
 
         let mut timer_interrupt_freq = [0u32; 2];
 
-        let response = send_cmd_and_get_reply(&mut serial_port, Axis::RA, Opcode::GetTimerIntFreq, "")?;
-        timer_interrupt_freq[Axis::RA.as_index()] = skywatcher_hex_str_to_u32(&extract_hex_number(&response))?;
+        let response = send_cmd_and_get_reply(&mut serial_port, Axis::Primary, Opcode::GetTimerIntFreq, "")?;
+        timer_interrupt_freq[Axis::Primary.as_index()] = skywatcher_hex_str_to_u32(&extract_hex_number(&response))?;
 
-        let response = send_cmd_and_get_reply(&mut serial_port, Axis::Dec, Opcode::GetTimerIntFreq, "")?;
-        timer_interrupt_freq[Axis::Dec.as_index()] = skywatcher_hex_str_to_u32(&extract_hex_number(&response))?;
+        let response = send_cmd_and_get_reply(&mut serial_port, Axis::Secondary, Opcode::GetTimerIntFreq, "")?;
+        timer_interrupt_freq[Axis::Secondary.as_index()] = skywatcher_hex_str_to_u32(&extract_hex_number(&response))?;
 
         let mut rad_rate_to_int = [0.0; 2];
         for i in 0..=1 {
@@ -163,14 +163,14 @@ impl SkyWatcher {
         }
 
         let mut hi_speed_ratio = [0u32; 2];
-        let response = send_cmd_and_get_reply(&mut serial_port, Axis::RA, Opcode::GetHiSpeedRatio, "")?;
-        hi_speed_ratio[Axis::RA.as_index()] = skywatcher_hex_str_to_u32(&extract_hex_number(&response))?;
+        let response = send_cmd_and_get_reply(&mut serial_port, Axis::Primary, Opcode::GetHiSpeedRatio, "")?;
+        hi_speed_ratio[Axis::Primary.as_index()] = skywatcher_hex_str_to_u32(&extract_hex_number(&response))?;
 
-        let response = send_cmd_and_get_reply(&mut serial_port, Axis::Dec, Opcode::GetHiSpeedRatio, "")?;
-        hi_speed_ratio[Axis::Dec.as_index()] = skywatcher_hex_str_to_u32(&extract_hex_number(&response))?;
+        let response = send_cmd_and_get_reply(&mut serial_port, Axis::Secondary, Opcode::GetHiSpeedRatio, "")?;
+        hi_speed_ratio[Axis::Secondary.as_index()] = skywatcher_hex_str_to_u32(&extract_hex_number(&response))?;
 
-        send_cmd_and_get_reply(&mut serial_port, Axis::RA, Opcode::InitMotorCtrl, "")?;
-        send_cmd_and_get_reply(&mut serial_port, Axis::Dec, Opcode::InitMotorCtrl, "")?;
+        send_cmd_and_get_reply(&mut serial_port, Axis::Primary, Opcode::InitMotorCtrl, "")?;
+        send_cmd_and_get_reply(&mut serial_port, Axis::Secondary, Opcode::InitMotorCtrl, "")?;
 
         Ok(SkyWatcher{
             device: device.to_string(),
@@ -279,8 +279,8 @@ impl Mount for SkyWatcher {
 
 impl Drop for SkyWatcher {
     fn drop(&mut self) {
-        let _ = self.stop_motion(Axis::RA);
-        let _ = self.stop_motion(Axis::Dec);
+        let _ = self.stop_motion(Axis::Primary);
+        let _ = self.stop_motion(Axis::Secondary);
     }
 }
 

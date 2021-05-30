@@ -762,9 +762,9 @@ fn on_tracking_ended(program_data_rc: &Rc<RefCell<ProgramData>>) {
     let sd_on = pd.mount_data.sidereal_tracking_on;
 
     if let Some(mount) = &mut pd.mount_data.mount {
-        mount.stop_motion(mount::Axis::Dec).unwrap();
+        mount.stop_motion(mount::Axis::Secondary).unwrap();
         mount.set_motion(
-            mount::Axis::RA,
+            mount::Axis::Primary,
             if sd_on { 1.0 * mount::SIDEREAL_RATE } else { 0.0 }
         ).unwrap();
         pd.mount_data.guide_slewing = false;
