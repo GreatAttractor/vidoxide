@@ -33,8 +33,7 @@ pub(in crate::gui::mount_gui) trait ConnectionCreator {
 /// Returns `None` if canceled.
 pub fn show_mount_connect_dialog(parent: &gtk::ApplicationWindow, program_data_rc: &Rc<RefCell<ProgramData>>)
 -> Option<MountConnection> {
-    let program_data = program_data_rc.borrow();
-    let configuration = &program_data.config;
+    macro_rules! configuration { {} => { program_data_rc.borrow().config } }
 
     let dialog = gtk::Dialog::new_with_buttons(
         Some("Connect to mount"),
@@ -51,9 +50,10 @@ pub fn show_mount_connect_dialog(parent: &gtk::ApplicationWindow, program_data_r
     for mount_type in MountConnection::iter() {
         match mount_type {
             #[cfg(feature = "mount_ascom")]
-            MountConnection::Ascom(_) => creators.push(ascom::AscomConnectionCreator::new(configuration)),
+            MountConnection::Ascom(_) => creators.push(ascom::AscomConnectionCreator::new(&configuration!())),
 
-            MountConnection::SkyWatcherSerial(_) => creators.push(skywatcher::SWConnectionCreator::new(configuration)),
+            MountConnection::SkyWatcherSerial(_) =>
+                creators.push(skywatcher::SWConnectionCreator::new(&configuration!())),
         }
     }
 
@@ -67,7 +67,7 @@ pub fn show_mount_connect_dialog(parent: &gtk::ApplicationWindow, program_data_r
     let response = dialog.run();
 
     if response == gtk::ResponseType::Accept {
-        Some(creators[notebook.get_current_page().unwrap() as usize].create(configuration))
+        Some(creators[notebook.get_current_page().unwrap() as usize].create(&configuration!()))
     } else {
         None
     }
