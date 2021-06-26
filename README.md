@@ -72,7 +72,31 @@ Install the [Rust toolchain](https://www.rust-lang.org/learn/get-started). C & C
 
 Building under MS Windows has been tested in [MSYS2](https://www.msys2.org/) environment and the GNU variant of the [Rust toolchain](https://www.rust-lang.org/learn/get-started).
 
-*Detailed instructions: to be provided.*
+Download MSYS2 from http://www.msys2.org/ and follow its installation instructions. Then install the Rust toolchain: go to https://forge.rust-lang.org/infra/other-installation-methods.html and install the `x86_64-pc-windows-gnu` variant. The warnings about "Visual C++ prerequisites" being required and "Install the C++ build tools before proceeding" can be ignored. Note that you must customize "Current installation options" and change the "default host triple" to "x86_64-pc-windows-gnu".
+
+Open the "MSYS2 MinGW 64-bit" shell (from the Start menu, or directly via `C:\msys64\msys2_shell.cmd -mingw64`), and install the build prerequisites:
+```bash
+$ pacman -S git base-devel mingw-w64-x86_64-toolchain mingw-w64-x86_64-gtk3
+```
+
+From now on it is assumed FlyCapture2 camera API is to be used. Download and install the FlyCapture2 SDK, go to the location of FC2 binaries (by default, "C:\Program Files\Point Grey Research\FlyCapture2\bin64") and check if the `FlyCapture2_C.dll` file exists. If not, make a copy of the corresponding versioned file (e.g., `FlyCapture2_C_v100.dll`) in the same location and rename it `FlyCapture2_C.dll` (this is required due to the `libflycapture2-sys` crate's expectations).
+
+Pull Rust binaries into `$PATH`:
+```bash
+$ export PATH=$PATH:/c/Users/MY_USERNAME/.cargo/bin
+```
+then change to the Vidoxide source directory and build it:
+```bash
+$ RUSTFLAGS="-L C:\Progra~1\PointG~1\FlyCapture2\bin64" cargo build --release --features "camera_flycap2 mount_ascom"
+```
+Initially it will take several minutes, as all dependencies have to be downloaded and built first. Note that the location to FC2 DLLs must be given in `RUSTFLAGS`, and spaces in directory names are not allowed (tilde-shortened directory names can be checked by running `dir /x` in a Windows shell). This shall be changed in the future to using a Cargo configure script.
+
+After a successful build, Vidoxide can be run locally with:
+```bash
+$ PATH="$PATH:C:\Program Files\Point Grey Research\FlyCapture2\bin64" target/release/vidoxide.exe
+```
+
+*Upcoming: creating a binary distribution*
 
 
 ## 4. Bugs
