@@ -21,6 +21,7 @@ mod control_ids {
     pub const IMAGE_SHOWN: u64 = 1;
     pub const DUMMY_1: u64 = 2;
     pub const DUMMY_2: u64 = 3;
+    pub const FRAME_RATE: u64 = 4;
 }
 
 #[derive(Debug)]
@@ -62,7 +63,8 @@ impl Driver for SimDriver {
             image_mono8,
             image_cfa8,
             image_shown,
-            dummy1: RefCell::new(5.0)
+            dummy1: RefCell::new(5.0),
+            frame_rate: Arc::new(RwLock::new(30.0))
         }))
     }
 }
@@ -72,7 +74,8 @@ pub struct SimCamera {
     image_rgb8: ga_image::Image,
     image_mono8: ga_image::Image,
     image_cfa8: ga_image::Image,
-    image_shown: Arc<RwLock<ga_image::Image>>
+    image_shown: Arc<RwLock<ga_image::Image>>,
+    frame_rate: Arc<RwLock<f64>>
 }
 
 #[derive(strum_macros::EnumIter)]
@@ -141,8 +144,25 @@ impl Camera for SimCamera {
             current_idx: 0
         });
 
+        let frame_rate = CameraControl::Number(NumberControl{
+            base: CameraControlBase{
+                id: CameraControlId(control_ids::FRAME_RATE),
+                label: "Frame Rate".to_string(),
+                access_mode: ControlAccessMode::WriteOnly,
+                on_off_state: None,
+                auto_state: None,
+                requires_capture_pause: false
+            },
+            value: 30.0,
+            min: 1.0,
+            max: 1000.0,
+            step: 10.0,
+            num_decimals: 0
+        });
+
         Ok(vec![
             image_shown,
+            frame_rate,
             dummy_control_1,
             dummy_control_2
         ])
@@ -151,7 +171,8 @@ impl Camera for SimCamera {
     fn create_capturer(&self) -> Result<Box<dyn FrameCapturer + Send>, CameraError> {
         Ok(Box::new(SimFrameCapturer{
             t_last_capture: std::time::Instant::now(),
-            image: Arc::clone(&self.image_shown)
+            image: Arc::clone(&self.image_shown),
+            frame_rate: Arc::clone(&self.frame_rate)
         }))
     }
 
@@ -159,6 +180,11 @@ impl Camera for SimCamera {
         match id.0 {
             control_ids::DUMMY_1 => {
                 *self.dummy1.borrow_mut() = value;
+                Ok(vec![])
+            },
+
+            control_ids::FRAME_RATE => {
+                *self.frame_rate.write().unwrap() = value;
                 Ok(vec![])
             },
 
@@ -215,7 +241,8 @@ impl Camera for SimCamera {
 
 pub struct SimFrameCapturer {
     t_last_capture: std::time::Instant,
-    image: Arc<RwLock<ga_image::Image>>
+    image: Arc<RwLock<ga_image::Image>>,
+    frame_rate: Arc<RwLock<f64>>
 }
 
 impl FrameCapturer for SimFrameCapturer {
@@ -224,7 +251,7 @@ impl FrameCapturer for SimFrameCapturer {
     fn resume(&mut self) {}
 
     fn capture_frame(&mut self, dest_image: &mut Image) -> Result<(), CameraError> {
-        let t_between_frames = std::time::Duration::from_secs_f32(1.0/30.0);
+        let t_between_frames = std::time::Duration::from_secs_f64(1.0 / self.frame_rate.read().unwrap().clone());
         let t_elapsed = self.t_last_capture.elapsed();
         if t_elapsed < t_between_frames {
             std::thread::sleep(t_between_frames - t_elapsed);
