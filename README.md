@@ -35,7 +35,7 @@ Demonstration video: *upcoming*
 
 **Supported telescope mounts:**
   - Sky-Watcher direct serial connection (tested with a 2014 HEQ5), multiplatform
-  - *upcoming:* ASCOM/EQMod, MS Windows only
+  - ASCOM (tested with ASCOM/EQMod and a 2014 HEQ5), MS Windows only
 
 **Image feature tracking:**
   - self-guiding (with supported mounts): selected image feature (or a planet – via centroid) stays in the same place of the FOV

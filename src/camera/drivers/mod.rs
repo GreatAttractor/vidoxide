@@ -22,15 +22,29 @@ use crate::camera::Driver;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-pub fn init_drivers<'a>() -> Vec<Rc<RefCell<Box<dyn Driver>>>> {
-    vec![
-        #[cfg(feature = "camera_iidc")]
-        Rc::new(RefCell::new(Box::new(iidc::IIDCDriver::new().unwrap()))),
-        Rc::new(RefCell::new(Box::new(simulator::SimDriver::new().unwrap()))),
-        #[cfg(feature = "camera_v4l2")]
-        Rc::new(RefCell::new(Box::new(v4l2::V4L2Driver::new().unwrap()))),
-        #[cfg(feature = "camera_flycap2")]
-        Rc::new(RefCell::new(Box::new(flycapture2::FlyCapture2Driver::new().unwrap()))),
-        // add more drivers here
-    ]
+pub fn init_drivers<'a>(disabled_drivers: &[&str]) -> Vec<Rc<RefCell<Box<dyn Driver>>>> {
+    let mut drivers: Vec<Rc<RefCell<Box<dyn Driver>>>> = vec![];
+
+    #[cfg(feature = "camera_iidc")]
+    if !disabled_drivers.contains(&"camera_iidc") {
+        drivers.push(Rc::new(RefCell::new(Box::new(iidc::IIDCDriver::new().unwrap()))));
+    }
+
+    #[cfg(feature = "camera_v4l2")]
+    if !disabled_drivers.contains(&"camera_v4l2") {
+        drivers.push(Rc::new(RefCell::new(Box::new(v4l2::V4L2Driver::new().unwrap()))));
+    }
+
+    #[cfg(feature = "camera_flycap2")]
+    if !disabled_drivers.contains(&"camera_flycap2") {
+        drivers.push(Rc::new(RefCell::new(Box::new(flycapture2::FlyCapture2Driver::new().unwrap()))));
+    }
+
+    // add more drivers here
+
+    if !disabled_drivers.contains(&"simulator") {
+        drivers.push(Rc::new(RefCell::new(Box::new(simulator::SimDriver::new().unwrap()))));
+    }
+
+    drivers
 }

@@ -20,6 +20,7 @@ mod groups {
 
 mod keys {
     pub const RECORDING_DEST_PATH: &str = "RecordingDestPath";
+    pub const DISABLED_DRIVERS: &str = "DisabledDrivers";
 
     pub const MAIN_WINDOW_POS_SIZE: &str = "MainWindowPosSize";
     pub const MAIN_WINDOW_MAXIMIZED: &str = "MainWindowMaximized";
@@ -156,6 +157,13 @@ impl Configuration {
 
     pub fn set_toolbar_icon_size(&self, value: i32) {
         self.key_file.set_integer(groups::UI, keys::TOOLBAR_ICON_SIZE, value)
+    }
+
+    pub fn disabled_drivers(&self) -> String {
+        self.key_file.get_string(groups::MAIN, keys::DISABLED_DRIVERS)
+            .ok()
+            .map(|s| s.to_string())
+            .unwrap_or("".to_string())
     }
 }
 

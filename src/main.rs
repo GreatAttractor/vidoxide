@@ -170,10 +170,14 @@ fn main() {
     let (rec_sender_worker, rec_receiver_main) = glib::MainContext::channel(glib::PRIORITY_DEFAULT);
     let buffered_kib = Arc::new(AtomicIsize::new(0));
 
+    let config = Configuration::new();
+    let disabled_drivers_str = config.disabled_drivers();
+    let disabled_drivers: Vec<&str> = disabled_drivers_str.split(',').collect();
+
     let program_data_rc = Rc::new(RefCell::new(ProgramData{
-        config: Configuration::new(),
+        config,
         camera: None,
-        drivers: drivers::init_drivers(),
+        drivers: drivers::init_drivers(&disabled_drivers),
         capture_thread_data: None,
         histogram_sender: histogram_sender_main,
         recording_thread_data: RecordingThreadData {
