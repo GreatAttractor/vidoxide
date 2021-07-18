@@ -133,7 +133,9 @@ pub struct ProgramData {
     /// If true, raw color images are demosaiced for preview.
     demosaic_preview: bool,
     /// If true, whole image (or just `histogram_area`, if set) has its histogram stretched for preview.
-    stretch_histogram: bool
+    stretch_histogram: bool,
+    preview_fps_limit: Option<i32>,
+    preview_last_displayed_image: Option<std::time::Instant>
 }
 
 impl ProgramData {
@@ -174,6 +176,8 @@ fn main() {
     let disabled_drivers_str = config.disabled_drivers();
     let disabled_drivers: Vec<&str> = disabled_drivers_str.split(',').collect();
 
+    let preview_fps_limit = config.preview_fps_limit();
+
     let program_data_rc = Rc::new(RefCell::new(ProgramData{
         config,
         camera: None,
@@ -209,7 +213,9 @@ fn main() {
         rec_job_active: false,
         t_last_histogram: None,
         demosaic_preview: false,
-        stretch_histogram: false
+        stretch_histogram: false,
+        preview_fps_limit,
+        preview_last_displayed_image: None
     }));
 
     std::thread::spawn(move || workers::histogram::histogram_thread(histogram_sender_worker, histogram_receiver_worker));

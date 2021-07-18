@@ -19,9 +19,12 @@ mod groups {
 }
 
 mod keys {
+    // group: MAIN
     pub const RECORDING_DEST_PATH: &str = "RecordingDestPath";
     pub const DISABLED_DRIVERS: &str = "DisabledDrivers";
+    pub const PREVIEW_FPS_LIMIT: &str = "PreviewFpsLimit";
 
+    // group: UI
     pub const MAIN_WINDOW_POS_SIZE: &str = "MainWindowPosSize";
     pub const MAIN_WINDOW_MAXIMIZED: &str = "MainWindowMaximized";
     /// Position of the divider between preview area and controls panel.
@@ -31,6 +34,7 @@ mod keys {
     pub const INFO_OVERLAY_FONT_SIZE: &str = "InfoOverlayFontSize";
     pub const TOOLBAR_ICON_SIZE: &str = "ToolbarIconSize";
 
+    // group MOUNT
     pub const SW_LAST_DEVICE: &str = "SkyWatcherLastDevice";
     pub const ASCOM_LAST_DRIVER: &str = "AscomLastDriver";
 }
@@ -164,6 +168,18 @@ impl Configuration {
             .ok()
             .map(|s| s.to_string())
             .unwrap_or("".to_string())
+    }
+
+    pub fn preview_fps_limit(&self) -> Option<i32> {
+        match self.key_file.get_integer(groups::MAIN, keys::PREVIEW_FPS_LIMIT) {
+            Ok(value) => if value > 0 {
+                Some(value)
+            } else {
+                println!("WARNING: invalid configuration value for {}/{}: {}", groups::MAIN, keys::PREVIEW_FPS_LIMIT, value);
+                None
+            },
+            _ => None
+        }
     }
 }
 

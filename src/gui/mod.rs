@@ -780,11 +780,21 @@ fn on_capture_thread_message(
 ) {
     let mut received_preview_image = false;
 
-    match msg {
+    loop { match msg {
         CaptureToMainThreadMsg::PreviewImageReady(img) => {
+            received_preview_image = true;
+
             let mut program_data = program_data_rc.borrow_mut();
 
-            received_preview_image = true;
+            let now = std::time::Instant::now();
+            if let Some(fps_limit) = program_data.preview_fps_limit {
+                if let Some(last_preview_ts) = program_data.preview_last_displayed_image {
+                    if (now - last_preview_ts).as_secs_f64() < 1.0 / fps_limit as f64 {
+                        break;
+                    }
+                }
+            }
+            program_data.preview_last_displayed_image = Some(now);
 
             let to_bgra24 = |img: &ga_image::Image| { img.convert_pix_fmt(
                 ga_image::PixelFormat::BGRA8,
@@ -888,7 +898,7 @@ fn on_capture_thread_message(
                 &format!("{}", msg_str)
             )
         }
-    }
+    } break; }
 
     if let Some(ref mut capture_thread_data) = program_data_rc.borrow_mut().capture_thread_data {
         if received_preview_image  {
