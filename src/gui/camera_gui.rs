@@ -33,7 +33,9 @@ pub struct ListControlWidgets {
 
 pub struct NumberControlWidgets {
     pub slider: gtk::Scale,
-    pub slider_changed_signal: glib::SignalHandlerId
+    pub spin_btn: gtk::SpinButton,
+    pub slider_changed_signal: Rc<RefCell<Option<glib::SignalHandlerId>>>,
+    pub spin_btn_changed_signal: Rc<RefCell<Option<glib::SignalHandlerId>>>
 }
 
 pub struct CommonControlWidgets {
@@ -263,19 +265,27 @@ pub fn on_camera_notification(
                                         );
                                     }
                                 },
+
                                 ControlWidgetBundle::NumberControl(number_widgets) => {
                                     if let camera::CameraControl::Number(number_control) = control {
-                                        let slider = &number_widgets.slider;
-                                        slider.block_signal(&number_widgets.slider_changed_signal);
-                                        slider.set_adjustment(&gtk::Adjustment::new(
+                                        let adjustment = gtk::Adjustment::new(
                                             number_control.value(),
                                             number_control.min(),
                                             number_control.max(),
                                             number_control.step(),
                                             number_control.step() * 5.0,
                                             0.0
-                                        ));
-                                        slider.unblock_signal(&number_widgets.slider_changed_signal);
+                                        );
+
+                                        let slider = &number_widgets.slider;
+                                        slider.block_signal(number_widgets.slider_changed_signal.borrow().as_ref().unwrap());
+                                        slider.set_adjustment(&adjustment);
+                                        slider.unblock_signal(number_widgets.slider_changed_signal.borrow().as_ref().unwrap());
+
+                                        let spin_btn = &number_widgets.spin_btn;
+                                        spin_btn.block_signal(number_widgets.spin_btn_changed_signal.borrow().as_ref().unwrap());
+                                        spin_btn.configure(Some(&adjustment), spin_btn.get_property_climb_rate(), spin_btn.get_digits());
+                                        spin_btn.unblock_signal(number_widgets.spin_btn_changed_signal.borrow().as_ref().unwrap());
                                     }
                                 }
                             }
@@ -441,6 +451,10 @@ fn create_number_control_widgets(
         must_disable = false;
         number_ctrl.max()
     };
+    let ctrl_id = number_ctrl.base().id;
+    let requires_capture_pause = number_ctrl.base().requires_capture_pause;
+
+    // create the slider -----------------------------------------
 
     let slider = gtk::Scale::new_with_range(
         gtk::Orientation::Horizontal,
@@ -453,15 +467,54 @@ fn create_number_control_widgets(
 
     if must_disable || !is_control_editable(number_ctrl.base()) { slider.set_sensitive(false); }
 
-    let ctrl_id = number_ctrl.base().id;
-    let requires_capture_pause = number_ctrl.base().requires_capture_pause;
-    let slider_changed_signal = slider.connect_value_changed(clone!(@weak program_data_rc => @default-panic, move |slider| {
-        on_camera_number_control_change(&slider, &program_data_rc, ctrl_id, requires_capture_pause);
-    }));
-
     h_box.pack_start(&slider, true, true, PADDING);
 
-    ControlWidgetBundle::NumberControl(NumberControlWidgets{ slider, slider_changed_signal })
+    // create the spin button -----------------------------------------
+
+    let spin_btn = gtk::SpinButton::new(
+        Some(&gtk::Adjustment::new(
+            number_ctrl.value(), min, max, number_ctrl.step(), 10.0, 0.0
+        )),
+        0.0,
+        number_ctrl.num_decimals() as u32
+    );
+
+    if must_disable || !is_control_editable(number_ctrl.base()) { spin_btn.set_sensitive(false); }
+
+    h_box.pack_start(&spin_btn, false, true, PADDING);
+
+    // set up event handlers -----------------------------------------
+
+    // It is a hassle with storing those signals, but in GTK one cannot just say "freeze event handling temporarily and
+    // let me change a slider/spin button value" - the specific event handler's signal ID must be explicitly blocked.
+    // And we want to update both the slider and the spin button if either is changed.
+
+    let slider_changed_signal: Rc<RefCell<Option<glib::SignalHandlerId>>> = Rc::new(RefCell::new(None));
+    let spin_btn_changed_signal: Rc<RefCell<Option<glib::SignalHandlerId>>> = Rc::new(RefCell::new(None));
+
+    slider_changed_signal.borrow_mut().replace(slider.connect_value_changed(clone!(
+        @weak program_data_rc, @weak spin_btn_changed_signal, @weak spin_btn => @default-panic,
+        move |slider| {
+            spin_btn.block_signal(spin_btn_changed_signal.borrow().as_ref().unwrap());
+            spin_btn.set_value(slider.get_value());
+            spin_btn.unblock_signal(spin_btn_changed_signal.borrow().as_ref().unwrap());
+            on_camera_number_control_change(slider.get_value(), &program_data_rc, ctrl_id, requires_capture_pause);
+        }
+    )));
+
+    spin_btn_changed_signal.borrow_mut().replace(spin_btn.connect_value_changed(clone!(
+        @weak program_data_rc, @weak slider_changed_signal, @weak slider => @default-panic,
+        move |spin_btn| {
+            slider.block_signal(slider_changed_signal.borrow().as_ref().unwrap());
+            slider.set_value(spin_btn.get_value());
+            slider.unblock_signal(slider_changed_signal.borrow().as_ref().unwrap());
+            on_camera_number_control_change(spin_btn.get_value(), &program_data_rc, ctrl_id, requires_capture_pause);
+        }
+    )));
+
+    ControlWidgetBundle::NumberControl(
+        NumberControlWidgets{ slider, spin_btn, slider_changed_signal, spin_btn_changed_signal }
+    )
 }
 
 fn fill_combo_for_list_control(
@@ -533,7 +586,7 @@ fn on_camera_list_control_change(
 }
 
 fn on_camera_number_control_change(
-    slider: &gtk::Scale,
+    value: f64,
     program_data_rc: &Rc<RefCell<ProgramData>>,
     ctrl_id: CameraControlId,
     requires_capture_pause: bool
@@ -543,7 +596,7 @@ fn on_camera_number_control_change(
     } else {
         let notifications = program_data_rc.borrow_mut().camera.as_mut().unwrap().set_number_control(
             ctrl_id,
-            slider.get_value()
+            value
         ).unwrap();
         on_camera_notification(
             notifications,

@@ -701,12 +701,19 @@ fn update_readable_camera_controls(program_data_rc: &Rc<RefCell<ProgramData>>) {
                     );
                     combo.unblock_signal(&combo_changed_signal);
                 },
-                ControlWidgetBundle::NumberControl(NumberControlWidgets{ slider, slider_changed_signal }) => {
-                    slider.block_signal(&slider_changed_signal);
-                    slider.set_value(
-                        program_data.camera.as_ref().unwrap().get_number_control(*c_widget.0).unwrap()
-                    );
-                    slider.unblock_signal(&slider_changed_signal);
+
+                ControlWidgetBundle::NumberControl(
+                    NumberControlWidgets{ slider, spin_btn, slider_changed_signal, spin_btn_changed_signal }
+                ) => {
+                    let new_value = program_data.camera.as_ref().unwrap().get_number_control(*c_widget.0).unwrap();
+
+                    slider.block_signal(slider_changed_signal.borrow().as_ref().unwrap());
+                    slider.set_value(new_value);
+                    slider.unblock_signal(slider_changed_signal.borrow().as_ref().unwrap());
+
+                    spin_btn.block_signal(spin_btn_changed_signal.borrow().as_ref().unwrap());
+                    spin_btn.set_value(new_value);
+                    spin_btn.unblock_signal(spin_btn_changed_signal.borrow().as_ref().unwrap());
                 }
             }
         }
