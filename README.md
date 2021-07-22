@@ -10,7 +10,6 @@ Copyright (C) 2020-2021 Filip Szczerek (ga.software@yahoo.com)
 - 3\. Building
   - 3\.1\. Linux and alikes
   - 3\.2\. MS Windows
-- 4\. Bugs
 
 ----------------------------------------
 
@@ -97,8 +96,3 @@ $ PATH="$PATH:C:\Program Files\Point Grey Research\FlyCapture2\bin64" target/rel
 ```
 
 *Upcoming: creating a binary distribution*
-
-
-## 4. Bugs
-
-- Live crop during recording is broken for raw color video modes.
