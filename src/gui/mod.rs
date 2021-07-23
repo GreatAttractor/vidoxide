@@ -56,6 +56,7 @@ const DEFAULT_TOOLBAR_ICON_SIZE: i32 = 32;
 
 struct StatusBarFields {
     preview_fps: gtk::Label,
+    capture_fps: gtk::Label,
     temperature: gtk::Label,
     current_recording_info: gtk::Label,
     recording_overview: gtk::Label
@@ -123,11 +124,14 @@ impl Drop for DialogDestroyer {
 fn create_status_bar() -> (gtk::Frame, StatusBarFields) {
     let status_bar_box = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     let preview_fps = gtk::Label::new(None);
+    let capture_fps = gtk::Label::new(None);
     let temperature = gtk::Label::new(None);
     let current_recording_info = gtk::LabelBuilder::new().justify(gtk::Justification::Left).build();
     let recording_overview = gtk::LabelBuilder::new().justify(gtk::Justification::Left).build();
 
     status_bar_box.pack_start(&preview_fps, false, false, PADDING);
+    status_bar_box.pack_start(&gtk::Separator::new(gtk::Orientation::Vertical), false, false, PADDING);
+    status_bar_box.pack_start(&capture_fps, false, false, PADDING);
     status_bar_box.pack_start(&gtk::Separator::new(gtk::Orientation::Vertical), false, false, PADDING);
     status_bar_box.pack_start(&temperature, false, false, PADDING);
     status_bar_box.pack_start(&gtk::Separator::new(gtk::Orientation::Vertical), false, false, PADDING);
@@ -139,7 +143,7 @@ fn create_status_bar() -> (gtk::Frame, StatusBarFields) {
     status_bar_frame.set_shadow_type(gtk::ShadowType::In);
     status_bar_frame.add(&status_bar_box);
 
-    (status_bar_frame, StatusBarFields{ preview_fps, temperature, current_recording_info, recording_overview })
+    (status_bar_frame, StatusBarFields{ preview_fps, capture_fps, temperature, current_recording_info, recording_overview })
 }
 
 fn on_preview_area_button_down(pos: Point, program_data_rc: &Rc<RefCell<ProgramData>>) {
@@ -900,10 +904,15 @@ fn on_capture_thread_message(
 
         CaptureToMainThreadMsg::RecordingFinished => rec_gui::on_recording_finished(&program_data_rc),
 
-        CaptureToMainThreadMsg::Info(msg_str) => {
-            program_data_rc.borrow().gui.as_ref().unwrap().status_bar.current_recording_info.set_label(
-                &format!("{}", msg_str)
-            )
+        CaptureToMainThreadMsg::Info(info) => {
+            let pd = program_data_rc.borrow();
+            let status_bar = &pd.gui.as_ref().unwrap().status_bar;
+
+            status_bar.capture_fps.set_label(&format!("Capture: {:.1} fps", info.capture_fps));
+
+            if let Some(msg) = info.recording_info {
+                status_bar.current_recording_info.set_label(&msg);
+            }
         }
     } break; }
 
@@ -923,6 +932,7 @@ pub fn disconnect_camera(program_data: &mut ProgramData, finish_capture_thread: 
     program_data.camera = None;
     if let Some(gui) = program_data.gui.as_ref() {
         gui.status_bar.preview_fps.set_label("");
+        gui.status_bar.capture_fps.set_label("");
         gui.status_bar.current_recording_info.set_label("");
         for (cam_item, activate_signal) in &gui.camera_menu_items {
             cam_item.set_sensitive(true);

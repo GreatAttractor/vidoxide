@@ -23,12 +23,18 @@ use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
 use std::sync::mpsc::TryRecvError;
 
 #[derive(Debug)]
+pub struct Info {
+    pub recording_info: Option<String>,
+    pub capture_fps: f64
+}
+
+#[derive(Debug)]
 pub enum CaptureToMainThreadMsg {
     PreviewImageReady(Arc<Image>),
     Paused,
     CaptureError(CameraError),
     RecordingFinished,
-    Info(String),
+    Info(Info),
     /// Contains (updated tracking data, updated crop area).
     TrackingUpdate((TrackingData, Option<Rect>)),
     TrackingFailed
@@ -94,13 +100,15 @@ pub fn capture_thread(
 
     let mut tracking: Option<ImageTracker> = None;
 
-    let mut t_last_info_sent = std::time::Instant::now();
+    let mut t_last_info = std::time::Instant::now();
 
     let mut num_dropped_frames = 0;
 
     let mut most_recently_captured_buf_idx: Option<usize> = None;
 
     let mut crop_data: Option<CropData> = None;
+
+    let mut fps_counter: i32 = 0;
 
     loop {
         let recording_finished = match rec_data {
@@ -138,7 +146,17 @@ pub fn capture_thread(
                 (current_buf_idx, camera.capture_frame(dest_img))
             };
 
+            fps_counter += 1;
+
             most_recently_captured_buf_idx = Some(current_buf_idx);
+
+            let mut info: Option<Info> = None;
+            if t_last_info.elapsed() >= std::time::Duration::from_secs(1) {
+                info = Some(Info{ capture_fps: fps_counter as f64, recording_info: None });
+                fps_counter = 0;
+                t_last_info = std::time::Instant::now();
+            }
+
 
             match capture_result {
                 Err(err) => match err {
@@ -154,8 +172,7 @@ pub fn capture_thread(
                             rec_data,
                             &capture_buf[current_buf_idx],
                             &buffered_kib,
-                            &mut t_last_info_sent,
-                            &sender,
+                            info.as_mut(),
                             &mut num_dropped_frames,
                             &crop_data
                         );
@@ -176,6 +193,10 @@ pub fn capture_thread(
                         }
                     }
                 }
+            }
+
+            if let Some(info) = info {
+                sender.send(CaptureToMainThreadMsg::Info(info)).unwrap();
             }
         }
 
@@ -284,8 +305,7 @@ fn on_recording(
     rec_data: &mut RecData,
     image: &Arc<Image>,
     buffered_kib: &Arc<AtomicIsize>,
-    t_last_info_sent: &mut std::time::Instant,
-    sender: &glib::Sender<CaptureToMainThreadMsg>,
+    info: Option<&mut Info>,
     num_dropped_frames: &mut usize,
     crop_data: &Option<CropData>
 ) {
@@ -305,8 +325,8 @@ fn on_recording(
         }
     }
 
-    if t_last_info_sent.elapsed() >= std::time::Duration::from_secs(1) {
-        let info: String = match rec_data.limit {
+    if let Some(info) = info {
+        info.recording_info = Some(match rec_data.limit {
             recording::Limit::FrameCount(count) => {
                 format!("Recorded {}/{} frames", rec_data.frame_counter, count)
             },
@@ -330,9 +350,6 @@ fn on_recording(
             recording::Limit::Forever => {
                 format!("Recorded {} frames", rec_data.frame_counter)
             }
-        };
-
-        sender.send(CaptureToMainThreadMsg::Info(info)).unwrap();
-        *t_last_info_sent = std::time::Instant::now();
+        });
     }
 }
