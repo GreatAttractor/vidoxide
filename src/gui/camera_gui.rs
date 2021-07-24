@@ -284,7 +284,9 @@ pub fn on_camera_notification(
 
                                         let spin_btn = &number_widgets.spin_btn;
                                         spin_btn.block_signal(number_widgets.spin_btn_changed_signal.borrow().as_ref().unwrap());
-                                        spin_btn.configure(Some(&adjustment), spin_btn.get_property_climb_rate(), spin_btn.get_digits());
+                                        spin_btn.set_range(number_control.min(), number_control.max());
+                                        spin_btn.set_value(number_control.value());
+                                        spin_btn.set_increments(number_control.step(), number_control.step() * 5.0);
                                         spin_btn.unblock_signal(number_widgets.spin_btn_changed_signal.borrow().as_ref().unwrap());
                                     }
                                 }
