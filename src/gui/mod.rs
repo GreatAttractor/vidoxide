@@ -892,6 +892,8 @@ fn on_capture_thread_message(
                                 "Error",
                                 gtk::MessageType::Error
                             );
+                        } else {
+                            camera_gui::schedule_refresh(program_data_rc);
                         }
                     },
 
@@ -904,12 +906,14 @@ fn on_capture_thread_message(
                         );
                         match result {
                             Err(err) => show_error = Some(err),
-                            _ => ()
+                            _ => camera_gui::schedule_refresh(program_data_rc)
                         }
                     },
 
-                    OnCapturePauseAction::DisableROI =>
-                        program_data_rc.borrow_mut().camera.as_mut().unwrap().unset_roi().unwrap()
+                    OnCapturePauseAction::DisableROI => {
+                        program_data_rc.borrow_mut().camera.as_mut().unwrap().unset_roi().unwrap();
+                        camera_gui::schedule_refresh(program_data_rc);
+                    }
                 },
                 _ => ()
             }
