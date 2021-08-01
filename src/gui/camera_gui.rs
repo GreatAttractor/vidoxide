@@ -26,6 +26,9 @@ use std::sync::atomic::AtomicBool;
 /// Control padding in pixels.
 const PADDING: u32 = 10;
 
+/// Delay after the last user modification of a control, after which all controls are refreshed.
+const ALL_CONTROLS_REFRESH_DELAY: std::time::Duration = std::time::Duration::from_secs(1);
+
 pub struct ListControlWidgets {
     pub combo: gtk::ComboBoxText,
     pub combo_changed_signal: glib::SignalHandlerId
@@ -38,8 +41,16 @@ pub struct NumberControlWidgets {
     pub spin_btn_changed_signal: Rc<RefCell<Option<glib::SignalHandlerId>>>
 }
 
+pub struct BooleanControlWidgets {
+    pub state_checkbox: gtk::CheckButton,
+    pub checkbox_changed_signal: glib::SignalHandlerId
+}
+
 pub struct CommonControlWidgets {
     pub name: String,
+    /// If true, the value may change on its own (e.g., exposure time and/or gain if automatic exposure is enabled),
+    /// and should be periodically read and refreshed on-screen.
+    pub refreshable: bool,
     pub h_box: gtk::Box,
     pub auto: Option<gtk::CheckButton>,
     pub on_off: Option<gtk::CheckButton>,
@@ -49,7 +60,8 @@ pub struct CommonControlWidgets {
 #[enum_dispatch]
 pub enum ControlWidgetBundle {
     ListControl(ListControlWidgets),
-    NumberControl(NumberControlWidgets)
+    NumberControl(NumberControlWidgets),
+    BooleanControl(BooleanControlWidgets)
 }
 
 #[enum_dispatch(ControlWidgetBundle)]
@@ -66,6 +78,12 @@ impl Editability for ListControlWidgets {
 impl Editability for NumberControlWidgets {
     fn set_editable(&self, state: bool) {
         self.slider.set_sensitive(state);
+    }
+}
+
+impl Editability for BooleanControlWidgets {
+    fn set_editable(&self, state: bool) {
+        self.state_checkbox.set_sensitive(state);
     }
 }
 
@@ -123,8 +141,9 @@ fn create_camera_menu_items(
             let signal = cam_menu_item.connect_activate(clone!(
                 @weak driver, @weak program_data_rc
                 => @default-panic, move |menu_item| {
-                    on_select_camera(menu_item, &driver, &camera_info, &program_data_rc);
-                    program_data_rc.borrow().gui.as_ref().unwrap().camera_disconnect_menu_item.set_sensitive(true);
+                    if on_select_camera(menu_item, &driver, &camera_info, &program_data_rc).is_ok() {
+                        program_data_rc.borrow().gui.as_ref().unwrap().camera_disconnect_menu_item.set_sensitive(true);
+                    }
                 }
             ));
             camera_menu.insert(&cam_menu_item, item_pos);
@@ -141,7 +160,7 @@ fn on_select_camera(
     driver: &Rc<RefCell<std::boxed::Box<(dyn Driver)>>>,
     camera_info: &CameraInfo,
     program_data_rc: &Rc<RefCell<ProgramData>>
-) {
+) -> Result<(), ()> {
     {
         disconnect_camera(&mut program_data_rc.borrow_mut(), true);
 
@@ -152,7 +171,7 @@ fn on_select_camera(
             Ok(camera) => Some(camera),
             Err(e) => {
                 show_message(&format!("Failed to open {}:\n{:?}", camera_info.name(), e), "Error", gtk::MessageType::Error);
-                return;
+                return Err(());
             }
         };
 
@@ -162,7 +181,7 @@ fn on_select_camera(
             Err(e) => {
                 show_message(&format!("Failed to open {}:\n{:?}", camera_info.name(), e), "Error", gtk::MessageType::Error);
                 disconnect_camera(&mut program_data_rc.borrow_mut(), false);
-                return;
+                return Err(());
             }
         };
 
@@ -205,6 +224,8 @@ fn on_select_camera(
     } // end borrow of `program_data`
 
     init_camera_control_widgets(program_data_rc);
+
+    Ok(())
 }
 
 pub fn remove_camera_controls(program_data: &mut ProgramData) {
@@ -234,78 +255,7 @@ fn init_camera_control_widgets(
     controls_box.show_all();
 }
 
-/// Reacts to camera notification(s) which may be returned after modifying a camera control.
-pub fn on_camera_notification(
-    notifications: Vec<camera::Notification>,
-    program_data_rc: &Rc<RefCell<ProgramData>>
-) {
-    for notification in notifications {
-        match notification {
-            camera::Notification::ControlRemoved(id) => {
-                match program_data_rc.borrow().gui.as_ref().unwrap().control_widgets.get(&id) {
-                    Some((common_widgets, _)) => common_widgets.h_box.set_visible(false),
-                    None => ()
-                }
-            },
-            camera::Notification::ControlChanged(control) => {
-                let controls_box = program_data_rc.borrow().gui.as_ref().unwrap().controls_box.clone();
-
-                if let Some(gui) = program_data_rc.borrow_mut().gui.as_mut() {
-                    match gui.control_widgets.get_mut(&control.base().id) {
-                        // The control had been added previously, re-enable its widget(s).
-                        Some(widgets) => {
-                            widgets.0.h_box.set_visible(true);
-                            match &mut widgets.1 {
-                                ControlWidgetBundle::ListControl(list_widgets) => {
-                                    if let camera::CameraControl::List(list_control) = control {
-                                        fill_combo_for_list_control(
-                                            &list_control,
-                                            &list_widgets.combo,
-                                            Some(&list_widgets.combo_changed_signal)
-                                        );
-                                    }
-                                },
-
-                                ControlWidgetBundle::NumberControl(number_widgets) => {
-                                    if let camera::CameraControl::Number(number_control) = control {
-                                        let adjustment = gtk::Adjustment::new(
-                                            number_control.value(),
-                                            number_control.min(),
-                                            number_control.max(),
-                                            number_control.step(),
-                                            number_control.step() * 5.0,
-                                            0.0
-                                        );
-
-                                        let slider = &number_widgets.slider;
-                                        slider.block_signal(number_widgets.slider_changed_signal.borrow().as_ref().unwrap());
-                                        slider.set_adjustment(&adjustment);
-                                        slider.unblock_signal(number_widgets.slider_changed_signal.borrow().as_ref().unwrap());
-
-                                        let spin_btn = &number_widgets.spin_btn;
-                                        spin_btn.block_signal(number_widgets.spin_btn_changed_signal.borrow().as_ref().unwrap());
-                                        spin_btn.set_range(number_control.min(), number_control.max());
-                                        spin_btn.set_value(number_control.value());
-                                        spin_btn.set_increments(number_control.step(), number_control.step() * 5.0);
-                                        spin_btn.unblock_signal(number_widgets.spin_btn_changed_signal.borrow().as_ref().unwrap());
-                                    }
-                                }
-                            }
-                        },
-                        // This is the first time the control is returned; create its widgets from scratch.
-                        None => {
-                            let h_box = create_control_widgets(&control, program_data_rc, &mut gui.control_widgets);
-                            h_box.show_all();
-                            controls_box.pack_start(&h_box, false, false, PADDING);
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-fn create_control_widgets(
+pub fn create_control_widgets(
     control: &camera::CameraControl,
     program_data_rc: &Rc<RefCell<ProgramData>>,
     control_widgets: &mut std::collections::HashMap<
@@ -323,11 +273,10 @@ fn create_control_widgets(
         Some(value) => {
             let cb = gtk::CheckButtonBuilder::new().label("auto").active(value).build();
             cb.connect_toggled(clone!(@weak program_data_rc => @default-panic, move|cb| {
-                let notifications = program_data_rc.borrow().camera.as_ref().unwrap().set_auto(
+                program_data_rc.borrow().camera.as_ref().unwrap().set_auto(
                     ctrl_id,
                     cb.get_active()
                 ).unwrap();
-                on_camera_notification(notifications, &program_data_rc);
 
                 let program_data = program_data_rc.borrow();
                 let control_widgets = &program_data.gui.as_ref().unwrap().control_widgets[&ctrl_id];
@@ -338,6 +287,8 @@ fn create_control_widgets(
                 control_widgets.1.set_editable(
                     !cb.get_active() && is_on && access != ControlAccessMode::ReadOnly
                 );
+
+                schedule_refresh(&program_data_rc);
             }));
             Some(cb)
         },
@@ -348,11 +299,10 @@ fn create_control_widgets(
         Some(value) => {
             let cb = gtk::CheckButtonBuilder::new().label("on").active(value).build();
             cb.connect_toggled(clone!(@weak program_data_rc => @default-panic, move|cb| {
-                let notifications = program_data_rc.borrow().camera.as_ref().unwrap().set_on_off(
+                program_data_rc.borrow().camera.as_ref().unwrap().set_on_off(
                     ctrl_id,
                     cb.get_active()
                 ).unwrap();
-                on_camera_notification(notifications, &program_data_rc);
                 let program_data = program_data_rc.borrow();
                 let control_widgets = &program_data.gui.as_ref().unwrap().control_widgets[&ctrl_id];
                 let is_auto = match &control_widgets.0.auto {
@@ -363,6 +313,8 @@ fn create_control_widgets(
                 control_widgets.1.set_editable(
                     cb.get_active() && !is_auto && access != ControlAccessMode::ReadOnly
                 );
+
+                schedule_refresh(&program_data_rc);
             }));
             Some(cb)
         },
@@ -376,10 +328,12 @@ fn create_control_widgets(
                 &h_box,
                 program_data_rc
             );
+
             control_widgets.insert(
                 list_ctrl.base().id,
                 (CommonControlWidgets{
                     name: list_ctrl.base().label.clone(),
+                    refreshable: list_ctrl.base().refreshable,
                     h_box: h_box.clone(),
                     auto: cb_auto.clone(),
                     on_off: cb_on_off.clone(),
@@ -387,20 +341,43 @@ fn create_control_widgets(
                 }, widget_bundle)
             );
         },
+
         CameraControl::Number(number_ctrl) => {
             let widget_bundle = create_number_control_widgets(
                 &number_ctrl,
                 &h_box,
                 program_data_rc
             );
+
             control_widgets.insert(
                 number_ctrl.base().id,
                 (CommonControlWidgets{
                     name: number_ctrl.base().label.clone(),
+                    refreshable: number_ctrl.base().refreshable,
                     h_box: h_box.clone(),
                     auto: cb_auto.clone(),
                     on_off: cb_on_off.clone(),
                     access_mode: number_ctrl.base().access_mode
+                }, widget_bundle)
+            );
+        },
+
+        CameraControl::Boolean(bool_ctrl) => {
+            let widget_bundle = create_bool_control_widgets(
+                &bool_ctrl,
+                &h_box,
+                program_data_rc
+            );
+
+            control_widgets.insert(
+                bool_ctrl.base().id,
+                (CommonControlWidgets{
+                    name: bool_ctrl.base().label.clone(),
+                    refreshable: bool_ctrl.base().refreshable,
+                    h_box: h_box.clone(),
+                    auto: cb_auto.clone(),
+                    on_off: cb_on_off.clone(),
+                    access_mode: bool_ctrl.base().access_mode
                 }, widget_bundle)
             );
         }
@@ -433,6 +410,29 @@ fn create_list_control_widgets(
     ControlWidgetBundle::ListControl(ListControlWidgets{
         combo: items_combo,
         combo_changed_signal
+    })
+}
+
+fn create_bool_control_widgets(
+    bool_ctrl: &camera::BooleanControl,
+    h_box: &gtk::Box,
+    program_data_rc: &Rc<RefCell<ProgramData>>
+) -> ControlWidgetBundle {
+    let state_checkbox = gtk::CheckButtonBuilder::new().label("").active(bool_ctrl.state()).build();
+    let ctrl_id = bool_ctrl.base().id;
+    let requires_capture_pause = bool_ctrl.base().requires_capture_pause;
+
+    let checkbox_changed_signal = state_checkbox.connect_toggled(
+        clone!(@weak program_data_rc => @default-panic, move |state_checkbox| {
+            on_camera_boolean_control_change(&state_checkbox, &program_data_rc, ctrl_id, requires_capture_pause);
+        }
+    ));
+
+    h_box.pack_start(&state_checkbox, true, true, PADDING);
+
+    ControlWidgetBundle::BooleanControl(BooleanControlWidgets{
+        state_checkbox,
+        checkbox_changed_signal
     })
 }
 
@@ -576,15 +576,13 @@ fn on_camera_list_control_change(
             option_idx: combo.get_active().unwrap() as usize
         }));
     } else {
-        let notifications = program_data_rc.borrow_mut().camera.as_mut().unwrap().set_list_control(
+        program_data_rc.borrow_mut().camera.as_mut().unwrap().set_list_control(
             ctrl_id,
             combo.get_active().unwrap() as usize
         ).unwrap();
-        on_camera_notification(
-            notifications,
-            &program_data_rc
-        );
     }
+
+    schedule_refresh(program_data_rc);
 }
 
 fn on_camera_number_control_change(
@@ -596,13 +594,38 @@ fn on_camera_number_control_change(
     if requires_capture_pause {
         panic!("Not implemented yet.");
     } else {
-        let notifications = program_data_rc.borrow_mut().camera.as_mut().unwrap().set_number_control(
-            ctrl_id,
-            value
-        ).unwrap();
-        on_camera_notification(
-            notifications,
-            &program_data_rc
-        );
+        program_data_rc.borrow_mut().camera.as_mut().unwrap().set_number_control(ctrl_id, value).unwrap();
     }
+
+    schedule_refresh(program_data_rc);
+}
+
+fn on_camera_boolean_control_change(
+    state_checkbox: &gtk::CheckButton,
+    program_data_rc: &Rc<RefCell<ProgramData>>,
+    ctrl_id: CameraControlId,
+    requires_capture_pause: bool
+) {
+    if requires_capture_pause {
+        panic!("Not implemented yet.");
+    } else {
+        program_data_rc.borrow_mut().camera.as_mut().unwrap().set_boolean_control(
+            ctrl_id,
+            state_checkbox.get_active()
+        ).unwrap();
+    }
+
+    schedule_refresh(program_data_rc);
+}
+
+fn schedule_refresh(program_data_rc: &Rc<RefCell<ProgramData>>) {
+    program_data_rc.borrow().camera_controls_refresh_timer.run_once(
+        ALL_CONTROLS_REFRESH_DELAY,
+        clone!(@weak program_data_rc => @default-panic, move || refresh_all_controls(&program_data_rc))
+    );
+}
+
+fn refresh_all_controls(program_data_rc: &Rc<RefCell<ProgramData>>) {
+    if program_data_rc.borrow().camera.is_none() { return; }
+    init_camera_control_widgets(program_data_rc);
 }

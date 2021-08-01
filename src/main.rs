@@ -135,7 +135,9 @@ pub struct ProgramData {
     /// If true, whole image (or just `histogram_area`, if set) has its histogram stretched for preview.
     stretch_histogram: bool,
     preview_fps_limit: Option<i32>,
-    preview_last_displayed_image: Option<std::time::Instant>
+    preview_last_displayed_image: Option<std::time::Instant>,
+    /// Used to refresh/rebuild all controls after user modification.
+    camera_controls_refresh_timer: timer::OneShotTimer
 }
 
 impl ProgramData {
@@ -215,7 +217,8 @@ fn main() {
         demosaic_preview: false,
         stretch_histogram: false,
         preview_fps_limit,
-        preview_last_displayed_image: None
+        preview_last_displayed_image: None,
+        camera_controls_refresh_timer: timer::OneShotTimer::new()
     }));
 
     std::thread::spawn(move || workers::histogram::histogram_thread(histogram_sender_worker, histogram_receiver_worker));

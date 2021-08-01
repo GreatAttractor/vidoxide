@@ -19,7 +19,13 @@ mod mount_gui;
 mod rec_gui;
 
 use cairo;
-use camera_gui::{CommonControlWidgets, ControlWidgetBundle, ListControlWidgets, NumberControlWidgets};
+use camera_gui::{
+    CommonControlWidgets,
+    ControlWidgetBundle,
+    ListControlWidgets,
+    NumberControlWidgets,
+    BooleanControlWidgets
+};
 use crate::{CameraControlChange, OnCapturePauseAction, ProgramData};
 use crate::camera;
 use crate::camera::CameraError;
@@ -685,39 +691,60 @@ fn update_preview_info(program_data_rc: &Rc<RefCell<ProgramData>>) {
     }
 }
 
-fn update_readable_camera_controls(program_data_rc: &Rc<RefCell<ProgramData>>) {
+fn update_refreshable_camera_controls(program_data_rc: &Rc<RefCell<ProgramData>>) {
     let program_data = program_data_rc.borrow();
 
     for c_widget in &program_data.gui.as_ref().unwrap().control_widgets {
-        let is_in_auto_mode = match &(c_widget.1).0.auto {
-            Some(cbox) => cbox.get_active(),
-            _ => false
-        };
-        let access_mode = (c_widget.1).0.access_mode;
-        if access_mode == camera::ControlAccessMode::ReadOnly ||
-            is_in_auto_mode && access_mode != camera::ControlAccessMode::WriteOnly {
-
+        if c_widget.1.0.refreshable {
             match &(c_widget.1).1 {
                 ControlWidgetBundle::ListControl(ListControlWidgets{ combo, combo_changed_signal }) => {
+                    let new_value = match program_data.camera.as_ref().unwrap().get_list_control(*c_widget.0) {
+                        Ok(value) => value as u32,
+                        Err(e) => {
+                            println!("WARNING: Failed to read value of {} (error: {:?}).", &c_widget.1.0.name, e);
+                            continue;
+                        }
+                    };
+
                     combo.block_signal(&combo_changed_signal);
-                    combo.set_active(
-                        Some(program_data.camera.as_ref().unwrap().get_list_control(*c_widget.0).unwrap() as u32)
-                    );
+                    combo.set_active(Some(new_value));
                     combo.unblock_signal(&combo_changed_signal);
                 },
 
                 ControlWidgetBundle::NumberControl(
                     NumberControlWidgets{ slider, spin_btn, slider_changed_signal, spin_btn_changed_signal }
                 ) => {
-                    let new_value = program_data.camera.as_ref().unwrap().get_number_control(*c_widget.0).unwrap();
+                    let new_value = match program_data.camera.as_ref().unwrap().get_number_control(*c_widget.0) {
+                        Ok(value) => value,
+                        Err(e) => {
+                            println!("WARNING: Failed to read value of {} (error: {:?}).", &c_widget.1.0.name, e);
+                            continue;
+                        }
+                    };
 
                     slider.block_signal(slider_changed_signal.borrow().as_ref().unwrap());
                     slider.set_value(new_value);
                     slider.unblock_signal(slider_changed_signal.borrow().as_ref().unwrap());
 
-                    spin_btn.block_signal(spin_btn_changed_signal.borrow().as_ref().unwrap());
-                    spin_btn.set_value(new_value);
-                    spin_btn.unblock_signal(spin_btn_changed_signal.borrow().as_ref().unwrap());
+                    if !spin_btn.has_focus() {
+                        spin_btn.block_signal(spin_btn_changed_signal.borrow().as_ref().unwrap());
+                        spin_btn.set_value(new_value);
+                        spin_btn.unblock_signal(spin_btn_changed_signal.borrow().as_ref().unwrap());
+                    }
+                },
+
+                ControlWidgetBundle::BooleanControl(BooleanControlWidgets{ state_checkbox, checkbox_changed_signal }) => {
+                    let new_value = match program_data.camera.as_ref().unwrap().get_boolean_control(*c_widget.0) {
+                        Ok(value) => value,
+                        Err(e) => {
+                            println!("WARNING: Failed to read value of {} (error: {:?}).", &c_widget.1.0.name, e);
+                            continue;
+                        }
+                    };
+
+                    state_checkbox.block_signal(&checkbox_changed_signal);
+                    state_checkbox.set_active(new_value);
+                    state_checkbox.unblock_signal(&checkbox_changed_signal);
                 }
             }
         }
@@ -757,7 +784,7 @@ pub fn on_timer(program_data_rc: &Rc<RefCell<ProgramData>>) {
     if !program_data_rc.borrow().camera.is_some() { return; }
 
     update_preview_info(program_data_rc);
-    update_readable_camera_controls(program_data_rc);
+    update_refreshable_camera_controls(program_data_rc);
     update_recording_info(program_data_rc);
 }
 
@@ -858,12 +885,14 @@ fn on_capture_thread_message(
             match action {
                 Some(action) => match action {
                     OnCapturePauseAction::ControlChange(CameraControlChange{ id, option_idx }) => {
-                        let notifications = program_data_rc.borrow_mut().camera.as_mut().unwrap()
-                            .set_list_control(id, option_idx).unwrap();
-                        camera_gui::on_camera_notification(
-                            notifications,
-                            &program_data_rc
-                        );
+                        let res = program_data_rc.borrow_mut().camera.as_mut().unwrap().set_list_control(id, option_idx);
+                        if let Err(e) = res {
+                            show_message(
+                                &format!("Failed to set camera control:\n{:?}", e),
+                                "Error",
+                                gtk::MessageType::Error
+                            );
+                        }
                     },
 
                     OnCapturePauseAction::SetROI(rect) => {
@@ -896,8 +925,9 @@ fn on_capture_thread_message(
             }
         },
 
-        CaptureToMainThreadMsg::CaptureError(_) => {
+        CaptureToMainThreadMsg::CaptureError(error) => {
             //TODO: show a message box
+            println!("Capture error: {:?}", error);
             let _ = program_data_rc.borrow_mut().capture_thread_data.take().unwrap().join_handle.take().unwrap().join();
             disconnect_camera(&mut program_data_rc.borrow_mut(), false);
         },

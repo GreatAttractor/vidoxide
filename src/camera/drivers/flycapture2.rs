@@ -50,35 +50,34 @@ mod control_ids {
 const MAX_NUM_INCONSISTENT_FRAMES_TO_SKIP: usize = 0; //15;
 
 //TODO: support 12-bit modes
-fn to_pix_fmt(fc2_pix_fmt: (fc2PixelFormat, fc2BayerTileFormat)) -> ga_image::PixelFormat {
+fn to_pix_fmt(fc2_pix_fmt: (fc2PixelFormat, fc2BayerTileFormat)) -> Result<ga_image::PixelFormat, CameraError> {
     match fc2_pix_fmt {
-        (fc2PixelFormat::FC2_PIXEL_FORMAT_MONO8, _) => ga_image::PixelFormat::Mono8,
+        (fc2PixelFormat::FC2_PIXEL_FORMAT_MONO8, _) => Ok(ga_image::PixelFormat::Mono8),
 
-        (fc2PixelFormat::FC2_PIXEL_FORMAT_MONO12, _) |
         (fc2PixelFormat::FC2_PIXEL_FORMAT_MONO16, _) |
-        (fc2PixelFormat::FC2_PIXEL_FORMAT_S_MONO16, _) => ga_image::PixelFormat::Mono16,
+        (fc2PixelFormat::FC2_PIXEL_FORMAT_S_MONO16, _) => Ok(ga_image::PixelFormat::Mono16),
 
         // It is unknown why `fc2BayerTileFormat::FC2_BT_NONE` is sometimes set in a received image;
-        // perhaps it is connected to image consistency errors frequent under Linux when using a GiGE camera.
-        // For now just treat it as BGGR
+        // perhaps it is connected to image consistency errors frequent under Linux when using a GigE camera.
+        // For now just treat it as BGGR.
 
         (fc2PixelFormat::FC2_PIXEL_FORMAT_RAW8, cfa) => match cfa {
-            fc2BayerTileFormat::FC2_BT_BGGR | fc2BayerTileFormat::FC2_BT_NONE => ga_image::PixelFormat::CfaBGGR8,
-            fc2BayerTileFormat::FC2_BT_GBRG => ga_image::PixelFormat::CfaGBRG8,
-            fc2BayerTileFormat::FC2_BT_GRBG => ga_image::PixelFormat::CfaGRBG8,
-            fc2BayerTileFormat::FC2_BT_RGGB => ga_image::PixelFormat::CfaRGGB8,
-            _ => panic!("Unsupported FlyCapture2 pixel format: {:?}", fc2_pix_fmt)
+            fc2BayerTileFormat::FC2_BT_BGGR | fc2BayerTileFormat::FC2_BT_NONE => Ok(ga_image::PixelFormat::CfaBGGR8),
+            fc2BayerTileFormat::FC2_BT_GBRG => Ok(ga_image::PixelFormat::CfaGBRG8),
+            fc2BayerTileFormat::FC2_BT_GRBG => Ok(ga_image::PixelFormat::CfaGRBG8),
+            fc2BayerTileFormat::FC2_BT_RGGB => Ok(ga_image::PixelFormat::CfaRGGB8),
+            _ => Err(FlyCapture2Error::UnsupportedPixelFormat(fc2_pix_fmt.0).into())
         },
 
         (fc2PixelFormat::FC2_PIXEL_FORMAT_RAW16, cfa) => match cfa {
-            fc2BayerTileFormat::FC2_BT_BGGR | fc2BayerTileFormat::FC2_BT_NONE => ga_image::PixelFormat::CfaBGGR16,
-            fc2BayerTileFormat::FC2_BT_GBRG => ga_image::PixelFormat::CfaGBRG16,
-            fc2BayerTileFormat::FC2_BT_GRBG => ga_image::PixelFormat::CfaGRBG16,
-            fc2BayerTileFormat::FC2_BT_RGGB => ga_image::PixelFormat::CfaRGGB16,
-            _ => panic!("Unsupported FlyCapture2 pixel format: {:?}", fc2_pix_fmt)
+            fc2BayerTileFormat::FC2_BT_BGGR | fc2BayerTileFormat::FC2_BT_NONE => Ok(ga_image::PixelFormat::CfaBGGR16),
+            fc2BayerTileFormat::FC2_BT_GBRG => Ok(ga_image::PixelFormat::CfaGBRG16),
+            fc2BayerTileFormat::FC2_BT_GRBG => Ok(ga_image::PixelFormat::CfaGRBG16),
+            fc2BayerTileFormat::FC2_BT_RGGB => Ok(ga_image::PixelFormat::CfaRGGB16),
+            _ => Err(FlyCapture2Error::UnsupportedPixelFormat(fc2_pix_fmt.0).into())
         },
 
-        _ => panic!("Unsupported FlyCapture2 pixel format: {:?}", fc2_pix_fmt)
+        _ => Err(FlyCapture2Error::UnsupportedPixelFormat(fc2_pix_fmt.0).into())
     }
 }
 
@@ -297,7 +296,8 @@ impl From<FlyCapture2Error> for CameraError {
 #[derive(Debug)]
 pub enum FlyCapture2Error {
     Internal(_fc2Error),
-    ContextCreationFailed
+    ContextCreationFailed,
+    UnsupportedPixelFormat(fc2PixelFormat)
 }
 
 struct Context {
@@ -461,6 +461,9 @@ impl Driver for FlyCapture2Driver {
             _ => (FC2VideoModeEnum::NonFormat7(vid_mode), pixel_format_from_video_mode(vid_mode))
         };
 
+        // in case the camera has a pixel format enabled which we do not support
+        to_pix_fmt((current_pix_fmt, fc2BayerTileFormat::FC2_BT_NONE))?;
+
         checked_call!(fc2StartCapture(context.handle));
 
         Ok(Box::new(FlyCapture2Camera{
@@ -526,44 +529,6 @@ impl Drop for FlyCapture2Camera {
 }
 
 impl FlyCapture2Camera {
-    /// Returns (raw_range, abs_range) (if absolute control is available).
-    fn get_range(&self, property: fc2PropertyType) -> Result<((u32, u32), Option<(f64, f64)>), CameraError> {
-        let mut prop_info: fc2PropertyInfo = unsafe { std::mem::zeroed() };
-        prop_info.type_ = property;
-        checked_call!(fc2GetPropertyInfo(self.context.handle, &mut prop_info));
-
-        let mut raw_min = prop_info.min;
-        let mut raw_max = prop_info.max;
-        if raw_min > raw_max { std::mem::swap(&mut raw_min, &mut raw_max); }
-
-        let abs_range: Option<(f64, f64)> = if prop_info.absValSupported == TRUE {
-            let mut abs_min = prop_info.absMin;
-            let mut abs_max = prop_info.absMax;
-
-            if abs_min > abs_max { std::mem::swap(&mut abs_min, &mut abs_max); }
-
-            Some((abs_min as f64, abs_max as f64))
-        } else {
-            None
-        };
-
-        Ok(((raw_min, raw_max), abs_range))
-    }
-
-    fn refresh_number_control(&self, control: &NumberControl) -> Result<NumberControl, CameraError> {
-        let (raw_range, abs_range) = self.get_range(as_property_type(control.base().id.0 as u32))?;
-
-        let (min, max, step) = get_control_range_and_step(raw_range, abs_range);
-
-        let mut control_copy = control.clone();
-        control_copy.min = min;
-        control_copy.max = max;
-        control_copy.step = step;
-        control_copy.value = self.get_number_control(control.base().id).unwrap();
-
-        Ok(control_copy)
-    }
-
     fn create_fixed_frame_rate_control_for_video_mode(
         &self, vid_mode: fc2VideoMode
     ) -> Result<ListControl, CameraError> {
@@ -585,6 +550,7 @@ impl FlyCapture2Camera {
             base: CameraControlBase{
                 id: CameraControlId(control_ids::FIXED_FRAME_RATE),
                 label: "Fixed Frame Rate".to_string(),
+                refreshable: false,
                 // It is possible to check the current frame rate, but there is no need;
                 // the camera will never change it when other controls are manipulated.
                 access_mode: ControlAccessMode::WriteOnly,
@@ -619,6 +585,7 @@ impl FlyCapture2Camera {
             base: CameraControlBase{
                 id: CameraControlId(control_ids::VIDEO_MODE),
                 label: "Video Mode".to_string(),
+                refreshable: false,
                 // It is possible to check the current mode, but there is is no need;
                 // the camera will never change it when other controls are manipulated.
                 access_mode: ControlAccessMode::WriteOnly,
@@ -653,6 +620,7 @@ impl FlyCapture2Camera {
                     base: CameraControlBase{
                         id: CameraControlId(control_ids::PIXEL_FORMAT),
                         label: "Pixel Format".to_string(),
+                        refreshable: false,
                         access_mode: ControlAccessMode::WriteOnly,
                         auto_state: None,
                         on_off_state: None,
@@ -669,6 +637,7 @@ impl FlyCapture2Camera {
                     base: CameraControlBase{
                         id: CameraControlId(control_ids::PIXEL_FORMAT),
                         label: "Pixel Format".to_string(),
+                        refreshable: false,
                         access_mode: ControlAccessMode::None,
                         auto_state: None,
                         on_off_state: None,
@@ -750,7 +719,7 @@ impl Camera for FlyCapture2Camera {
                 fc2PropertyType::FC2_GAIN => "Gain",
                 fc2PropertyType::FC2_FRAME_RATE => "Frame Rate",
 
-                _ => { println!("[INFO] ignoring unsupported camera property: {}", i); continue; }
+                _ => { continue; }
             }.to_string();
 
             let supports_auto = prop_info.autoSupported == TRUE;
@@ -812,6 +781,9 @@ impl Camera for FlyCapture2Camera {
                 base: CameraControlBase{
                     id: CameraControlId(i as u64),
                     label,
+                    refreshable:
+                        as_property_type(i) as u32 == fc2PropertyType::FC2_SHUTTER as u32 ||
+                        as_property_type(i) as u32 == fc2PropertyType::FC2_GAIN as u32,
                     access_mode: if read_only {
                         ControlAccessMode::ReadOnly
                     } else if prop_info.readOutSupported == TRUE {
@@ -854,7 +826,7 @@ impl Camera for FlyCapture2Camera {
         Ok(Box::new(FlyCapture2FrameCapturer{ context: Arc::clone(&self.context), fc2_image }))
     }
 
-    fn set_number_control(&self, id: CameraControlId, value: f64) -> Result<Vec<Notification>, CameraError> {
+    fn set_number_control(&self, id: CameraControlId, value: f64) -> Result<(), CameraError> {
         let mut prop: fc2Property = unsafe { std::mem::zeroed() };
         prop.type_ = as_property_type(id.0 as u32);
         checked_call!(fc2GetProperty(self.context.handle, &mut prop));
@@ -865,30 +837,11 @@ impl Camera for FlyCapture2Camera {
         }
         checked_call!(fc2SetProperty(self.context.handle, &mut prop));
 
-        let mut notifications = vec![];
-
-        let need_to_update_shutter_ctrl = id.0 == fc2PropertyType::FC2_FRAME_RATE as u64;
-        let need_to_update_fps_ctrl = id.0 == fc2PropertyType::FC2_SHUTTER as u64;
-
-        if need_to_update_shutter_ctrl && self.shutter_ctrl.is_some() {
-            notifications.push(Notification::ControlChanged(CameraControl::Number(
-                self.refresh_number_control(self.shutter_ctrl.as_ref().unwrap()).unwrap()
-            )));
-         }
-
-        if need_to_update_fps_ctrl && self.fps_ctrl.is_some() {
-            notifications.push(Notification::ControlChanged(CameraControl::Number(
-                self.refresh_number_control(self.fps_ctrl.as_ref().unwrap()).unwrap()
-            )));
-        }
-
-        Ok(notifications)
+        Ok(())
     }
 
-    fn set_list_control(&mut self, id: CameraControlId, option_idx: usize) -> Result<Vec<Notification>, CameraError> {
+    fn set_list_control(&mut self, id: CameraControlId, option_idx: usize) -> Result<(), CameraError> {
         let context = self.context.handle;
-
-        let mut notifications = vec![];
 
         match id.0 {
             control_ids::VIDEO_MODE => {
@@ -905,10 +858,6 @@ impl Camera for FlyCapture2Camera {
                             // set the last (probably the highest) framerate
                             *self.frame_rates.get(&(mode as u32)).unwrap().last().unwrap()
                         ));
-
-                        notifications.push(Notification::ControlChanged(CameraControl::List(
-                            self.create_fixed_frame_rate_control_for_video_mode(mode)?
-                        )));
                     },
 
                     FC2VideoModeEnum::Format7(mode) => {
@@ -923,14 +872,8 @@ impl Camera for FlyCapture2Camera {
                         f7_settings.pixelFormat = get_first_supported_pixel_format(f7_info.pixelFormatBitField);
 
                         checked_call!(fc2SetFormat7Configuration(context, &mut f7_settings, 100.0));
-
-                        notifications.push(Notification::ControlRemoved(CameraControlId(control_ids::FIXED_FRAME_RATE)));
                     }
                 }
-
-                notifications.push(Notification::ControlChanged(CameraControl::List(
-                    self.create_pixel_format_control_for_video_mode(vid_mode)?
-                )));
 
                 checked_call!(fc2StartCapture(context));
             },
@@ -970,7 +913,7 @@ impl Camera for FlyCapture2Camera {
             _ => panic!("Not implemented.")
         }
 
-        Ok(notifications)
+        Ok(())
     }
 
     fn get_number_control(&self, id: CameraControlId) -> Result<f64, CameraError> {
@@ -989,9 +932,7 @@ impl Camera for FlyCapture2Camera {
         panic!("Not implemented yet.");
     }
 
-    fn set_auto(&self, id: CameraControlId, state: bool) -> Result<Vec<Notification>, CameraError> {
-        let mut notifications = vec![];
-
+    fn set_auto(&self, id: CameraControlId, state: bool) -> Result<(), CameraError> {
         let mut prop: fc2Property = unsafe { std::mem::zeroed() };
         prop.type_ = as_property_type(id.0 as u32);
         checked_call!(fc2GetProperty(self.context.handle, &mut prop));
@@ -999,27 +940,10 @@ impl Camera for FlyCapture2Camera {
         prop.autoManualMode = if state { TRUE } else { FALSE };
         checked_call!(fc2SetProperty(self.context.handle, &mut prop));
 
-        let need_to_update_shutter_ctrl =
-            id.0 == control_ids::VIDEO_MODE ||
-            id.0 == control_ids::FIXED_FRAME_RATE ||
-            id.0 == control_ids::PIXEL_FORMAT ||
-            id.0 == fc2PropertyType::FC2_FRAME_RATE as u64;
-
-        //TODO: do the same with frame rate control
-        if need_to_update_shutter_ctrl {
-            if self.shutter_ctrl.is_some() {
-                notifications.push(Notification::ControlChanged(CameraControl::Number(
-                    self.refresh_number_control(self.shutter_ctrl.as_ref().unwrap()).unwrap()
-                )));
-            }
-        }
-
-        Ok(notifications)
+        Ok(())
     }
 
-    fn set_on_off(&self, id: CameraControlId, state: bool) -> Result<Vec<Notification>, CameraError> {
-        let mut notifications = vec![];
-
+    fn set_on_off(&self, id: CameraControlId, state: bool) -> Result<(), CameraError> {
         let mut prop: fc2Property = unsafe { std::mem::zeroed() };
         prop.type_ = as_property_type(id.0 as u32);
         checked_call!(fc2GetProperty(self.context.handle, &mut prop));
@@ -1027,22 +951,7 @@ impl Camera for FlyCapture2Camera {
         prop.onOff = if state { TRUE } else { FALSE };
         checked_call!(fc2SetProperty(self.context.handle, &mut prop));
 
-        let need_to_update_shutter_ctrl =
-            id.0 == control_ids::VIDEO_MODE ||
-            id.0 == control_ids::FIXED_FRAME_RATE ||
-            id.0 == control_ids::PIXEL_FORMAT ||
-            id.0 == fc2PropertyType::FC2_FRAME_RATE as u64;
-
-        //TODO: do the same with frame rate control
-        if need_to_update_shutter_ctrl {
-            if self.shutter_ctrl.is_some() {
-                notifications.push(Notification::ControlChanged(CameraControl::Number(
-                    self.refresh_number_control(self.shutter_ctrl.as_ref().unwrap()).unwrap()
-                )));
-            }
-        }
-
-        Ok(notifications)
+        Ok(())
     }
 
     fn set_roi(&mut self, x0: u32, y0: u32, width: u32, height: u32) -> Result<(), CameraError> {
@@ -1104,6 +1013,14 @@ impl Camera for FlyCapture2Camera {
 
         Ok(())
     }
+
+    fn set_boolean_control(&mut self, _id: CameraControlId, _state: bool) -> Result<(), CameraError> {
+        unimplemented!()
+    }
+
+    fn get_boolean_control(&self, _id: CameraControlId) -> Result<bool, CameraError> {
+        unimplemented!()
+    }
 }
 
 pub struct FlyCapture2FrameCapturer {
@@ -1136,7 +1053,7 @@ impl FrameCapturer for FlyCapture2FrameCapturer {
             }
         }
 
-        let pix_fmt = to_pix_fmt((self.fc2_image.format, self.fc2_image.bayerFormat));
+        let pix_fmt = to_pix_fmt((self.fc2_image.format, self.fc2_image.bayerFormat))?;
 
         let frame_pixels: &[u8] = unsafe { std::slice::from_raw_parts(
             self.fc2_image.pData,
@@ -1198,30 +1115,4 @@ fn supported_pixel_formats() -> Vec<fc2PixelFormat> {
         fc2PixelFormat::FC2_PIXEL_FORMAT_MONO16,
         fc2PixelFormat::FC2_PIXEL_FORMAT_RAW16
     ]
-}
-
-/// Returns (min, max, step) for a number camera control.
-fn get_control_range_and_step(raw_range: (u32, u32), abs_range: Option<(f64, f64)>) -> (f64, f64, f64) {
-    let min;
-    let max;
-    let step;
-
-    if let Some(abs_range) = abs_range {
-        if raw_range.0 != raw_range.1 {
-            step = (abs_range.1 - abs_range.0) as f64 / (raw_range.1 - raw_range.0 + 1) as f64;
-        } else {
-            step = 0.0;
-        }
-
-        min = abs_range.0 as f64;
-        max = abs_range.1 as f64;
-    }
-    else
-    {
-        min = raw_range.0 as f64;
-        max = raw_range.1 as f64;
-        step = if raw_range.0 != raw_range.1 { 1.0 } else { 0.0 };
-    }
-
-    (min, max, step)
 }

@@ -218,7 +218,10 @@ fn save_camera_controls_state(rec_dest_path: &str, program_data: &ProgramData) {
             ControlWidgetBundle::ListControl(list_ctrl) =>
                 write!(file, "{}", list_ctrl.combo.get_active_text().unwrap()).unwrap(),
 
-            ControlWidgetBundle::NumberControl(num_ctrl) => write!(file, "{:.6}", num_ctrl.slider.get_value()).unwrap()
+            ControlWidgetBundle::NumberControl(num_ctrl) => write!(file, "{:.6}", num_ctrl.slider.get_value()).unwrap(),
+
+            ControlWidgetBundle::BooleanControl(bool_ctrl) =>
+                write!(file, "{}", if bool_ctrl.state_checkbox.get_active() { "true" } else { "false" }).unwrap()
         }
 
         write!(file, "\n").unwrap();

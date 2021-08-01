@@ -178,38 +178,6 @@ pub struct IIDCFrameCapturer {
 }
 
 impl IIDCCamera {
-    fn refresh_number_control(&self, control: &NumberControl) -> Result<NumberControl, CameraError> {
-        let (raw_min, raw_max) = self.get_raw_range(control.base().id.0 as u32)?;
-        let mut abs_min = 0.0;
-        let mut abs_max = 0.0;
-
-        let absolute_capable = self.features.feature.iter().find(
-            |x| x.id == control.base().id.0 as u32
-        ).unwrap().absolute_capable == dc1394bool_t::DC1394_TRUE;
-
-        if absolute_capable {
-            let abs_range = self.get_absolute_range(control.base().id.0 as u32)?;
-            abs_min = abs_range.0;
-            abs_max = abs_range.1;
-        }
-
-        let (min, max, step) = get_control_range_and_step(
-            absolute_capable,
-            raw_min,
-            raw_max,
-            abs_min,
-            abs_max
-        );
-
-        let mut control_copy = control.clone();
-        control_copy.min = min;
-        control_copy.max = max;
-        control_copy.step = step;
-        control_copy.value = self.get_number_control(control.base().id).unwrap();
-
-        Ok(control_copy)
-    }
-
     fn get_raw_range(&self, id: dc1394feature_t::Type) -> Result<(u32, u32), CameraError> {
         let mut min_out = std::mem::MaybeUninit::uninit();
         let mut max_out = std::mem::MaybeUninit::uninit();
@@ -278,6 +246,7 @@ impl IIDCCamera {
             base: CameraControlBase{
                 id: CameraControlId(control_ids::VIDEO_MODE),
                 label: "Video Mode".to_string(),
+                refreshable: false,
                 // It is possible to check the current mode, but there is is no need;
                 // the camera will never change it when other controls are manipulated.
                 access_mode: ControlAccessMode::WriteOnly,
@@ -311,6 +280,7 @@ impl IIDCCamera {
             base: CameraControlBase{
                 id: CameraControlId(control_ids::FIXED_FRAME_RATE),
                 label: "Fixed Frame Rate".to_string(),
+                refreshable: false,
                 // It is possible to check the current frame rate, but there is no need;
                 // the camera will never change it when other controls are manipulated.
                 access_mode: ControlAccessMode::WriteOnly,
@@ -341,6 +311,7 @@ impl IIDCCamera {
                 base: CameraControlBase{
                     id: CameraControlId(control_ids::PIXEL_FORMAT),
                     label: "Pixel Format".to_string(),
+                    refreshable: false,
                     access_mode: ControlAccessMode::WriteOnly,
                     auto_state: None,
                     on_off_state: None,
@@ -354,6 +325,7 @@ impl IIDCCamera {
                 base: CameraControlBase{
                     id: CameraControlId(control_ids::PIXEL_FORMAT),
                     label: "Pixel Format".to_string(),
+                    refreshable: false,
                     access_mode: ControlAccessMode::None,
                     auto_state: None,
                     on_off_state: None,
@@ -459,7 +431,7 @@ impl Camera for IIDCCamera {
                 dc1394feature_t::DC1394_FEATURE_CAPTURE_SIZE => "Capture Size",
                 dc1394feature_t::DC1394_FEATURE_CAPTURE_QUALITY => "Capture Quality",
 
-                _ => { println!("[INFO] ignoring unsupported camera feature: {}", feature.id); continue; }
+                _ => { continue; }
             }.to_string();
 
             let supports_auto = feature.modes.modes.iter().take(feature.modes.num as usize).find(
@@ -529,6 +501,9 @@ impl Camera for IIDCCamera {
                 base: CameraControlBase{
                     id: CameraControlId(feature.id as u64),
                     label,
+                    refreshable:
+                        feature.id == dc1394feature_t::DC1394_FEATURE_SHUTTER ||
+                        feature.id == dc1394feature_t::DC1394_FEATURE_GAIN,
                     access_mode: if read_only {
                         ControlAccessMode::ReadOnly
                     } else if feature.readout_capable == dc1394bool_t::DC1394_TRUE {
@@ -573,7 +548,7 @@ impl Camera for IIDCCamera {
         }))
     }
 
-    fn set_number_control(&self, id: CameraControlId, value: f64) -> Result<Vec<Notification>, CameraError> {
+    fn set_number_control(&self, id: CameraControlId, value: f64) -> Result<(), CameraError> {
         let is_absolute_capable = self.features.feature.iter().find(
             |x| x.id == id.0 as u32
         ).unwrap().absolute_capable == dc1394bool_t::DC1394_TRUE;
@@ -585,30 +560,11 @@ impl Camera for IIDCCamera {
             checked_call!(dc1394_feature_set_value(cam, id.0 as u32, value as u32));
         }
 
-        let mut notifications = vec![];
-
-        let need_to_update_shutter_ctrl = id.0 == dc1394feature_t::DC1394_FEATURE_FRAME_RATE as u64;
-        let need_to_update_fps_ctrl = id.0 == dc1394feature_t::DC1394_FEATURE_SHUTTER as u64;
-
-        if need_to_update_shutter_ctrl && self.shutter_ctrl.is_some() {
-            notifications.push(Notification::ControlChanged(CameraControl::Number(
-                self.refresh_number_control(self.shutter_ctrl.as_ref().unwrap()).unwrap()
-            )));
-         }
-
-        if need_to_update_fps_ctrl && self.fps_ctrl.is_some() {
-            notifications.push(Notification::ControlChanged(CameraControl::Number(
-                self.refresh_number_control(self.fps_ctrl.as_ref().unwrap()).unwrap()
-            )));
-        }
-
-        Ok(notifications)
+        Ok(())
     }
 
-    fn set_list_control(&mut self, id: CameraControlId, option_idx: usize) -> Result<Vec<Notification>, CameraError> {
+    fn set_list_control(&mut self, id: CameraControlId, option_idx: usize) -> Result<(), CameraError> {
         let cam = self.camera_handle.handle;
-
-        let mut notifications = vec![];
 
         match id.0 {
             control_ids::VIDEO_MODE => {
@@ -621,10 +577,6 @@ impl Camera for IIDCCamera {
                 if !is_scalable(vid_mode) {
                     // set the last (probably the highest) framerate
                     checked_call!(dc1394_video_set_framerate(cam, *self.frame_rates[&vid_mode].last().unwrap()));
-
-                    notifications.push(Notification::ControlChanged(CameraControl::List(
-                        self.create_fixed_frame_rate_control_for_video_mode(vid_mode)?
-                    )));
                 } else {
                     let color_coding = get_color_coding_from_vid_mode(cam, vid_mode)?;
 
@@ -639,12 +591,7 @@ impl Camera for IIDCCamera {
                         fmt7.max_size_x as i32,
                         fmt7.max_size_y as i32
                     ));
-                    notifications.push(Notification::ControlRemoved(CameraControlId(control_ids::FIXED_FRAME_RATE)));
                 }
-
-                notifications.push(Notification::ControlChanged(CameraControl::List(
-                    self.create_pixel_format_control_for_video_mode(vid_mode)?
-                )));
 
                 checked_call!(dc1394_capture_setup(cam, NUM_DMA_BUFFERS, DC1394_CAPTURE_FLAGS_DEFAULT));
                 checked_call!(dc1394_video_set_transmission(cam, dc1394switch_t::DC1394_ON));
@@ -680,25 +627,7 @@ impl Camera for IIDCCamera {
             _ => panic!("Not implemented.")
         }
 
-        let need_to_update_shutter_and_fps =
-            id.0 == control_ids::VIDEO_MODE ||
-            id.0 == control_ids::FIXED_FRAME_RATE ||
-            id.0 == control_ids::PIXEL_FORMAT;
-
-        if need_to_update_shutter_and_fps {
-            if self.shutter_ctrl.is_some() {
-                notifications.push(Notification::ControlChanged(CameraControl::Number(
-                    self.refresh_number_control(self.shutter_ctrl.as_ref().unwrap()).unwrap()
-                )));
-            }
-            if self.fps_ctrl.is_some() {
-                notifications.push(Notification::ControlChanged(CameraControl::Number(
-                    self.refresh_number_control(self.fps_ctrl.as_ref().unwrap()).unwrap()
-                )));
-            }
-        }
-
-        Ok(notifications)
+        Ok(())
     }
 
     fn get_number_control(&self, id: CameraControlId) -> Result<f64, CameraError> {
@@ -722,9 +651,7 @@ impl Camera for IIDCCamera {
         panic!("Not implemented yet.")
     }
 
-    fn set_auto(&self, id: CameraControlId, state: bool) -> Result<Vec<Notification>, CameraError> {
-        let mut notifications = vec![];
-
+    fn set_auto(&self, id: CameraControlId, state: bool) -> Result<(), CameraError> {
         let new_mode = if state {
             dc1394feature_mode_t::DC1394_FEATURE_MODE_AUTO
         } else {
@@ -732,46 +659,14 @@ impl Camera for IIDCCamera {
         };
         checked_call!(dc1394_feature_set_mode(self.camera_handle.handle, id.0 as u32, new_mode));
 
-        let need_to_update_shutter_ctrl =
-            id.0 == control_ids::VIDEO_MODE ||
-            id.0 == control_ids::FIXED_FRAME_RATE ||
-            id.0 == control_ids::PIXEL_FORMAT ||
-            id.0 == dc1394feature_t::DC1394_FEATURE_FRAME_RATE as u64;
-
-        //TODO: do the same with frame rate control
-        if need_to_update_shutter_ctrl {
-            if self.shutter_ctrl.is_some() {
-                notifications.push(Notification::ControlChanged(CameraControl::Number(
-                    self.refresh_number_control(self.shutter_ctrl.as_ref().unwrap()).unwrap()
-                )));
-            }
-        }
-
-        Ok(notifications)
+        Ok(())
     }
 
-    fn set_on_off(&self, id: CameraControlId, state: bool) -> Result<Vec<Notification>, CameraError> {
-        let mut notifications = vec![];
-
+    fn set_on_off(&self, id: CameraControlId, state: bool) -> Result<(), CameraError> {
         let switch = if state { dc1394switch_t::DC1394_ON } else { dc1394switch_t::DC1394_OFF };
         checked_call!(dc1394_feature_set_power(self.camera_handle.handle, id.0 as u32, switch));
 
-        let need_to_update_shutter_ctrl =
-            id.0 == control_ids::VIDEO_MODE ||
-            id.0 == control_ids::FIXED_FRAME_RATE ||
-            id.0 == control_ids::PIXEL_FORMAT ||
-            id.0 == dc1394feature_t::DC1394_FEATURE_FRAME_RATE as u64;
-
-        //TODO: do the same with frame rate control
-        if need_to_update_shutter_ctrl {
-            if self.shutter_ctrl.is_some() {
-                notifications.push(Notification::ControlChanged(CameraControl::Number(
-                    self.refresh_number_control(self.shutter_ctrl.as_ref().unwrap()).unwrap()
-                )));
-            }
-        }
-
-        Ok(notifications)
+        Ok(())
     }
 
     fn unset_roi(&mut self) -> Result<(), CameraError> {
@@ -838,6 +733,14 @@ impl Camera for IIDCCamera {
         self.roi_offset.1 += y0;
 
         Ok(())
+    }
+
+    fn set_boolean_control(&mut self, _id: CameraControlId, _state: bool) -> Result<(), CameraError> {
+        unimplemented!()
+    }
+
+    fn get_boolean_control(&self, _id: CameraControlId) -> Result<bool, CameraError> {
+        unimplemented!()
     }
 }
 

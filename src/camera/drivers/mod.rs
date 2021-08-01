@@ -17,6 +17,8 @@ pub mod iidc;
 pub mod simulator;
 #[cfg(feature = "camera_v4l2")]
 pub mod v4l2;
+#[cfg(feature = "camera_spinnaker")]
+pub mod spinnaker;
 
 use crate::camera::Driver;
 use std::cell::RefCell;
@@ -38,6 +40,11 @@ pub fn init_drivers<'a>(disabled_drivers: &[&str]) -> Vec<Rc<RefCell<Box<dyn Dri
     #[cfg(feature = "camera_flycap2")]
     if !disabled_drivers.contains(&"camera_flycap2") {
         drivers.push(Rc::new(RefCell::new(Box::new(flycapture2::FlyCapture2Driver::new().unwrap()))));
+    }
+
+    #[cfg(feature = "camera_spinnaker")]
+    if !disabled_drivers.contains(&"camera_spinnaker") {
+        drivers.push(Rc::new(RefCell::new(Box::new(spinnaker::SpinnakerDriver::new().unwrap()))));
     }
 
     // add more drivers here

@@ -732,6 +732,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "libspinnaker-sys"
+version = "0.1.0"
+
+[[package]]
 name = "libudev"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1265,6 +1269,7 @@ dependencies = [
  "ioctl-rs",
  "libdc1394-sys",
  "libflycapture2-sys",
+ "libspinnaker-sys",
  "mmap",
  "num-traits",
  "os_info",

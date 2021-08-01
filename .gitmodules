@@ -1,3 +1,6 @@
 [submodule "ext/ga_image"]
 	path = ext/ga_image
 	url = https://github.com/GreatAttractor/ga_image.git
+[submodule "ext/libspinnaker-sys"]
+	path = ext/libspinnaker-sys
+	url = https://github.com/GreatAttractor/libspinnaker-sys.git

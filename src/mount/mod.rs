@@ -14,8 +14,6 @@
 mod ascom;
 mod skywatcher;
 
-use strum::IntoEnumIterator;
-
 #[derive(Copy, Clone)]
 pub enum Axis { Primary, Secondary }
 

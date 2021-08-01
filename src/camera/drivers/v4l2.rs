@@ -214,11 +214,11 @@ impl Camera for V4L2Camera {
         }
     }
 
-    fn set_number_control(&self, _id: CameraControlId, _value: f64) -> Result<Vec<Notification>, CameraError> {
+    fn set_number_control(&self, _id: CameraControlId, _value: f64) -> Result<(), CameraError> {
         panic!("Not implemented yet.");
     }
 
-    fn set_list_control(&mut self, _id: CameraControlId, _option_idx: usize) -> Result<Vec<Notification>, CameraError> {
+    fn set_list_control(&mut self, _id: CameraControlId, _option_idx: usize) -> Result<(), CameraError> {
         panic!("Not implemented yet.");
     }
 
@@ -230,11 +230,11 @@ impl Camera for V4L2Camera {
         panic!("Not implemented yet.");
     }
 
-    fn set_auto(&self, _id: CameraControlId, _state: bool) -> Result<Vec<Notification>, CameraError> {
+    fn set_auto(&self, _id: CameraControlId, _state: bool) -> Result<(), CameraError> {
         panic!("Not implemented yet.");
     }
 
-    fn set_on_off(&self, _id: CameraControlId, _state: bool) -> Result<Vec<Notification>, CameraError> {
+    fn set_on_off(&self, _id: CameraControlId, _state: bool) -> Result<(), CameraError> {
         panic!("Not implemented yet.");
     }
 
@@ -244,6 +244,14 @@ impl Camera for V4L2Camera {
 
     fn unset_roi(&mut self) -> Result<(), CameraError> {
         panic!("Not implemented yet.");
+    }
+
+    fn set_boolean_control(&mut self, _id: CameraControlId, _state: bool) -> Result<(), CameraError> {
+        unimplemented!()
+    }
+
+    fn get_boolean_control(&self, _id: CameraControlId) -> Result<bool, CameraError> {
+        unimplemented!()
     }
 }
 

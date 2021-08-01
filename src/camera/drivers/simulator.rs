@@ -102,6 +102,7 @@ impl Camera for SimCamera {
             base: CameraControlBase{
                 id: CameraControlId(control_ids::IMAGE_SHOWN),
                 label: "Image shown".to_string(),
+                refreshable: false,
                 access_mode: ControlAccessMode::WriteOnly,
                 on_off_state: None,
                 auto_state: None,
@@ -119,6 +120,7 @@ impl Camera for SimCamera {
             base: CameraControlBase{
                 id: CameraControlId(control_ids::DUMMY_1),
                 label: "Dummy Control 1".to_string(),
+                refreshable: false,
                 access_mode: ControlAccessMode::ReadWrite,
                 on_off_state: Some(true),
                 auto_state: Some(true),
@@ -135,6 +137,7 @@ impl Camera for SimCamera {
             base: CameraControlBase{
                 id: CameraControlId(control_ids::DUMMY_2),
                 label: "Dummy Control 2".to_string(),
+                refreshable: false,
                 access_mode: ControlAccessMode::WriteOnly,
                 on_off_state: None,
                 auto_state: None,
@@ -148,6 +151,7 @@ impl Camera for SimCamera {
             base: CameraControlBase{
                 id: CameraControlId(control_ids::FRAME_RATE),
                 label: "Frame Rate".to_string(),
+                refreshable: false,
                 access_mode: ControlAccessMode::WriteOnly,
                 on_off_state: None,
                 auto_state: None,
@@ -176,23 +180,23 @@ impl Camera for SimCamera {
         }))
     }
 
-    fn set_number_control(&self, id: CameraControlId, value: f64) -> Result<Vec<Notification>, CameraError> {
+    fn set_number_control(&self, id: CameraControlId, value: f64) -> Result<(), CameraError> {
         match id.0 {
             control_ids::DUMMY_1 => {
                 *self.dummy1.borrow_mut() = value;
-                Ok(vec![])
+                Ok(())
             },
 
             control_ids::FRAME_RATE => {
                 *self.frame_rate.write().unwrap() = value;
-                Ok(vec![])
+                Ok(())
             },
 
             _ => Err(SimulatorError::Internal).map_err(CameraError::SimulatorError)
         }
     }
 
-    fn set_list_control(&mut self, id: CameraControlId, option_idx: usize) -> Result<Vec<Notification>, CameraError> {
+    fn set_list_control(&mut self, id: CameraControlId, option_idx: usize) -> Result<(), CameraError> {
         match id.0 {
             control_ids::IMAGE_SHOWN => {
                 let new_value: ImageShown = ImageShown::iter().skip(option_idx).next().unwrap();
@@ -206,7 +210,7 @@ impl Camera for SimCamera {
             _ => ()
         }
 
-        Ok(vec![])
+        Ok(())
     }
 
     fn get_number_control(&self, id: CameraControlId) -> Result<f64, CameraError> {
@@ -220,12 +224,12 @@ impl Camera for SimCamera {
         unimplemented!();
     }
 
-    fn set_auto(&self, _id: CameraControlId, _state: bool) -> Result<Vec<Notification>, CameraError> {
-        Ok(vec![])
+    fn set_auto(&self, _id: CameraControlId, _state: bool) -> Result<(), CameraError> {
+        Ok(())
     }
 
-    fn set_on_off(&self, _id: CameraControlId, _state: bool) -> Result<Vec<Notification>, CameraError> {
-        Ok(vec![])
+    fn set_on_off(&self, _id: CameraControlId, _state: bool) -> Result<(), CameraError> {
+        Ok(())
     }
 
     fn set_roi(&mut self, _x0: u32, _y0: u32, _width: u32, _height: u32) -> Result<(), CameraError> {
@@ -236,6 +240,14 @@ impl Camera for SimCamera {
     fn unset_roi(&mut self) -> Result<(), CameraError> {
         println!("Simulator: ROI not implemented yet.");
         Ok(())
+    }
+
+    fn set_boolean_control(&mut self, _id: CameraControlId, _state: bool) -> Result<(), CameraError> {
+        unimplemented!()
+    }
+
+    fn get_boolean_control(&self, _id: CameraControlId) -> Result<bool, CameraError> {
+        unimplemented!()
     }
 }
 

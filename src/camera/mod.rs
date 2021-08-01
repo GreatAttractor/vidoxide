@@ -26,6 +26,8 @@ pub enum CameraError {
     V4L2Error(drivers::v4l2::V4L2Error),
     #[cfg(feature = "camera_flycap2")]
     FlyCapture2Error(drivers::flycapture2::FlyCapture2Error),
+    #[cfg(feature = "camera_spinnaker")]
+    SpinnakerError(drivers::spinnaker::SpinnakerError),
 }
 
 #[derive(Clone, Copy)]
@@ -44,14 +46,6 @@ impl CameraInfo {
     pub fn name(&self) -> &str { &self.name }
 }
 
-/// After changing a camera control, describes changes to other associated controls (e.g., changing a video mode may
-/// change the list of available frame rates).
-pub enum Notification {
-    ControlRemoved(CameraControlId),
-    /// In case the control has been removed, means: add this control anew.
-    ControlChanged(CameraControl)
-}
-
 pub trait Camera {
     fn id(&self) -> CameraId;
 
@@ -61,17 +55,21 @@ pub trait Camera {
 
     fn create_capturer(&self) -> Result<Box<dyn FrameCapturer + Send>, CameraError>;
 
-    fn set_number_control(&self, id: CameraControlId, value: f64) -> Result<Vec<Notification>, CameraError>;
+    fn set_number_control(&self, id: CameraControlId, value: f64) -> Result<(), CameraError>;
 
-    fn set_list_control(&mut self, id: CameraControlId, option_idx: usize) -> Result<Vec<Notification>, CameraError>;
+    fn set_list_control(&mut self, id: CameraControlId, option_idx: usize) -> Result<(), CameraError>;
 
-    fn set_auto(&self, id: CameraControlId, state: bool) -> Result<Vec<Notification>, CameraError>;
+    fn set_boolean_control(&mut self, id: CameraControlId, state: bool) -> Result<(), CameraError>;
 
-    fn set_on_off(&self, id: CameraControlId, state: bool) -> Result<Vec<Notification>, CameraError>;
+    fn set_auto(&self, id: CameraControlId, state: bool) -> Result<(), CameraError>;
+
+    fn set_on_off(&self, id: CameraControlId, state: bool) -> Result<(), CameraError>;
 
     fn get_number_control(&self, id: CameraControlId) -> Result<f64, CameraError>;
 
     fn get_list_control(&self, id: CameraControlId) -> Result<usize, CameraError>;
+
+    fn get_boolean_control(&self, id: CameraControlId) -> Result<bool, CameraError>;
 
     /// Returns temperature in degrees Celsius.
     fn temperature(&self) -> Option<f64>;
@@ -101,6 +99,10 @@ pub trait Driver {
     fn enumerate_cameras(&mut self) -> Result<Vec<CameraInfo>, CameraError>;
 
     /// Returns camera with capture enabled.
+    ///
+    /// # Parameters
+    ///
+    /// * `id` - One of IDs returned by the most recent call to `enumerate_cameras`.
     fn open_camera(&mut self, id: CameraId) -> Result<Box<dyn Camera>, CameraError>;
 }
 
@@ -108,7 +110,8 @@ pub trait Driver {
 #[derive(Debug)]
 pub enum CameraControl {
     Number(NumberControl),
-    List(ListControl)
+    List(ListControl),
+    Boolean(BooleanControl)
 }
 
 #[enum_dispatch(CameraControl)]
@@ -124,7 +127,7 @@ pub enum ControlAccessMode {
     ReadOnly,
     /// Can be written by `Camera::set_*_control`.
     WriteOnly,
-    /// No read/write possible; value is obtained via the initial `Camera::enumerate_controls` or a `Notification`.
+    /// No read/write possible; value is obtained via `Camera::enumerate_controls`.
     None
 }
 
@@ -135,6 +138,9 @@ pub struct CameraControlId(u64);
 pub struct CameraControlBase {
     pub id: CameraControlId,
     pub label: String,
+    /// If true, the value may change on its own (e.g., exposure time and/or gain if automatic exposure is enabled),
+    /// and should be periodically read and refreshed on-screen.
+    pub refreshable: bool,
     pub access_mode: ControlAccessMode,
     /// If `None`, "auto" mode is not supported.
     pub auto_state: Option<bool>,
@@ -175,11 +181,25 @@ pub struct ListControl {
 }
 
 impl ListControl {
-    pub fn base(&self) -> &CameraControlBase { &self.base }
     pub fn items(&self) -> &Vec<String> { &self.items }
     pub fn current_idx(&self) -> usize { self.current_idx }
 }
 
 impl BaseProperties for ListControl {
+    fn base(&self) -> &CameraControlBase { &self.base }
+}
+
+#[derive(Debug)]
+pub struct BooleanControl {
+    base: CameraControlBase,
+    state: bool
+}
+
+impl BooleanControl {
+    pub fn base(&self) -> &CameraControlBase { &self.base }
+    pub fn state(&self) -> bool { self.state }
+}
+
+impl BaseProperties for BooleanControl {
     fn base(&self) -> &CameraControlBase { &self.base }
 }

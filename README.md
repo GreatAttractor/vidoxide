@@ -10,6 +10,7 @@ Copyright (C) 2020-2021 Filip Szczerek (ga.software@yahoo.com)
 - 3\. Building
   - 3\.1\. Linux and alikes
   - 3\.2\. MS Windows
+- 4\. Troubleshooting
 
 ----------------------------------------
 
@@ -30,6 +31,7 @@ Demonstration video: *upcoming*
 **Supported camera APIs:**
   - IIDC (DC1394); multiplatform
   - FlyCapture2 (FLIR, formerly Point Grey); multiplatform
+  - Spinnaker (FLIR); multiplatform
   - Video4Linux2 – extremely basic support (only YUYV video modes, no camera controls); Linux only
 
 **Supported telescope mounts:**
@@ -55,9 +57,9 @@ $ git clone --recurse-submodules https://github.com/GreatAttractor/vidoxide.git
 
 Camera drivers to build are selected as features in invocation of `cargo`, e.g.:
 ```Bash
-$ cargo build --release --features "camera_iidc camera_v4l2 camera_flycap2"
+$ cargo build --release --features "camera_iidc camera_v4l2 camera_flycap2 camera_spinnaker"
 ```
-will build Vidoxide with the IIDC, V4L2 and FlyCapture 2 drivers.
+will build Vidoxide with the IIDC, V4L2, FlyCapture 2 and Spinnaker drivers.
 
 
 ### 3.1. Linux and alikes
@@ -78,7 +80,7 @@ Open the "MSYS2 MinGW 64-bit" shell (from the Start menu, or directly via `C:\ms
 $ pacman -S git base-devel mingw-w64-x86_64-toolchain mingw-w64-x86_64-gtk3
 ```
 
-From now on it is assumed FlyCapture2 camera API is to be used. Download and install the FlyCapture2 SDK, go to the location of FC2 binaries (by default, "C:\Program Files\Point Grey Research\FlyCapture2\bin64") and check if the `FlyCapture2_C.dll` file exists. If not, make a copy of the corresponding versioned file (e.g., `FlyCapture2_C_v100.dll`) in the same location and rename it `FlyCapture2_C.dll` (this is required due to the `libflycapture2-sys` crate's expectations).
+From now on it is assumed that FlyCapture2 and Spinnaker camera APIs are to be used. Download and install the FlyCapture2 & Spinnaker SDKs, go to the location of FC2 binaries (by default, "C:\Program Files\Point Grey Research\FlyCapture2\bin64") and check if the `FlyCapture2_C.dll` file exists. If not, make a copy of the corresponding versioned file (e.g., `FlyCapture2_C_v100.dll`) in the same location and rename it `FlyCapture2_C.dll` (this is required due to the `libflycapture2-sys` crate's expectations).
 
 Pull Rust binaries into `$PATH`:
 ```bash
@@ -86,13 +88,23 @@ $ export PATH=$PATH:/c/Users/MY_USERNAME/.cargo/bin
 ```
 then change to the Vidoxide source directory and build it:
 ```bash
-$ RUSTFLAGS="-L C:\Progra~1\PointG~1\FlyCapture2\bin64" cargo build --release --features "camera_flycap2 mount_ascom"
+$ SPINNAKER_LIBDIR="C:\Program Files\FLIR Systems\Spinnaker\bin64\vs2015" FLYCAP_LIBDIR="C:\Program Files\Point Grey Research\FlyCapture2\bin64" cargo build --release --features "camera_flycap2 camera_spinnaker mount_ascom"
 ```
-Initially it will take several minutes, as all dependencies have to be downloaded and built first. Note that the location to FC2 DLLs must be given in `RUSTFLAGS`, and spaces in directory names are not allowed (tilde-shortened directory names can be checked by running `dir /x` in a Windows shell). This shall be changed in the future to using a Cargo configure script.
+Initially it will take several minutes, as all dependencies have to be downloaded and built first. Note that the location of FC2 DLLs must be given in `FLYCAP_LIBDIR`, and of Spinnaker DLLs in `SPINNAKER_LIBDIR`.
 
 After a successful build, Vidoxide can be run locally with:
 ```bash
-$ PATH="$PATH:C:\Program Files\Point Grey Research\FlyCapture2\bin64" target/release/vidoxide.exe
+$ PATH="$PATH:C:\Program Files\Point Grey Research\FlyCapture2\bin64:C:\Program Files\FLIR Systems\Spinnaker\bin64\vs2015" target/release/vidoxide.exe
 ```
 
 *Upcoming: creating a binary distribution*
+
+
+## 4. Troubleshooting
+
+#### Unable to switch camera to a 16-bit video mode under Linux
+
+Increase the USB-FS buffer size, e.g. (run as root):
+```
+# echo 1000 > /sys/module/usbcore/parameters/usbfs_memory_mb
+```
