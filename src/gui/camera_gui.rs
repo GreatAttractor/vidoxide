@@ -594,10 +594,13 @@ fn on_camera_number_control_change(
     if requires_capture_pause {
         panic!("Not implemented yet.");
     } else {
-        program_data_rc.borrow_mut().camera.as_mut().unwrap().set_number_control(ctrl_id, value).unwrap();
+        let result = program_data_rc.borrow_mut().camera.as_mut().unwrap().set_number_control(ctrl_id, value);
+        if let Err(error) = result {
+            show_message(&format!("Failed to set camera control.\n{:?}", error), "Error", gtk::MessageType::Error);
+        } else {
+            schedule_refresh(program_data_rc);
+        }
     }
-
-    schedule_refresh(program_data_rc);
 }
 
 fn on_camera_boolean_control_change(
