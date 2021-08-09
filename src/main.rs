@@ -25,7 +25,7 @@ use camera::drivers;
 use config::Configuration;
 use crossbeam;
 use ga_image::point::{Point, Rect};
-use gio::prelude::*;
+use gtk::gio::prelude::*;
 use glib::clone;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -141,7 +141,7 @@ pub struct ProgramData {
 }
 
 impl ProgramData {
-    /// Requests the ending of the capture thread and performs a blocking wait for it.
+    /// Requests the ending of the capture thread dand performs a blocking wait for it.
     pub fn finish_capture_thread(&mut self) {
         if let Some(ref mut capture_thread_data) = self.capture_thread_data {
             let _ = capture_thread_data.sender.send(MainToCaptureThreadMsg::Finish);
@@ -164,6 +164,9 @@ fn main() {
         println!("Failed to initialize GTK.");
         return;
     }
+
+    let main_context = glib::MainContext::default();
+    let guard = main_context.acquire().unwrap();
 
     let (histogram_sender_worker, histogram_receiver_main) = glib::MainContext::channel(glib::PRIORITY_DEFAULT);
     let (histogram_sender_main, histogram_receiver_worker) = crossbeam::channel::bounded(1);
@@ -239,7 +242,7 @@ fn main() {
     let application = gtk::Application::new(
         None,
         Default::default(),
-    ).expect("Failed to initialize GTK application.");
+    );
 
     application.connect_activate(clone!(
         @weak program_data_rc
@@ -249,7 +252,7 @@ fn main() {
 
     init_timer(std::time::Duration::from_secs(1), &program_data_rc);
 
-    application.run(&[]);
+    application.run();
 
     program_data_rc.borrow_mut().finish_capture_thread();
     program_data_rc.borrow_mut().finish_recording_thread();

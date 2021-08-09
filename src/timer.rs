@@ -83,9 +83,8 @@ mod tests {
 
     #[test]
     fn test_suite() {
-        gtk::init().unwrap();
-
-        // Calling all tests from here, since we must not call `gtk::init()` more than once, nor call it in parallel.
+        let main_context = glib::MainContext::default();
+        let guard = main_context.acquire().unwrap();
 
         timer_no_update();
         timer_update_once();

@@ -12,6 +12,7 @@
 
 use crate::gui::{MOUSE_BUTTON_LEFT, MOUSE_BUTTON_RIGHT};
 use ga_image::point::Point;
+use gtk::{cairo, gdk};
 use glib::clone;
 use gtk::prelude::*;
 use std::cell::RefCell;
@@ -65,33 +66,33 @@ impl ImgView {
         );
 
         evt_box.connect_button_press_event(clone!(@weak state => @default-panic, move |_, evt| {
-            if evt.get_button() == MOUSE_BUTTON_LEFT {
+            if evt.button() == MOUSE_BUTTON_LEFT {
                 let image_pos = {
-                    let (pos_x, pos_y) = evt.get_position();
+                    let (pos_x, pos_y) = evt.position();
                     let zoom = state.borrow().zoom;
                     Point{ x: (pos_x / zoom) as i32, y: (pos_y / zoom) as i32 }
                 };
                 on_button_down(image_pos);
             }
 
-            if evt.get_button() == MOUSE_BUTTON_RIGHT {
-                state.borrow_mut().drag_start_pos = Some(evt.get_position());
+            if evt.button() == MOUSE_BUTTON_RIGHT {
+                state.borrow_mut().drag_start_pos = Some(evt.position());
             }
 
             gtk::Inhibit(true)
         }));
 
         evt_box.connect_button_release_event(clone!(@weak state => @default-panic, move |_, evt| {
-            if evt.get_button() == MOUSE_BUTTON_LEFT {
+            if evt.button() == MOUSE_BUTTON_LEFT {
                 let image_pos = {
-                    let (pos_x, pos_y) = evt.get_position();
+                    let (pos_x, pos_y) = evt.position();
                     let zoom = state.borrow().zoom;
                     Point{ x: (pos_x / zoom) as i32, y: (pos_y / zoom) as i32 }
                 };
                 on_button_up(image_pos);
             }
 
-            if evt.get_button() == MOUSE_BUTTON_RIGHT {
+            if evt.button() == MOUSE_BUTTON_RIGHT {
                 state.borrow_mut().drag_start_pos = None;
             }
 
@@ -100,7 +101,7 @@ impl ImgView {
 
         evt_box.connect_motion_notify_event(clone!(@weak state, @weak top_widget => @default-panic, move |_, evt| {
             let image_pos = {
-                let (pos_x, pos_y) = evt.get_position();
+                let (pos_x, pos_y) = evt.position();
                 let zoom = state.borrow().zoom;
                 Point{ x: (pos_x / zoom) as i32, y: (pos_y / zoom) as i32 }
             };
@@ -109,10 +110,14 @@ impl ImgView {
 
             let state = state.borrow();
             if let Some(pos) = &state.drag_start_pos {
-                let prev_horz = top_widget.get_hadjustment().unwrap().get_value();
-                let prev_vert = top_widget.get_vadjustment().unwrap().get_value();
-                top_widget.get_hadjustment().unwrap().set_value(prev_horz + pos.0 - evt.get_position().0);
-                top_widget.get_vadjustment().unwrap().set_value(prev_vert + pos.1 - evt.get_position().1);
+                let new_horz = top_widget.hadjustment();
+                let new_vert = top_widget.vadjustment();
+
+                new_horz.set_value(top_widget.hadjustment().value() + pos.0 - evt.position().0);
+                new_vert.set_value(top_widget.vadjustment().value() + pos.1 - evt.position().1);
+
+                top_widget.set_hadjustment(Some(&new_horz));
+                top_widget.set_vadjustment(Some(&new_vert));
             }
 
             gtk::Inhibit(true)
@@ -148,8 +153,8 @@ impl ImgView {
                     //TODO: redraw only the invalidated areas (use `copy_clip_rectangle_list`)
                     ctx.rectangle(
                         0.0, 0.0,
-                        surface.get_width() as f64 * state.zoom,
-                        surface.get_height() as f64 * state.zoom
+                        surface.width() as f64 * state.zoom,
+                        surface.height() as f64 * state.zoom
                     );
                     ctx.fill();
 
@@ -176,8 +181,8 @@ impl ImgView {
         state.zoom = zoom;
         if let Some(image) = &state.image {
             drawing_area.set_size_request(
-                (image.get_width() as f64 * zoom) as i32,
-                (image.get_height() as f64 * zoom) as i32
+                (image.width() as f64 * zoom) as i32,
+                (image.height() as f64 * zoom) as i32
             );
         }
     }
@@ -197,8 +202,8 @@ impl ImgView {
     pub fn set_image(&self, image: cairo::ImageSurface) {
         let zoom = self.state.borrow().zoom;
         self.drawing_area.set_size_request(
-            (image.get_width() as f64 * zoom) as i32,
-            (image.get_height() as f64 * zoom) as i32
+            (image.width() as f64 * zoom) as i32,
+            (image.height() as f64 * zoom) as i32
         );
         self.state.borrow_mut().image = Some(image);
         self.drawing_area.queue_draw();
@@ -212,15 +217,15 @@ impl ImgView {
 
     pub fn image_size(&self) -> Option<(i32, i32)> {
         match &self.state.borrow().image {
-            Some(image) => Some((image.get_width(), image.get_height())),
+            Some(image) => Some((image.width(), image.height())),
             None => None
         }
     }
 
     pub fn scroll_pos(&self) -> Point {
         Point{
-            x: self.top_widget.get_hadjustment().unwrap().get_value() as i32,
-            y: self.top_widget.get_vadjustment().unwrap().get_value() as i32
+            x: self.top_widget.hadjustment().value() as i32,
+            y: self.top_widget.vadjustment().value() as i32
         }
      }
 
@@ -231,36 +236,41 @@ impl ImgView {
          drawing_area: &gtk::DrawingArea
      ) {
         let prev_zoom = state.borrow().zoom;
-        let new_zoom = match evt.get_direction() {
+        let new_zoom = match evt.direction() {
             gdk::ScrollDirection::Up => (state.borrow().zoom * super::ZOOM_CHANGE_FACTOR).min(super::MAX_ZOOM),
             gdk::ScrollDirection::Down => (state.borrow().zoom / super::ZOOM_CHANGE_FACTOR).max(super::MIN_ZOOM),
             _ => state.borrow().zoom
         };
 
-        let prev_scroll_pos_x = scroll_wnd.get_hadjustment().unwrap().get_value();
-        let prev_scroll_pos_y = scroll_wnd.get_vadjustment().unwrap().get_value();
+        let prev_scroll_pos_x = scroll_wnd.hadjustment().value();
+        let prev_scroll_pos_y = scroll_wnd.vadjustment().value();
 
-        let delta_x = evt.get_position().0 - prev_scroll_pos_x;
-        let delta_y = evt.get_position().1 - prev_scroll_pos_y;
+        let delta_x = evt.position().0 - prev_scroll_pos_x;
+        let delta_y = evt.position().1 - prev_scroll_pos_y;
 
         ImgView::set_zoom_priv(&mut state.borrow_mut(), &drawing_area, new_zoom);
 
         // The above call (which performs `set_size_request` on `drawing_area`) does not resize
         // the `scroll_wnd`'s `Adjustment`s yet; since we already need to set their post-resize scroll
         // positions, we reinitialize them ourselves.
-        scroll_wnd.get_hadjustment().unwrap().set_upper(
-            state.borrow().image.as_ref().unwrap().get_width() as f64 * new_zoom
+        let adj = scroll_wnd.hadjustment();
+        adj.set_upper(
+            state.borrow().image.as_ref().unwrap().width() as f64 * new_zoom
         );
-        scroll_wnd.get_vadjustment().unwrap().set_upper(
-            state.borrow().image.as_ref().unwrap().get_height() as f64 * new_zoom
-        );
-
-        scroll_wnd.get_hadjustment().unwrap().set_value(
+        adj.set_value(
             new_zoom / prev_zoom * (prev_scroll_pos_x + delta_x) - delta_x
         );
-        scroll_wnd.get_vadjustment().unwrap().set_value(
+        scroll_wnd.set_hadjustment(Some(&adj));
+
+        let adj = scroll_wnd.vadjustment();
+        adj.set_upper(
+            state.borrow().image.as_ref().unwrap().height() as f64 * new_zoom
+        );
+        adj.set_value(
             new_zoom / prev_zoom * (prev_scroll_pos_y + delta_y) - delta_y
         );
+        scroll_wnd.set_vadjustment(Some(&adj));
+
         drawing_area.queue_draw();
      }
 }

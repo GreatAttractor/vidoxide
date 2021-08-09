@@ -85,11 +85,11 @@ impl RecWidgets {
     }
 
     pub fn dest_dir(&self) -> String {
-        self.dest_dir.get_filename().unwrap().as_path().to_str().unwrap().to_string()
+        self.dest_dir.filename().unwrap().as_path().to_str().unwrap().to_string()
     }
 
     pub fn name_prefix(&self) -> String {
-        self.name_prefix.get_text().unwrap().as_str().to_string()
+        self.name_prefix.text().as_str().to_string()
     }
 
     /// Returns (sequence count, sequence interval).
@@ -207,21 +207,21 @@ fn save_camera_controls_state(rec_dest_path: &str, program_data: &ProgramData) {
         write!(file, "{}: ", (ctrl_widgets.1).0.name).unwrap();
 
         if let Some(auto) = &(ctrl_widgets.1).0.auto {
-            if auto.get_active() { write!(file, "auto, ").unwrap(); }
+            if auto.is_active() { write!(file, "auto, ").unwrap(); }
         }
 
         if let Some(on_off) = &(ctrl_widgets.1).0.on_off {
-            write!(file, "{}, ", if on_off.get_active() { "on" } else { "off" }).unwrap();
+            write!(file, "{}, ", if on_off.is_active() { "on" } else { "off" }).unwrap();
         }
 
         match &(ctrl_widgets.1).1 {
             ControlWidgetBundle::ListControl(list_ctrl) =>
-                write!(file, "{}", list_ctrl.combo.get_active_text().unwrap()).unwrap(),
+                write!(file, "{}", list_ctrl.combo.active_text().unwrap()).unwrap(),
 
-            ControlWidgetBundle::NumberControl(num_ctrl) => write!(file, "{:.6}", num_ctrl.slider.get_value()).unwrap(),
+            ControlWidgetBundle::NumberControl(num_ctrl) => write!(file, "{:.6}", num_ctrl.slider.value()).unwrap(),
 
             ControlWidgetBundle::BooleanControl(bool_ctrl) =>
-                write!(file, "{}", if bool_ctrl.state_checkbox.get_active() { "true" } else { "false" }).unwrap()
+                write!(file, "{}", if bool_ctrl.state_checkbox.is_active() { "true" } else { "false" }).unwrap()
         }
 
         write!(file, "\n").unwrap();
@@ -243,7 +243,7 @@ pub fn on_stop_recording(program_data_rc: &Rc<RefCell<ProgramData>>) {
 
 /// Returns (top-level box, RecWidgets).
 pub fn create_recording_panel(program_data_rc: &Rc<RefCell<ProgramData>>) -> (gtk::Box, RecWidgets) {
-    let btn_record = gtk::Button::new_with_label("⏺");
+    let btn_record = gtk::Button::with_label("⏺");
     btn_record.set_tooltip_text(Some("Start recording"));
     btn_record.set_sensitive(false);
     btn_record.connect_clicked(clone!(@weak program_data_rc => @default-panic, move |_| {
@@ -251,7 +251,7 @@ pub fn create_recording_panel(program_data_rc: &Rc<RefCell<ProgramData>>) -> (gt
         on_start_recording(&program_data_rc)
     }));
 
-    let btn_stop = gtk::Button::new_with_label("⏹");
+    let btn_stop = gtk::Button::with_label("⏹");
     btn_stop.set_tooltip_text(Some("Stop recording"));
     btn_stop.set_sensitive(false);
     btn_stop.connect_clicked(clone!(@weak program_data_rc => @default-panic, move |_| { on_stop_recording(&program_data_rc) }));
@@ -296,14 +296,14 @@ pub fn create_recording_panel(program_data_rc: &Rc<RefCell<ProgramData>>) -> (gt
     let frame_contents = gtk::Box::new(gtk::Orientation::Vertical, 0);
 
     let box_limit_duration = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-    let rb_limit_duration = gtk::RadioButton::new_with_label("duration:");
+    let rb_limit_duration = gtk::RadioButton::with_label("duration:");
     box_limit_duration.pack_start(&rb_limit_duration, false, false, PADDING);
     let duration_widget = TimeWidget::new_with_value(0, 0, 10);
     box_limit_duration.pack_start(duration_widget.get(), false, false, PADDING);
     frame_contents.pack_start(&box_limit_duration, false, false, PADDING);
 
     let box_limit_frames = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-    let rb_limit_frames = gtk::RadioButton::new_with_label_from_widget(&rb_limit_duration, "frames:");
+    let rb_limit_frames = gtk::RadioButton::with_label_from_widget(&rb_limit_duration, "frames:");
     box_limit_frames.pack_start(&rb_limit_frames, false, false, PADDING);
     let sb_limit_frames = gtk::SpinButton::new(
         Some(&gtk::Adjustment::new(100.0, 1.0, 1_000_000.0, 1.0, 10.0, 0.0)), 1.1, 0
@@ -313,7 +313,7 @@ pub fn create_recording_panel(program_data_rc: &Rc<RefCell<ProgramData>>) -> (gt
 
     // put it in a box to match margins of the previous radio buttons
     let box_limit_forever = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-    let rb_limit_forever = gtk::RadioButton::new_with_label_from_widget(&rb_limit_duration, "record forever");
+    let rb_limit_forever = gtk::RadioButton::with_label_from_widget(&rb_limit_duration, "record forever");
     box_limit_forever.pack_start(&rb_limit_forever, false, false, PADDING);
     frame_contents.pack_start(&box_limit_forever, false, false, PADDING);
 
@@ -346,21 +346,21 @@ pub fn create_recording_panel(program_data_rc: &Rc<RefCell<ProgramData>>) -> (gt
         others,
         output_fmt_getter: Box::new(
             move || {
-                OutputFormat::iter().skip(output_formats.get_active().unwrap() as usize).next().unwrap()
+                OutputFormat::iter().skip(output_formats.active().unwrap() as usize).next().unwrap()
             }
         ),
         rec_limit_getter: Box::new(
             move || {
-                if rb_limit_duration.get_active() {
+                if rb_limit_duration.is_active() {
                     Limit::Duration(duration_widget.duration())
-                } else if rb_limit_frames.get_active() {
-                    Limit::FrameCount(sb_limit_frames.get_value() as usize)
+                } else if rb_limit_frames.is_active() {
+                    Limit::FrameCount(sb_limit_frames.value() as usize)
                 } else {
                     Limit::Forever
                 }
             }
         ),
-        sequence_getter: Box::new(move || (btn_rec_count.get_value() as usize, sequence_interval.duration())),
+        sequence_getter: Box::new(move || (btn_rec_count.value() as usize, sequence_interval.duration())),
         sequence_idx: 0,
         sequence_next_start: None,
         sequence_timer: OneShotTimer::new()

@@ -45,8 +45,8 @@ impl ConnectionCreator for SWConnectionCreator {
     fn dialog_tab(&self) -> &gtk::Box { &self.dialog_tab }
 
     fn create(&self, configuration: &crate::config::Configuration) -> MountConnection {
-        configuration.set_skywatcher_last_device(&self.entry.get_text().unwrap());
-        MountConnection::SkyWatcherSerial(self.entry.get_text().unwrap().as_str().to_string())
+        configuration.set_skywatcher_last_device(&self.entry.text());
+        MountConnection::SkyWatcherSerial(self.entry.text().as_str().to_string())
     }
 
     fn label(&self) -> &'static str { "Sky-Watcher serial connection" }

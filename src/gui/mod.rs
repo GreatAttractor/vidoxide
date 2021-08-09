@@ -18,7 +18,6 @@ mod info_overlay;
 mod mount_gui;
 mod rec_gui;
 
-use cairo;
 use camera_gui::{
     CommonControlWidgets,
     ControlWidgetBundle,
@@ -36,7 +35,8 @@ use crate::workers::histogram::{Histogram, HistogramRequest, MainToHistogramThre
 use crate::workers::recording::RecordingToMainThreadMsg;
 use ga_image;
 use ga_image::point::{Point, Rect};
-use glib::{clone};
+use glib::clone;
+use gtk::cairo;
 use gtk::prelude::*;
 use histogram_view::HistogramView;
 use img_view::ImgView;
@@ -123,7 +123,7 @@ impl DialogDestroyer {
 
 impl Drop for DialogDestroyer {
     fn drop(&mut self) {
-        self.dialog.destroy();
+        self.dialog.close();
     }
 }
 
@@ -299,7 +299,7 @@ pub fn init_main_window(app: &gtk::Application, program_data_rc: &Rc<RefCell<Pro
     if let Some(paned_pos) = program_data_rc.borrow().config.camera_controls_paned_pos() {
         cam_controls_and_histogram.set_position(paned_pos);
     } else {
-        cam_controls_and_histogram.set_position(window.get_size().1 / 2);
+        cam_controls_and_histogram.set_position(window.size().1 / 2);
     }
 
     let controls_notebook = gtk::Notebook::new();
@@ -324,7 +324,7 @@ pub fn init_main_window(app: &gtk::Application, program_data_rc: &Rc<RefCell<Pro
     if let Some(paned_pos) = program_data_rc.borrow().config.main_window_paned_pos() {
         window_contents.set_position(paned_pos);
     } else {
-        window_contents.set_position(window.get_size().0 - 400);
+        window_contents.set_position(window.size().0 - 400);
     }
 
     let (status_bar_frame, status_bar) = create_status_bar();
@@ -435,7 +435,7 @@ fn create_toolbar(
         .active(true)
         .build();
     btn_toggle_info_overlay.connect_toggled(clone!(@weak program_data_rc => @default-panic, move |btn| {
-        program_data_rc.borrow_mut().gui.as_mut().unwrap().info_overlay.enabled = btn.get_active();
+        program_data_rc.borrow_mut().gui.as_mut().unwrap().info_overlay.enabled = btn.is_active();
         program_data_rc.borrow_mut().gui.as_ref().unwrap().preview_area.refresh();
     }));
     toolbar.insert(&btn_toggle_info_overlay, -1);
@@ -447,7 +447,7 @@ fn create_toolbar(
         .tooltip_text("Mouse mode: none")
         .build();
     btn_mouse_none.connect_toggled(clone!(@weak program_data_rc => @default-panic, move |btn| {
-        if btn.get_active() { program_data_rc.borrow_mut().gui.as_mut().unwrap().mouse_mode = MouseMode::None; }
+        if btn.is_active() { program_data_rc.borrow_mut().gui.as_mut().unwrap().mouse_mode = MouseMode::None; }
     }));
     toolbar.insert(&btn_mouse_none, -1);
 
@@ -457,7 +457,7 @@ fn create_toolbar(
         .build();
     btn_mouse_roi.join_group(Some(&btn_mouse_none));
     btn_mouse_roi.connect_toggled(clone!(@weak program_data_rc => @default-panic, move |btn| {
-        if btn.get_active() { program_data_rc.borrow_mut().gui.as_mut().unwrap().mouse_mode = MouseMode::SelectROI; }
+        if btn.is_active() { program_data_rc.borrow_mut().gui.as_mut().unwrap().mouse_mode = MouseMode::SelectROI; }
     }));
     toolbar.insert(&btn_mouse_roi, -1);
 
@@ -467,7 +467,7 @@ fn create_toolbar(
         .build();
     btn_mouse_centroid.join_group(Some(&btn_mouse_none));
     btn_mouse_centroid.connect_toggled(clone!(@weak program_data_rc => @default-panic, move |btn| {
-        if btn.get_active() { program_data_rc.borrow_mut().gui.as_mut().unwrap().mouse_mode = MouseMode::SelectCentroidArea; }
+        if btn.is_active() { program_data_rc.borrow_mut().gui.as_mut().unwrap().mouse_mode = MouseMode::SelectCentroidArea; }
     }));
     toolbar.insert(&btn_mouse_centroid, -1);
 
@@ -477,7 +477,7 @@ fn create_toolbar(
         .build();
     btn_mouse_anchor.join_group(Some(&btn_mouse_none));
     btn_mouse_anchor.connect_toggled(clone!(@weak program_data_rc => @default-panic, move |btn| {
-        if btn.get_active() { program_data_rc.borrow_mut().gui.as_mut().unwrap().mouse_mode = MouseMode::PlaceTrackingAnchor; }
+        if btn.is_active() { program_data_rc.borrow_mut().gui.as_mut().unwrap().mouse_mode = MouseMode::PlaceTrackingAnchor; }
     }));
     toolbar.insert(&btn_mouse_anchor, -1);
 
@@ -487,7 +487,7 @@ fn create_toolbar(
         .build();
     btn_mouse_crop.join_group(Some(&btn_mouse_none));
     btn_mouse_crop.connect_toggled(clone!(@weak program_data_rc => @default-panic, move |btn| {
-        if btn.get_active() { program_data_rc.borrow_mut().gui.as_mut().unwrap().mouse_mode = MouseMode::SelectCropArea; }
+        if btn.is_active() { program_data_rc.borrow_mut().gui.as_mut().unwrap().mouse_mode = MouseMode::SelectCropArea; }
     }));
     toolbar.insert(&btn_mouse_crop, -1);
 
@@ -497,7 +497,7 @@ fn create_toolbar(
         .build();
     btn_mouse_histogram.join_group(Some(&btn_mouse_none));
     btn_mouse_histogram.connect_toggled(clone!(@weak program_data_rc => @default-panic, move |btn| {
-        if btn.get_active() { program_data_rc.borrow_mut().gui.as_mut().unwrap().mouse_mode = MouseMode::SelectHistogramArea; }
+        if btn.is_active() { program_data_rc.borrow_mut().gui.as_mut().unwrap().mouse_mode = MouseMode::SelectHistogramArea; }
     }));
     toolbar.insert(&btn_mouse_histogram, -1);
 
@@ -536,13 +536,13 @@ fn on_main_window_delete(
     cam_controls_and_histogram: &gtk::Paned,
     program_data_rc: &Rc<RefCell<ProgramData>>
 ) {
-    let (x, y) = wnd.get_position();
-    let (width, height) = wnd.get_size();
+    let (x, y) = wnd.position();
+    let (width, height) = wnd.size();
     let config = &program_data_rc.borrow().config;
     config.set_main_window_pos(gtk::Rectangle{ x, y, width, height });
     config.set_main_window_maximized(wnd.is_maximized());
-    config.set_main_window_paned_pos(main_wnd_contents.get_position());
-    config.set_camera_controls_paned_pos(cam_controls_and_histogram.get_position());
+    config.set_main_window_paned_pos(main_wnd_contents.position());
+    config.set_camera_controls_paned_pos(cam_controls_and_histogram.position());
     config.set_recording_dest_path(&program_data_rc.borrow().gui.as_ref().unwrap().rec_widgets.dest_dir());
 }
 
@@ -551,9 +551,9 @@ fn on_main_window_delete(
 pub fn show_message(msg: &str, title: &str, msg_type: gtk::MessageType) {
     let dialog = gtk::MessageDialog::new::<gtk::Window>(None, gtk::DialogFlags::MODAL, msg_type, gtk::ButtonsType::Close, msg);
     dialog.set_title(title);
-    dialog.set_property_use_markup(true);
+    dialog.set_use_markup(true);
     dialog.run();
-    dialog.destroy();
+    dialog.close();
 }
 
 /// Returns (menu bar, camera menu, camera menu items, camera disconnect menu item).
@@ -564,12 +564,12 @@ fn init_menu(
     let accel_group = gtk::AccelGroup::new();
     window.add_accel_group(&accel_group);
 
-    let about_item = gtk::MenuItem::new_with_label("About");
+    let about_item = gtk::MenuItem::with_label("About");
     about_item.connect_activate(move |_| show_about_dialog());
 
-    let quit_item = gtk::MenuItem::new_with_label("Quit");
+    let quit_item = gtk::MenuItem::with_label("Quit");
     quit_item.connect_activate(clone!(@weak window => @default-panic, move |_| {
-        window.destroy();
+        window.close();
     }));
     // `Primary` is `Ctrl` on Windows and Linux, and `command` on macOS
     // It isn't available directly through `gdk::ModifierType`, since it has
@@ -581,22 +581,22 @@ fn init_menu(
     file_menu.append(&about_item);
     file_menu.append(&quit_item);
 
-    let file_menu_item = gtk::MenuItem::new_with_label("File");
+    let file_menu_item = gtk::MenuItem::with_label("File");
     file_menu_item.set_submenu(Some(&file_menu));
 
     let menu_bar = gtk::MenuBar::new();
     menu_bar.append(&file_menu_item);
 
-    let camera_menu_item = gtk::MenuItem::new_with_label("Camera");
+    let camera_menu_item = gtk::MenuItem::with_label("Camera");
     let (camera_menu, camera_menu_items, camer_disconnect_menu_item) = camera_gui::init_camera_menu(program_data);
     camera_menu_item.set_submenu(Some(&camera_menu));
     menu_bar.append(&camera_menu_item);
 
-    let mount_menu_item = gtk::MenuItem::new_with_label("Mount");
+    let mount_menu_item = gtk::MenuItem::with_label("Mount");
     mount_menu_item.set_submenu(Some(&mount_gui::init_mount_menu(program_data, window)));
     menu_bar.append(&mount_menu_item);
 
-    let preview_menu_item = gtk::MenuItem::new_with_label("Preview");
+    let preview_menu_item = gtk::MenuItem::with_label("Preview");
     preview_menu_item.set_submenu(Some(&init_preview_menu(program_data)));
     menu_bar.append(&preview_menu_item);
 
@@ -606,19 +606,19 @@ fn init_menu(
 fn init_preview_menu(program_data_rc: &Rc<RefCell<ProgramData>>) -> gtk::Menu {
     let menu = gtk::Menu::new();
 
-    let strech_histogram = gtk::CheckMenuItem::new_with_label("Stretch histogram");
+    let strech_histogram = gtk::CheckMenuItem::with_label("Stretch histogram");
     strech_histogram.connect_activate(clone!(@weak program_data_rc => @default-panic, move |_| {
         program_data_rc.borrow_mut().stretch_histogram ^= true;
     }));
     menu.append(&strech_histogram);
 
-    let demosaic_raw_color = gtk::CheckMenuItem::new_with_label("Demosaic raw color");
+    let demosaic_raw_color = gtk::CheckMenuItem::with_label("Demosaic raw color");
     demosaic_raw_color.connect_activate(clone!(@weak program_data_rc => @default-panic, move |_| {
         program_data_rc.borrow_mut().demosaic_preview ^= true;
     }));
     menu.append(&demosaic_raw_color);
 
-    let disable_histogram_area = gtk::MenuItem::new_with_label("Disable histogram area");
+    let disable_histogram_area = gtk::MenuItem::with_label("Disable histogram area");
     disable_histogram_area.connect_activate(clone!(@weak program_data_rc => @default-panic, move |_| {
         program_data_rc.borrow_mut().histogram_area = None;
     }));
@@ -992,7 +992,7 @@ pub fn on_histogram_thread_message(
 
 /// Returns new zoom factor chosen by user or `None` if the dialog was canceled or there was an invalid input.
 fn show_custom_zoom_dialog(parent: &gtk::ApplicationWindow, old_value: f64) -> Option<f64> {
-    let dialog = gtk::Dialog::new_with_buttons(
+    let dialog = gtk::Dialog::with_buttons(
         Some("Custom zoom factor (%)"),
         Some(parent),
         gtk::DialogFlags::MODAL,
@@ -1008,11 +1008,11 @@ fn show_custom_zoom_dialog(parent: &gtk::ApplicationWindow, old_value: f64) -> O
         .activates_default(true)
         .build();
 
-    dialog.get_content_area().pack_start(&entry, false, true, PADDING);
+    dialog.content_area().pack_start(&entry, false, true, PADDING);
     dialog.show_all();
 
     if dialog.run() == gtk::ResponseType::Accept {
-        if let Ok(value_percent) = entry.get_text().unwrap().parse::<f64>() {
+        if let Ok(value_percent) = entry.text().parse::<f64>() {
             if value_percent >= 100.0 * MIN_ZOOM && value_percent <= 100.0 * MAX_ZOOM {
                 Some(value_percent / 100.0)
             } else {
@@ -1024,7 +1024,7 @@ fn show_custom_zoom_dialog(parent: &gtk::ApplicationWindow, old_value: f64) -> O
                 None
             }
         } else {
-            show_message(&format!("Invalid value: {}", entry.get_text().unwrap()), "Error", gtk::MessageType::Error);
+            show_message(&format!("Invalid value: {}", entry.text()), "Error", gtk::MessageType::Error);
             None
         }
     } else {

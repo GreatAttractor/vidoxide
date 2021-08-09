@@ -70,7 +70,7 @@ impl Configuration {
     }
 
     pub fn main_window_maximized(&self) -> Option<bool> {
-        self.key_file.get_boolean(groups::UI, keys::MAIN_WINDOW_MAXIMIZED).ok()
+        self.key_file.boolean(groups::UI, keys::MAIN_WINDOW_MAXIMIZED).ok()
     }
 
     pub fn set_main_window_maximized(&self, value: bool) {
@@ -78,7 +78,7 @@ impl Configuration {
     }
 
     pub fn main_window_paned_pos(&self) -> Option<i32> {
-        self.key_file.get_integer(groups::UI, keys::MAIN_WINDOW_PANED_POS).ok()
+        self.key_file.integer(groups::UI, keys::MAIN_WINDOW_PANED_POS).ok()
     }
 
     pub fn set_main_window_paned_pos(&self, value: i32) {
@@ -86,7 +86,7 @@ impl Configuration {
     }
 
     pub fn camera_controls_paned_pos(&self) -> Option<i32> {
-        self.key_file.get_integer(groups::UI, keys::CAMERA_CONTROLS_PANED_POS).ok()
+        self.key_file.integer(groups::UI, keys::CAMERA_CONTROLS_PANED_POS).ok()
     }
 
     pub fn set_camera_controls_paned_pos(&self, value: i32) {
@@ -94,7 +94,7 @@ impl Configuration {
     }
 
     pub fn info_overlay_font_size(&self) -> Option<f64> {
-        self.key_file.get_double(groups::UI, keys::INFO_OVERLAY_FONT_SIZE).ok()
+        self.key_file.double(groups::UI, keys::INFO_OVERLAY_FONT_SIZE).ok()
     }
 
     pub fn set_info_overlay_font_size(&self, value: f64)  {
@@ -102,7 +102,7 @@ impl Configuration {
     }
 
     pub fn ascom_last_driver(&self) -> Option<String> {
-        self.key_file.get_string(groups::MOUNT, keys::ASCOM_LAST_DRIVER).ok().map(|s| s.to_string())
+        self.key_file.string(groups::MOUNT, keys::ASCOM_LAST_DRIVER).ok().map(|s| s.to_string())
     }
 
     pub fn set_ascom_last_driver(&self, value: &str) {
@@ -110,7 +110,7 @@ impl Configuration {
     }
 
     pub fn skywatcher_last_device(&self) -> Option<String> {
-        self.key_file.get_string(groups::MOUNT, keys::SW_LAST_DEVICE).ok().map(|s| s.to_string())
+        self.key_file.string(groups::MOUNT, keys::SW_LAST_DEVICE).ok().map(|s| s.to_string())
     }
 
     pub fn set_skywatcher_last_device(&self, value: &str) {
@@ -122,7 +122,7 @@ impl Configuration {
     }
 
     fn read_rect(&self, group: &str, key: &str) -> Option<gtk::Rectangle> {
-        let rect_str = match self.key_file.get_string(group, key) {
+        let rect_str = match self.key_file.string(group, key) {
             Ok(s) => s,
             Err(_) => return None
         };
@@ -148,7 +148,7 @@ impl Configuration {
     }
 
     pub fn recording_dest_path(&self) -> Option<String> {
-        self.key_file.get_string(groups::MAIN, keys::RECORDING_DEST_PATH).ok().map(|s| s.to_string())
+        self.key_file.string(groups::MAIN, keys::RECORDING_DEST_PATH).ok().map(|s| s.to_string())
     }
 
     pub fn set_recording_dest_path(&self, value: &str) {
@@ -156,7 +156,7 @@ impl Configuration {
     }
 
     pub fn toolbar_icon_size(&self) -> Option<i32> {
-        self.key_file.get_integer(groups::UI, keys::TOOLBAR_ICON_SIZE).ok()
+        self.key_file.integer(groups::UI, keys::TOOLBAR_ICON_SIZE).ok()
     }
 
     pub fn set_toolbar_icon_size(&self, value: i32) {
@@ -164,14 +164,14 @@ impl Configuration {
     }
 
     pub fn disabled_drivers(&self) -> String {
-        self.key_file.get_string(groups::MAIN, keys::DISABLED_DRIVERS)
+        self.key_file.string(groups::MAIN, keys::DISABLED_DRIVERS)
             .ok()
             .map(|s| s.to_string())
             .unwrap_or("".to_string())
     }
 
     pub fn preview_fps_limit(&self) -> Option<i32> {
-        match self.key_file.get_integer(groups::MAIN, keys::PREVIEW_FPS_LIMIT) {
+        match self.key_file.integer(groups::MAIN, keys::PREVIEW_FPS_LIMIT) {
             Ok(value) => if value > 0 {
                 Some(value)
             } else {

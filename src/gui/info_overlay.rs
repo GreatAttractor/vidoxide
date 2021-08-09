@@ -12,6 +12,7 @@
 
 use crate::{MountCalibration, ProgramData, TrackingMode};
 use ga_image::point::{Point, Rect};
+use gtk::cairo;
 
 /// Offset (in pixels) of labels from the associated rectangle in the informational overlay.
 const INFO_OVERLAY_LABEL_OFFSET: i32 = 5;

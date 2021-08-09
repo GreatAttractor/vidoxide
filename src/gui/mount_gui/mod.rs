@@ -98,12 +98,12 @@ impl MountWidgets {
 
     /// Returns slewing speed (multiply of sidereal rate) selected in combo box.
     fn slew_speed(&self) -> f64 {
-        SLEWING_SPEEDS[self.slew_speed.get_active().unwrap() as usize].sidereal_multiply
+        SLEWING_SPEEDS[self.slew_speed.active().unwrap() as usize].sidereal_multiply
     }
 
     /// Returns guiding speed (multiply of sidereal rate) selected in combo box.
     pub fn guide_speed(&self) -> f64 {
-        GUIDING_SPEEDS[self.guide_speed.get_active().unwrap() as usize].sidereal_multiply
+        GUIDING_SPEEDS[self.guide_speed.active().unwrap() as usize].sidereal_multiply
     }
 
     pub fn disable_guide(&self) {
@@ -253,7 +253,7 @@ pub fn create_mount_box(program_data_rc: &Rc<RefCell<ProgramData>>) -> MountWidg
     );
     upper_box.pack_end(&btn_calibrate, false, false, PADDING);
 
-    let btn_stop = gtk::Button::new_with_label("stop");
+    let btn_stop = gtk::Button::with_label("stop");
     btn_stop.connect_clicked(clone!(@weak program_data_rc => @default-panic, move |_| { on_stop(&program_data_rc) }));
     upper_box.pack_end(&btn_stop, false, false, PADDING);
 
@@ -295,7 +295,7 @@ pub fn create_mount_box(program_data_rc: &Rc<RefCell<ProgramData>>) -> MountWidg
         .tooltip_text("Enable guiding")
         .build();
     let signal_guide = btn_guide.connect_toggled(clone!(@weak program_data_rc => @default-panic, move |btn| {
-        if btn.get_active() {
+        if btn.is_active() {
             guiding::start_guiding(&program_data_rc);
         } else {
             guiding::stop_guiding(&program_data_rc);
@@ -325,8 +325,8 @@ pub fn create_mount_box(program_data_rc: &Rc<RefCell<ProgramData>>) -> MountWidg
 
 fn on_toggle_sidereal_tracking(btn: &gtk::ToggleButton, program_data_rc: &Rc<RefCell<ProgramData>>) {
     let mut pd = program_data_rc.borrow_mut();
-    pd.mount_data.sidereal_tracking_on = btn.get_active();
-    if btn.get_active() {
+    pd.mount_data.sidereal_tracking_on = btn.is_active();
+    if btn.is_active() {
         // TODO: abort calibration; or do not allow toggling ST during calibration
         pd.mount_data.mount.as_mut().unwrap().set_motion(mount::Axis::Primary, mount::SIDEREAL_RATE).unwrap();
     } else {
@@ -338,7 +338,7 @@ fn on_toggle_sidereal_tracking(btn: &gtk::ToggleButton, program_data_rc: &Rc<Ref
 fn create_direction_buttons(program_data_rc: &Rc<RefCell<ProgramData>>)
 -> (gtk::Button, gtk::Button, gtk::Button, gtk::Button) {
 
-    let dir_primary_neg = gtk::Button::new_with_label("← Axis 1");
+    let dir_primary_neg = gtk::Button::with_label("← Axis 1");
     dir_primary_neg.set_tooltip_text(Some("Primary axis negative slew"));
     dir_primary_neg.connect_button_press_event(clone!(@weak program_data_rc => @default-panic, move |_, _| {
         let base = if program_data_rc.borrow().mount_data.sidereal_tracking_on { mount::SIDEREAL_RATE } else { 0.0 };
@@ -354,7 +354,7 @@ fn create_direction_buttons(program_data_rc: &Rc<RefCell<ProgramData>>)
         gtk::Inhibit(false)
     }));
 
-    let dir_secondary_pos = gtk::Button::new_with_label("↑ Axis 2");
+    let dir_secondary_pos = gtk::Button::with_label("↑ Axis 2");
     dir_secondary_pos.set_tooltip_text(Some("Secondary axis positive slew"));
     dir_secondary_pos.connect_button_press_event(clone!(@weak program_data_rc => @default-panic, move |_, _| {
         let speed = program_data_rc.borrow().gui.as_ref().unwrap().mount_widgets.slew_speed();
@@ -368,7 +368,7 @@ fn create_direction_buttons(program_data_rc: &Rc<RefCell<ProgramData>>)
         gtk::Inhibit(false)
     }));
 
-    let dir_secondary_neg = gtk::Button::new_with_label("↓ Axis 2");
+    let dir_secondary_neg = gtk::Button::with_label("↓ Axis 2");
     dir_secondary_neg.set_tooltip_text(Some("Secondary axis negative slew"));
     dir_secondary_neg.connect_button_press_event(clone!(@weak program_data_rc => @default-panic, move |_, _| {
         let speed = program_data_rc.borrow().gui.as_ref().unwrap().mount_widgets.slew_speed();
@@ -382,7 +382,7 @@ fn create_direction_buttons(program_data_rc: &Rc<RefCell<ProgramData>>)
         gtk::Inhibit(false)
     }));
 
-    let dir_primary_pos = gtk::Button::new_with_label("→ Axis 1");
+    let dir_primary_pos = gtk::Button::with_label("→ Axis 1");
     dir_primary_pos.set_tooltip_text(Some("Primary axis positive slew"));
     dir_primary_pos.connect_button_press_event(clone!(@weak program_data_rc => @default-panic, move |_, _| {
         let base = if program_data_rc.borrow().mount_data.sidereal_tracking_on { mount::SIDEREAL_RATE } else { 0.0 };
@@ -404,7 +404,7 @@ fn create_direction_buttons(program_data_rc: &Rc<RefCell<ProgramData>>)
 pub fn init_mount_menu(program_data_rc: &Rc<RefCell<ProgramData>>, app_window: &gtk::ApplicationWindow) -> gtk::Menu {
     let menu = gtk::Menu::new();
 
-    let item_disconnect = gtk::MenuItem::new_with_label("Disconnect");
+    let item_disconnect = gtk::MenuItem::with_label("Disconnect");
     item_disconnect.connect_activate(clone!(@weak program_data_rc => @default-panic, move |menu_item| {
         program_data_rc.borrow().gui.as_ref().unwrap().mount_widgets.on_disconnect();
         {
@@ -418,7 +418,7 @@ pub fn init_mount_menu(program_data_rc: &Rc<RefCell<ProgramData>>, app_window: &
     }));
     item_disconnect.set_sensitive(false);
 
-    let item_connect = gtk::MenuItem::new_with_label("Connect...");
+    let item_connect = gtk::MenuItem::with_label("Connect...");
     item_connect.connect_activate(clone!(
         @weak program_data_rc,
         @weak app_window,

@@ -11,6 +11,7 @@
 //!
 
 use crate::workers::histogram::Histogram;
+use gtk::cairo;
 use glib::clone;
 use gtk::prelude::*;
 use std::cell::RefCell;
@@ -87,7 +88,7 @@ impl HistogramView {
 fn draw_histogram(histogram: &Histogram, log_scale: bool, d_area: &gtk::DrawingArea, ctx: &cairo::Context) {
     ctx.set_antialias(cairo::Antialias::None);
 
-    let gtk::Allocation{x: _, y: _, width, height} = d_area.get_allocation();
+    let gtk::Allocation{x: _, y: _, width, height} = d_area.allocation();
 
     let max_value = *histogram.values().iter().map(|x| x.iter().max().unwrap()).max().unwrap().max(&1);
 

@@ -57,9 +57,9 @@ impl TimeWidget {
 
     pub fn duration(&self) -> std::time::Duration {
         std::time::Duration::from_secs(
-            self.btn_hours.get_value() as u64 * 3600 +
-            self.btn_minutes.get_value() as u64 * 60 +
-            self.btn_seconds.get_value() as u64
+            self.btn_hours.value() as u64 * 3600 +
+            self.btn_minutes.value() as u64 * 60 +
+            self.btn_seconds.value() as u64
         )
     }
 }

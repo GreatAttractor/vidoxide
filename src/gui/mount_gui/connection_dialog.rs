@@ -35,7 +35,7 @@ pub fn show_mount_connect_dialog(parent: &gtk::ApplicationWindow, program_data_r
 -> Option<MountConnection> {
     macro_rules! configuration { {} => { program_data_rc.borrow().config } }
 
-    let dialog = gtk::Dialog::new_with_buttons(
+    let dialog = gtk::Dialog::with_buttons(
         Some("Connect to mount"),
         Some(parent),
         gtk::DialogFlags::MODAL,
@@ -61,13 +61,13 @@ pub fn show_mount_connect_dialog(parent: &gtk::ApplicationWindow, program_data_r
         notebook.append_page(creator.dialog_tab(), Some(&gtk::Label::new(Some(creator.label()))));
     }
 
-    dialog.get_content_area().pack_start(&notebook, true, true, PADDING);
+    dialog.content_area().pack_start(&notebook, true, true, PADDING);
 
     dialog.show_all();
     let response = dialog.run();
 
     if response == gtk::ResponseType::Accept {
-        Some(creators[notebook.get_current_page().unwrap() as usize].create(&configuration!()))
+        Some(creators[notebook.current_page().unwrap() as usize].create(&configuration!()))
     } else {
         None
     }

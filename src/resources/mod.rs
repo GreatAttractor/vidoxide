@@ -11,7 +11,8 @@
 //!
 
 use ga_image;
-use gdk_pixbuf::prelude::*;
+use gtk::gdk_pixbuf;
+use gtk::prelude::*;
 
 pub enum ToolbarIcon {
     ZoomIn,
@@ -56,29 +57,29 @@ impl SimulatorImage {
 
 
 pub fn load_svg(image: ToolbarIcon, size: i32) -> Result<gtk::Image, glib::error::Error> {
-    let loader = gdk_pixbuf::PixbufLoader::new_with_type("svg").unwrap();
+    let loader = gdk_pixbuf::PixbufLoader::with_type("svg").unwrap();
     loader.set_size(size, size);
     loader.write(image.contents())?;
     loader.close()?;
 
-    Ok(gtk::Image::new_from_pixbuf(loader.get_pixbuf().as_ref()))
+    Ok(gtk::Image::from_pixbuf(loader.pixbuf().as_ref()))
 }
 
 pub fn load_sim_image(image: SimulatorImage) -> Result<ga_image::Image, glib::error::Error> {
-    let loader = gdk_pixbuf::PixbufLoader::new_with_type(image.gdk_pixbuf_img_format()).unwrap();
+    let loader = gdk_pixbuf::PixbufLoader::with_type(image.gdk_pixbuf_img_format()).unwrap();
     loader.write(image.contents())?;
     loader.close()?;
 
-    let pix_buf = loader.get_pixbuf();
+    let pix_buf = loader.pixbuf();
 
-    assert!(pix_buf.as_ref().unwrap().get_colorspace() == gdk_pixbuf::Colorspace::Rgb);
+    assert!(pix_buf.as_ref().unwrap().colorspace() == gdk_pixbuf::Colorspace::Rgb);
 
     let src_bytes = pix_buf.as_ref().unwrap().read_pixel_bytes().unwrap();
-    let src_stride = pix_buf.as_ref().unwrap().get_rowstride() as usize;
+    let src_stride = pix_buf.as_ref().unwrap().rowstride() as usize;
 
     let mut image = ga_image::Image::new(
-        pix_buf.as_ref().unwrap().get_width() as u32,
-        pix_buf.as_ref().unwrap().get_height() as u32,
+        pix_buf.as_ref().unwrap().width() as u32,
+        pix_buf.as_ref().unwrap().height() as u32,
         None,
         ga_image::PixelFormat::RGB8,
         None,
@@ -87,7 +88,7 @@ pub fn load_sim_image(image: SimulatorImage) -> Result<ga_image::Image, glib::er
 
     let dest_line_num_bytes = image.width() as usize * image.pixel_format().bytes_per_pixel();
 
-    for y in 0..pix_buf.unwrap().get_height() {
+    for y in 0..pix_buf.unwrap().height() {
         let dest_line = image.line_mut::<u8>(y as u32);
         let start_ofs = y as usize * src_stride;
         dest_line.copy_from_slice(&src_bytes[start_ofs..start_ofs + dest_line_num_bytes]);

@@ -96,7 +96,7 @@ pub fn init_camera_menu(
 
     menu.append(&gtk::SeparatorMenuItem::new());
 
-    let rescan = gtk::MenuItem::new_with_label("Rescan");
+    let rescan = gtk::MenuItem::with_label("Rescan");
     rescan.connect_activate(clone!(@weak program_data_rc => @default-panic, move |_| {
         disconnect_camera(&mut program_data_rc.borrow_mut(), true);
 
@@ -112,7 +112,7 @@ pub fn init_camera_menu(
             );
     }));
 
-    let disconnect_item = gtk::MenuItem::new_with_label("Disconnect");
+    let disconnect_item = gtk::MenuItem::with_label("Disconnect");
     disconnect_item.connect_activate(clone!(@weak program_data_rc => @default-panic, move |_| {
         disconnect_camera(&mut program_data_rc.borrow_mut(), true);
     }));
@@ -135,7 +135,7 @@ fn create_camera_menu_items(
     for driver in program_data_rc.borrow().drivers.iter() {
         let drv_name = driver.borrow().name();
         for camera_info in driver.borrow_mut().enumerate_cameras().unwrap() {
-            let cam_menu_item = gtk::CheckMenuItem::new_with_label(&format!("[{}] {}", drv_name, camera_info.name()));
+            let cam_menu_item = gtk::CheckMenuItem::with_label(&format!("[{}] {}", drv_name, camera_info.name()));
             cam_menu_item.show();
 
             let signal = cam_menu_item.connect_activate(clone!(
@@ -275,17 +275,17 @@ pub fn create_control_widgets(
             cb.connect_toggled(clone!(@weak program_data_rc => @default-panic, move|cb| {
                 program_data_rc.borrow().camera.as_ref().unwrap().set_auto(
                     ctrl_id,
-                    cb.get_active()
+                    cb.is_active()
                 ).unwrap();
 
                 let program_data = program_data_rc.borrow();
                 let control_widgets = &program_data.gui.as_ref().unwrap().control_widgets[&ctrl_id];
                 let is_on = match &control_widgets.0.on_off {
-                    Some(cb_on_off) => cb_on_off.get_active(),
+                    Some(cb_on_off) => cb_on_off.is_active(),
                     _ => true
                 };
                 control_widgets.1.set_editable(
-                    !cb.get_active() && is_on && access != ControlAccessMode::ReadOnly
+                    !cb.is_active() && is_on && access != ControlAccessMode::ReadOnly
                 );
 
                 schedule_refresh(&program_data_rc);
@@ -301,17 +301,17 @@ pub fn create_control_widgets(
             cb.connect_toggled(clone!(@weak program_data_rc => @default-panic, move|cb| {
                 program_data_rc.borrow().camera.as_ref().unwrap().set_on_off(
                     ctrl_id,
-                    cb.get_active()
+                    cb.is_active()
                 ).unwrap();
                 let program_data = program_data_rc.borrow();
                 let control_widgets = &program_data.gui.as_ref().unwrap().control_widgets[&ctrl_id];
                 let is_auto = match &control_widgets.0.auto {
-                    Some(cb_auto) => cb_auto.get_active(),
+                    Some(cb_auto) => cb_auto.is_active(),
                     _ => false
                 };
 
                 control_widgets.1.set_editable(
-                    cb.get_active() && !is_auto && access != ControlAccessMode::ReadOnly
+                    cb.is_active() && !is_auto && access != ControlAccessMode::ReadOnly
                 );
 
                 schedule_refresh(&program_data_rc);
@@ -458,7 +458,7 @@ fn create_number_control_widgets(
 
     // create the slider -----------------------------------------
 
-    let slider = gtk::Scale::new_with_range(
+    let slider = gtk::Scale::with_range(
         gtk::Orientation::Horizontal,
         min,
         max,
@@ -498,9 +498,9 @@ fn create_number_control_widgets(
         @weak program_data_rc, @weak spin_btn_changed_signal, @weak spin_btn => @default-panic,
         move |slider| {
             spin_btn.block_signal(spin_btn_changed_signal.borrow().as_ref().unwrap());
-            spin_btn.set_value(slider.get_value());
+            spin_btn.set_value(slider.value());
             spin_btn.unblock_signal(spin_btn_changed_signal.borrow().as_ref().unwrap());
-            on_camera_number_control_change(slider.get_value(), &program_data_rc, ctrl_id, requires_capture_pause);
+            on_camera_number_control_change(slider.value(), &program_data_rc, ctrl_id, requires_capture_pause);
         }
     )));
 
@@ -508,9 +508,9 @@ fn create_number_control_widgets(
         @weak program_data_rc, @weak slider_changed_signal, @weak slider => @default-panic,
         move |spin_btn| {
             slider.block_signal(slider_changed_signal.borrow().as_ref().unwrap());
-            slider.set_value(spin_btn.get_value());
+            slider.set_value(spin_btn.value());
             slider.unblock_signal(slider_changed_signal.borrow().as_ref().unwrap());
-            on_camera_number_control_change(spin_btn.get_value(), &program_data_rc, ctrl_id, requires_capture_pause);
+            on_camera_number_control_change(spin_btn.value(), &program_data_rc, ctrl_id, requires_capture_pause);
         }
     )));
 
@@ -573,12 +573,12 @@ fn on_camera_list_control_change(
 
         program_data_rc.borrow_mut().on_capture_pause_action = Some(OnCapturePauseAction::ControlChange(CameraControlChange{
             id: ctrl_id,
-            option_idx: combo.get_active().unwrap() as usize
+            option_idx: combo.active().unwrap() as usize
         }));
     } else {
         program_data_rc.borrow_mut().camera.as_mut().unwrap().set_list_control(
             ctrl_id,
-            combo.get_active().unwrap() as usize
+            combo.active().unwrap() as usize
         ).unwrap();
     }
 
@@ -614,7 +614,7 @@ fn on_camera_boolean_control_change(
     } else {
         program_data_rc.borrow_mut().camera.as_mut().unwrap().set_boolean_control(
             ctrl_id,
-            state_checkbox.get_active()
+            state_checkbox.is_active()
         ).unwrap();
     }
 
