@@ -13,7 +13,7 @@
 use crate::{CameraControlChange, OnCapturePauseAction, ProgramData};
 use crate::camera;
 use crate::camera::{BaseProperties, CameraControl, CameraControlId, CameraInfo, ControlAccessMode, Driver};
-use crate::gui::{disconnect_camera, on_capture_thread_message, show_message};
+use crate::gui::{actions, disconnect_camera, on_capture_thread_message, show_message};
 use crate::workers::capture;
 use crate::workers::capture::MainToCaptureThreadMsg;
 use enum_dispatch::enum_dispatch;
@@ -87,10 +87,10 @@ impl Editability for BooleanControlWidgets {
     }
 }
 
-/// Returns (camera menu, camera menu items, camera disconnect menu item).
+/// Returns (camera menu, camera menu items).
 pub fn init_camera_menu(
     program_data_rc: &Rc<RefCell<ProgramData>>
-) -> (gtk::Menu, Vec<(gtk::CheckMenuItem, glib::SignalHandlerId)>, gtk::MenuItem) {
+) -> (gtk::Menu, Vec<(gtk::CheckMenuItem, glib::SignalHandlerId)>) {
     let menu = gtk::Menu::new();
     let camera_menu_items = create_camera_menu_items(&menu, program_data_rc);
 
@@ -113,15 +113,12 @@ pub fn init_camera_menu(
     }));
 
     let disconnect_item = gtk::MenuItem::with_label("Disconnect");
-    disconnect_item.connect_activate(clone!(@weak program_data_rc => @default-panic, move |_| {
-        disconnect_camera(&mut program_data_rc.borrow_mut(), true);
-    }));
-    disconnect_item.set_sensitive(false);
+    disconnect_item.set_action_name(Some(&actions::prefixed(actions::DISCONNECT_CAMERA)));
 
     menu.append(&rescan);
     menu.append(&disconnect_item);
 
-    (menu, camera_menu_items, disconnect_item)
+    (menu, camera_menu_items)
 }
 
 /// Adds camera items at the beginning of `camera_menu`.
@@ -142,7 +139,8 @@ fn create_camera_menu_items(
                 @weak driver, @weak program_data_rc
                 => @default-panic, move |menu_item| {
                     if on_select_camera(menu_item, &driver, &camera_info, &program_data_rc).is_ok() {
-                        program_data_rc.borrow().gui.as_ref().unwrap().camera_disconnect_menu_item.set_sensitive(true);
+                        program_data_rc.borrow().gui.as_ref().unwrap().action_map.get(actions::DISCONNECT_CAMERA)
+                            .unwrap().set_enabled(true);
                     }
                 }
             ));

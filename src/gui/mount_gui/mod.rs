@@ -254,7 +254,7 @@ pub fn create_mount_box(program_data_rc: &Rc<RefCell<ProgramData>>) -> MountWidg
     upper_box.pack_end(&btn_calibrate, false, false, PADDING);
 
     let btn_stop = gtk::Button::with_label("stop");
-    btn_stop.connect_clicked(clone!(@weak program_data_rc => @default-panic, move |_| { on_stop(&program_data_rc) }));
+    btn_stop.connect_clicked(clone!(@weak program_data_rc => @default-panic, move |_| on_stop(&program_data_rc)));
     upper_box.pack_end(&btn_stop, false, false, PADDING);
 
     let btn_sidereal_tracking = gtk::ToggleButtonBuilder::new()

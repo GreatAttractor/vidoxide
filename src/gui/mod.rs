@@ -44,6 +44,7 @@ use info_overlay::{InfoOverlay, ScreenSelection, draw_info_overlay};
 use mount_gui::MountWidgets;
 use rec_gui::RecWidgets;
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::atomic::Ordering;
 
@@ -59,6 +60,19 @@ const MAX_ZOOM: f64 = 20.0;
 const ZOOM_CHANGE_FACTOR: f64 = 1.10;
 
 const DEFAULT_TOOLBAR_ICON_SIZE: i32 = 32;
+
+mod actions {
+    // action group name
+    pub const PREFIX: &'static str = "vidoxide";
+
+    // action names to be used for constructing `gio::SimpleAction`
+    pub const DISCONNECT_CAMERA: &'static str = "disconnect camera";
+
+    /// Returns prefixed action name to be used with `ActionableExt::set_action_name`.
+    pub fn prefixed(s: &str) -> String {
+        format!("{}.{}", PREFIX, s)
+    }
+}
 
 struct StatusBarFields {
     preview_fps: gtk::Label,
@@ -98,7 +112,6 @@ pub struct GuiData {
     status_bar: StatusBarFields,
     /// Menu items and their "activate" signals.
     camera_menu_items: Vec<(gtk::CheckMenuItem, glib::SignalHandlerId)>,
-    camera_disconnect_menu_item: gtk::MenuItem,
     camera_menu: gtk::Menu,
     preview_area: ImgView,
     rec_widgets: RecWidgets,
@@ -106,7 +119,10 @@ pub struct GuiData {
     mouse_mode: MouseMode,
     info_overlay: InfoOverlay,
     default_mouse_mode_button: gtk::RadioToolButton,
-    histogram_view: HistogramView
+    histogram_view: HistogramView,
+    // We must store an action map ourselves (and not e.g. reuse `SimpleActionGroup`), because currently (0.14.0) with
+    // `gio` one cannot access a group's action in a way allowing to change its enabled state.
+    action_map: HashMap<&'static str, gtk::gio::SimpleAction>
 }
 
 impl GuiData {
@@ -261,6 +277,8 @@ pub fn init_main_window(app: &gtk::Application, program_data_rc: &Rc<RefCell<Pro
     let window = gtk::ApplicationWindow::new(app);
     window.set_title("Vidoxide");
 
+    let action_map = setup_actions(&window, program_data_rc);
+
     {
         let config = &program_data_rc.borrow().config;
 
@@ -315,7 +333,7 @@ pub fn init_main_window(app: &gtk::Application, program_data_rc: &Rc<RefCell<Pro
     let controls_notebook_scroller = gtk::ScrolledWindow::new::<gtk::Adjustment, gtk::Adjustment>(None, None);
     controls_notebook_scroller.add(&controls_notebook);
 
-    let (menu_bar, camera_menu, camera_menu_items, camera_disconnect_menu_item) = init_menu(&window, program_data_rc);
+    let (menu_bar, camera_menu, camera_menu_items) = init_menu(&window, program_data_rc);
 
     let window_contents = gtk::Paned::new(gtk::Orientation::Horizontal);
     window_contents.set_wide_handle(true);
@@ -360,15 +378,33 @@ pub fn init_main_window(app: &gtk::Application, program_data_rc: &Rc<RefCell<Pro
         control_widgets: Default::default(),
         camera_menu,
         camera_menu_items,
-        camera_disconnect_menu_item,
         preview_area,
         rec_widgets,
         mount_widgets,
         info_overlay: InfoOverlay::new(),
         mouse_mode: MouseMode::None,
         default_mouse_mode_button,
-        histogram_view
+        histogram_view,
+        action_map
     });
+}
+
+fn setup_actions(app_window: &gtk::ApplicationWindow, program_data_rc: &Rc<RefCell<ProgramData>>)
+-> HashMap<&'static str, gtk::gio::SimpleAction> {
+    let action_group = gtk::gio::SimpleActionGroup::new();
+    let mut action_map = HashMap::new();
+
+    let disconnect_action = gtk::gio::SimpleAction::new(actions::DISCONNECT_CAMERA, None);
+    disconnect_action.connect_activate(clone!(@weak program_data_rc => @default-panic, move |_, _| {
+        disconnect_camera(&mut program_data_rc.borrow_mut(), true);
+    }));
+    disconnect_action.set_enabled(false);
+    action_group.add_action(&disconnect_action);
+    action_map.insert(actions::DISCONNECT_CAMERA, disconnect_action);
+
+    app_window.insert_action_group(actions::PREFIX, Some(&action_group));
+
+    action_map
 }
 
 /// Returns (toolbar, default mouse mode button).
@@ -556,11 +592,11 @@ pub fn show_message(msg: &str, title: &str, msg_type: gtk::MessageType) {
     dialog.close();
 }
 
-/// Returns (menu bar, camera menu, camera menu items, camera disconnect menu item).
+/// Returns (menu bar, camera menu, camera menu items).
 fn init_menu(
     window: &gtk::ApplicationWindow,
     program_data: &Rc<RefCell<ProgramData>>
-) -> (gtk::MenuBar, gtk::Menu, Vec<(gtk::CheckMenuItem, glib::SignalHandlerId)>, gtk::MenuItem) {
+) -> (gtk::MenuBar, gtk::Menu, Vec<(gtk::CheckMenuItem, glib::SignalHandlerId)>) {
     let accel_group = gtk::AccelGroup::new();
     window.add_accel_group(&accel_group);
 
@@ -588,7 +624,7 @@ fn init_menu(
     menu_bar.append(&file_menu_item);
 
     let camera_menu_item = gtk::MenuItem::with_label("Camera");
-    let (camera_menu, camera_menu_items, camer_disconnect_menu_item) = camera_gui::init_camera_menu(program_data);
+    let (camera_menu, camera_menu_items) = camera_gui::init_camera_menu(program_data);
     camera_menu_item.set_submenu(Some(&camera_menu));
     menu_bar.append(&camera_menu_item);
 
@@ -600,7 +636,7 @@ fn init_menu(
     preview_menu_item.set_submenu(Some(&init_preview_menu(program_data)));
     menu_bar.append(&preview_menu_item);
 
-    (menu_bar, camera_menu, camera_menu_items, camer_disconnect_menu_item)
+    (menu_bar, camera_menu, camera_menu_items)
 }
 
 fn init_preview_menu(program_data_rc: &Rc<RefCell<ProgramData>>) -> gtk::Menu {
@@ -975,7 +1011,7 @@ pub fn disconnect_camera(program_data: &mut ProgramData, finish_capture_thread: 
             cam_item.unblock_signal(&activate_signal);
         }
 
-        gui.camera_disconnect_menu_item.set_sensitive(false);
+        gui.action_map.get(actions::DISCONNECT_CAMERA).unwrap().set_enabled(false);
     }
     camera_gui::remove_camera_controls(program_data);
 

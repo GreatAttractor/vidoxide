@@ -254,7 +254,7 @@ pub fn create_recording_panel(program_data_rc: &Rc<RefCell<ProgramData>>) -> (gt
     let btn_stop = gtk::Button::with_label("⏹");
     btn_stop.set_tooltip_text(Some("Stop recording"));
     btn_stop.set_sensitive(false);
-    btn_stop.connect_clicked(clone!(@weak program_data_rc => @default-panic, move |_| { on_stop_recording(&program_data_rc) }));
+    btn_stop.connect_clicked(clone!(@weak program_data_rc => @default-panic, move |_| on_stop_recording(&program_data_rc)));
 
     let btn_box = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     btn_box.pack_start(&btn_record, false, false, PADDING);
