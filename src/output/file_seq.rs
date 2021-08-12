@@ -18,26 +18,34 @@ use std::path::Path;
 pub struct FileSequence {
     output_dir: String,
     file_name_prefix: String,
-    counter: usize
+    counter: usize,
+    file_type: FileType
 }
 
 impl FileSequence {
-    pub fn new(output_dir: &str, file_name_prefix: &str) -> FileSequence {
+    pub fn new(output_dir: &str, file_name_prefix: &str, file_type: FileType) -> FileSequence {
         FileSequence{
             output_dir: output_dir.to_string(),
             file_name_prefix: file_name_prefix.to_string(),
-            counter: 0
+            counter: 0,
+            file_type
         }
     }
 }
 
 impl OutputWriter for FileSequence {
     fn write(&mut self, image: &ImageView) -> Result<(), String> {
+        let file_ext = match self.file_type {
+            FileType::Bmp => "bmp",
+            FileType::Tiff => "tif",
+            _ => unreachable!()
+        };
+
         let result = image.save(
             &Path::new(&self.output_dir)
-                .join(format!("{}_{:05}.tif", self.file_name_prefix, self.counter))
+                .join(format!("{}_{:05}.{}", self.file_name_prefix, self.counter, file_ext))
                 .to_str().unwrap().to_string(),
-            FileType::Tiff
+            self.file_type
         );
 
         match result {

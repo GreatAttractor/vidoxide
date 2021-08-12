@@ -103,12 +103,13 @@ fn on_start_recording(program_data_rc: &Rc<RefCell<ProgramData>>) {
     let rec_limit;
     let output_fmt;
     let name_prefix;
+    let sequence_suffix;
 
     {
         let mut program_data = program_data_rc.borrow_mut();
         let rec_widgets = &mut program_data.gui.as_mut().unwrap().rec_widgets;
         let (sequence_count, _) = rec_widgets.sequence();
-        let sequence_suffix = if sequence_count > 1 { format!("_{:05}", rec_widgets.sequence_idx + 1) } else { "".to_string() };
+        sequence_suffix = if sequence_count > 1 { format!("_{:05}", rec_widgets.sequence_idx + 1) } else { "".to_string() };
         name_prefix = rec_widgets.name_prefix();
 
         output_fmt = (*rec_widgets.output_fmt_getter)();
@@ -129,8 +130,7 @@ fn on_start_recording(program_data_rc: &Rc<RefCell<ProgramData>>) {
         rec_limit = program_data.gui.as_ref().unwrap().rec_widgets.rec_limit();
     } // end of mutable borrow of `program_data_rc` (we must end it before showing a modal dialog by `show_message`)
 
-    //FIXME: handle it properly for image sequences
-    if Path::new(&dest_path).exists() {
+    if Path::new(&dest_path).exists() && !output_fmt.is_image_sequence() {
         show_message(&format!("File already exists:\n{}", dest_path), "Error", gtk::MessageType::Error);
         return;
     }
@@ -154,9 +154,11 @@ fn on_start_recording(program_data_rc: &Rc<RefCell<ProgramData>>) {
                 Box::new(output::ser::SerVideo::new(file))
             }
         },
-        //TODO: discern between BMP and TIFF
+
         OutputFormat::BmpSequence | OutputFormat::TiffSequence => {
-            Box::new(output::file_seq::FileSequence::new(&dest_path, &name_prefix))
+            Box::new(output::file_seq::FileSequence::new(
+                &dest_path, &(name_prefix + &sequence_suffix), output_fmt.file_type()
+            ))
         }
     };
 

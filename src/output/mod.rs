@@ -23,7 +23,7 @@ pub trait OutputWriter: std::fmt::Debug + Send {
     fn finalize(&mut self) -> Result<(), String>;
 }
 
-#[derive(PartialEq, strum_macros::EnumIter)]
+#[derive(Debug, PartialEq, strum_macros::EnumIter)]
 pub enum OutputFormat {
     SerVideo,
     AviVideo,
@@ -39,5 +39,25 @@ impl std::fmt::Display for OutputFormat {
             OutputFormat::BmpSequence => "Image sequence (BMP)",
             OutputFormat::TiffSequence => "Image sequence (TIFF)"
         })
+    }
+}
+
+impl OutputFormat {
+    pub fn file_type(&self) -> ga_image::FileType {
+        match self {
+            OutputFormat::BmpSequence => ga_image::FileType::Bmp,
+            OutputFormat::TiffSequence => ga_image::FileType::Tiff,
+
+            _ => panic!("Not an image sequence: {:?}", self)
+        }
+    }
+
+    pub fn is_image_sequence(&self) -> bool {
+        match self {
+            OutputFormat::SerVideo => false,
+            OutputFormat::AviVideo => false,
+            OutputFormat::BmpSequence => true,
+            OutputFormat::TiffSequence => true
+        }
     }
 }
