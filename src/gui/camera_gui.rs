@@ -207,7 +207,11 @@ fn on_select_camera(
             new_preview_wanted
         });
 
-        program_data.gui.as_ref().unwrap().rec_widgets.on_connect();
+        {
+            let gui = program_data.gui.as_ref().unwrap();
+            gui.rec_widgets.on_connect();
+            gui.action_map.get(actions::TAKE_SNAPSHOT).unwrap().set_enabled(true);
+        }
 
         for (cam_item, activate_signal) in &program_data.gui.as_ref().unwrap().camera_menu_items {
             if cam_item == menu_item {

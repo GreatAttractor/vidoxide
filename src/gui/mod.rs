@@ -45,6 +45,7 @@ use mount_gui::MountWidgets;
 use rec_gui::RecWidgets;
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::path::Path;
 use std::rc::Rc;
 use std::sync::atomic::Ordering;
 
@@ -61,12 +62,17 @@ const ZOOM_CHANGE_FACTOR: f64 = 1.10;
 
 const DEFAULT_TOOLBAR_ICON_SIZE: i32 = 32;
 
+mod gtk_signals {
+    pub const ACTIVATE: &'static str = "activate";
+}
+
 mod actions {
     // action group name
     pub const PREFIX: &'static str = "vidoxide";
 
     // action names to be used for constructing `gio::SimpleAction`
     pub const DISCONNECT_CAMERA: &'static str = "disconnect camera";
+    pub const TAKE_SNAPSHOT:     &'static str = "take snapshot";
 
     /// Returns prefixed action name to be used with `ActionableExt::set_action_name`.
     pub fn prefixed(s: &str) -> String {
@@ -394,6 +400,7 @@ fn setup_actions(app_window: &gtk::ApplicationWindow, program_data_rc: &Rc<RefCe
     let action_group = gtk::gio::SimpleActionGroup::new();
     let mut action_map = HashMap::new();
 
+    // ----------------------------
     let disconnect_action = gtk::gio::SimpleAction::new(actions::DISCONNECT_CAMERA, None);
     disconnect_action.connect_activate(clone!(@weak program_data_rc => @default-panic, move |_, _| {
         disconnect_camera(&mut program_data_rc.borrow_mut(), true);
@@ -402,9 +409,43 @@ fn setup_actions(app_window: &gtk::ApplicationWindow, program_data_rc: &Rc<RefCe
     action_group.add_action(&disconnect_action);
     action_map.insert(actions::DISCONNECT_CAMERA, disconnect_action);
 
+    // ----------------------------
+    let snapshot_action = gtk::gio::SimpleAction::new(actions::TAKE_SNAPSHOT, None);
+    snapshot_action.connect_activate(clone!(@weak program_data_rc => @default-panic, move |_, _| {
+        on_snapshot(&program_data_rc);
+    }));
+    snapshot_action.set_enabled(false);
+    action_group.add_action(&snapshot_action);
+    action_map.insert(actions::TAKE_SNAPSHOT, snapshot_action);
+
+    // ----------------------------
     app_window.insert_action_group(actions::PREFIX, Some(&action_group));
 
     action_map
+}
+
+fn on_snapshot(program_data_rc: &Rc<RefCell<ProgramData>>) {
+    let mut program_data = program_data_rc.borrow_mut();
+    let gui_data = program_data.gui.as_ref().unwrap();
+
+    if program_data.last_displayed_preview_image.is_none() {
+        println!("WARNING: No image captured yet, cannot take a snapshot.");
+        return;
+    }
+
+    let dest_dir = gui_data.rec_widgets.dest_dir();
+    let mut dest_path;
+    loop {
+        dest_path = Path::new(&dest_dir).join(format!("snapshot_{:04}.tif", program_data.snapshot_counter));
+        if !dest_path.exists() {
+            break
+        }
+        program_data.snapshot_counter += 1;
+    }
+
+    //TODO: demosaic raw color first
+    program_data.last_displayed_preview_image.as_ref().unwrap()
+        .view().save(&dest_path.to_str().unwrap().to_string(), ga_image::FileType::Tiff).unwrap();
 }
 
 /// Returns (toolbar, default mouse mode button).
@@ -611,7 +652,7 @@ fn init_menu(
     // It isn't available directly through `gdk::ModifierType`, since it has
     // different values on different platforms.
     let (key, modifier) = gtk::accelerator_parse("<Primary>Q");
-    quit_item.add_accelerator("activate", &accel_group, key, modifier, gtk::AccelFlags::VISIBLE);
+    quit_item.add_accelerator(gtk_signals::ACTIVATE, &accel_group, key, modifier, gtk::AccelFlags::VISIBLE);
 
     let file_menu = gtk::Menu::new();
     file_menu.append(&about_item);
@@ -633,14 +674,20 @@ fn init_menu(
     menu_bar.append(&mount_menu_item);
 
     let preview_menu_item = gtk::MenuItem::with_label("Preview");
-    preview_menu_item.set_submenu(Some(&init_preview_menu(program_data)));
+    preview_menu_item.set_submenu(Some(&init_preview_menu(program_data, &accel_group)));
     menu_bar.append(&preview_menu_item);
 
     (menu_bar, camera_menu, camera_menu_items)
 }
 
-fn init_preview_menu(program_data_rc: &Rc<RefCell<ProgramData>>) -> gtk::Menu {
+fn init_preview_menu(program_data_rc: &Rc<RefCell<ProgramData>>, accel_group: &gtk::AccelGroup) -> gtk::Menu {
     let menu = gtk::Menu::new();
+
+    let snapshot = gtk::MenuItem::with_label("Take snapshot");
+    snapshot.set_action_name(Some(&actions::prefixed(actions::TAKE_SNAPSHOT)));
+    let (key, modifier) = gtk::accelerator_parse("F12");
+    snapshot.add_accelerator(gtk_signals::ACTIVATE, accel_group, key, modifier, gtk::AccelFlags::VISIBLE);
+    menu.append(&snapshot);
 
     let strech_histogram = gtk::CheckMenuItem::with_label("Stretch histogram");
     strech_histogram.connect_activate(clone!(@weak program_data_rc => @default-panic, move |_| {
@@ -862,13 +909,13 @@ fn on_capture_thread_message(
 
             let now = std::time::Instant::now();
             if let Some(fps_limit) = program_data.preview_fps_limit {
-                if let Some(last_preview_ts) = program_data.preview_last_displayed_image {
+                if let Some(last_preview_ts) = program_data.last_displayed_preview_image_timestamp {
                     if (now - last_preview_ts).as_secs_f64() < 1.0 / fps_limit as f64 {
                         break;
                     }
                 }
             }
-            program_data.preview_last_displayed_image = Some(now);
+            program_data.last_displayed_preview_image_timestamp = Some(now);
 
             let to_bgra24 = |img: &ga_image::Image| { img.convert_pix_fmt(
                 ga_image::PixelFormat::BGRA8,
@@ -904,6 +951,8 @@ fn on_capture_thread_message(
 
                 program_data.t_last_histogram = Some(std::time::Instant::now());
             }
+
+            program_data.last_displayed_preview_image = Some((*img).clone());
 
             program_data.preview_fps_counter += 1;
         },
@@ -998,7 +1047,11 @@ pub fn disconnect_camera(program_data: &mut ProgramData, finish_capture_thread: 
     if finish_capture_thread {
         program_data.finish_capture_thread();
     }
-    program_data.gui.as_ref().unwrap().rec_widgets.on_disconnect();
+    {
+        let gui = program_data.gui.as_ref().unwrap();
+        gui.rec_widgets.on_disconnect();
+        gui.action_map.get(actions::TAKE_SNAPSHOT).unwrap().set_enabled(false);
+    }
     program_data.camera = None;
     if let Some(gui) = program_data.gui.as_ref() {
         gui.status_bar.preview_fps.set_label("");

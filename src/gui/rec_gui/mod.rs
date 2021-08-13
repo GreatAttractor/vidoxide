@@ -13,6 +13,7 @@
 mod time_widget;
 
 use crate::gui::camera_gui::{ControlWidgetBundle};
+use crate::gui::actions;
 use crate::output;
 use crate::output::{OutputFormat};
 use crate::ProgramData;
@@ -258,9 +259,14 @@ pub fn create_recording_panel(program_data_rc: &Rc<RefCell<ProgramData>>) -> (gt
     btn_stop.set_sensitive(false);
     btn_stop.connect_clicked(clone!(@weak program_data_rc => @default-panic, move |_| on_stop_recording(&program_data_rc)));
 
+    let btn_snapshot = gtk::Button::with_label("✷");
+    btn_snapshot.set_tooltip_text(Some("Take snapshot"));
+    btn_snapshot.set_action_name(Some(&actions::prefixed(actions::TAKE_SNAPSHOT)));
+
     let btn_box = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     btn_box.pack_start(&btn_record, false, false, PADDING);
     btn_box.pack_start(&btn_stop, false, false, PADDING);
+    btn_box.pack_end(&btn_snapshot, false, false, PADDING);
 
     let others = gtk::Box::new(gtk::Orientation::Vertical, 0);
 
