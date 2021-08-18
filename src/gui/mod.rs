@@ -17,6 +17,7 @@ mod img_view;
 mod info_overlay;
 mod mount_gui;
 mod rec_gui;
+mod roi_dialog;
 
 use camera_gui::{
     CommonControlWidgets,
@@ -73,6 +74,7 @@ mod actions {
     // action names to be used for constructing `gio::SimpleAction`
     pub const DISCONNECT_CAMERA: &'static str = "disconnect camera";
     pub const TAKE_SNAPSHOT:     &'static str = "take snapshot";
+    pub const SET_ROI:           &'static str = "set roi";
 
     /// Returns prefixed action name to be used with `ActionableExt::set_action_name`.
     pub fn prefixed(s: &str) -> String {
@@ -235,14 +237,7 @@ fn on_preview_area_button_up(pos: Point, program_data_rc: &Rc<RefCell<ProgramDat
                         program_data.histogram_area = Some(sel_rect);
                     },
 
-                    MouseMode::SelectROI => {
-                        send_to_cap_thread_res = program_data.capture_thread_data.as_mut().unwrap().sender.send(
-                            MainToCaptureThreadMsg::Pause
-                        );
-                        if send_to_cap_thread_res.is_ok() {
-                            program_data.on_capture_pause_action = Some(OnCapturePauseAction::SetROI(sel_rect));
-                        }
-                    },
+                    MouseMode::SelectROI => send_to_cap_thread_res = initiate_set_roi(sel_rect, &mut program_data),
 
                     MouseMode::None | MouseMode::PlaceTrackingAnchor => ()
                 }
@@ -418,10 +413,41 @@ fn setup_actions(app_window: &gtk::ApplicationWindow, program_data_rc: &Rc<RefCe
     action_group.add_action(&snapshot_action);
     action_map.insert(actions::TAKE_SNAPSHOT, snapshot_action);
 
+    //-----------------------------
+    let set_roi_action = gtk::gio::SimpleAction::new(actions::SET_ROI, None);
+    set_roi_action.connect_activate(clone!(@weak app_window, @weak program_data_rc => @default-panic, move |_, _| {
+        on_set_roi(&app_window, &program_data_rc);
+    }));
+    set_roi_action.set_enabled(false);
+    action_group.add_action(&set_roi_action);
+    action_map.insert(actions::SET_ROI, set_roi_action);
+
     // ----------------------------
     app_window.insert_action_group(actions::PREFIX, Some(&action_group));
 
     action_map
+}
+
+fn initiate_set_roi(rect: Rect, program_data: &mut ProgramData)
+-> Result<(), std::sync::mpsc::SendError<crate::workers::capture::MainToCaptureThreadMsg>> {
+    let result = program_data.capture_thread_data.as_mut().unwrap().sender.send(
+        MainToCaptureThreadMsg::Pause
+    );
+
+    if result.is_ok() {
+        program_data.on_capture_pause_action = Some(OnCapturePauseAction::SetROI(rect));
+    }
+
+    result
+}
+
+fn on_set_roi(app_window: &gtk::ApplicationWindow, program_data_rc: &Rc<RefCell<ProgramData>>) {
+    if let Some(roi_rect) = roi_dialog::show_roi_dialog(app_window) {
+        let result = initiate_set_roi(roi_rect, &mut program_data_rc.borrow_mut());
+        if result.is_err() {
+            crate::on_capture_thread_failure(program_data_rc);
+        }
+    }
 }
 
 fn on_snapshot(program_data_rc: &Rc<RefCell<ProgramData>>) {
@@ -579,6 +605,14 @@ fn create_toolbar(
     toolbar.insert(&btn_mouse_histogram, -1);
 
     toolbar.insert(&gtk::SeparatorToolItem::new(), -1);
+
+    let btn_set_roi = gtk::ToolButtonBuilder::new()
+        .label("ROI")
+        .tooltip_text("Set ROI by providing its position and size")
+        .build();
+    btn_set_roi.set_action_name(Some(&actions::prefixed(actions::SET_ROI)));
+    toolbar.insert(&btn_set_roi, -1);
+
 
     let btn_unset_roi = gtk::ToolButton::new(
         Some(&resources::load_svg(resources::ToolbarIcon::RoiOff, icon_size).unwrap()), None
@@ -1051,6 +1085,7 @@ pub fn disconnect_camera(program_data: &mut ProgramData, finish_capture_thread: 
         let gui = program_data.gui.as_ref().unwrap();
         gui.rec_widgets.on_disconnect();
         gui.action_map.get(actions::TAKE_SNAPSHOT).unwrap().set_enabled(false);
+        gui.action_map.get(actions::SET_ROI).unwrap().set_enabled(false);
     }
     program_data.camera = None;
     if let Some(gui) = program_data.gui.as_ref() {

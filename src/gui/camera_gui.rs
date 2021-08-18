@@ -211,6 +211,7 @@ fn on_select_camera(
             let gui = program_data.gui.as_ref().unwrap();
             gui.rec_widgets.on_connect();
             gui.action_map.get(actions::TAKE_SNAPSHOT).unwrap().set_enabled(true);
+            gui.action_map.get(actions::SET_ROI).unwrap().set_enabled(true);
         }
 
         for (cam_item, activate_signal) in &program_data.gui.as_ref().unwrap().camera_menu_items {
