@@ -85,10 +85,12 @@ mod tests {
     fn test_suite() {
         let main_context = glib::MainContext::default();
         let guard = main_context.acquire().unwrap();
+        let main_loop = glib::MainLoop::new(Some(&main_context), false);
 
-        timer_no_update();
-        timer_update_once();
-        timer_update_twice();
+        timer_no_update(&main_loop);
+        timer_update_once(&main_loop);
+        timer_update_twice(&main_loop);
+        timer_stop(&main_loop);
     }
 
     fn ms(num_millis: u64) -> std::time::Duration {
@@ -99,58 +101,97 @@ mod tests {
         panic!("This handler should not have run.");
     }
 
-    fn timer_no_update() {
-        let timer = OneShotTimer::new();
+    #[must_use]
+    fn loop_for(main_loop: &glib::MainLoop, duration: std::time::Duration) -> OneShotTimer {
+        let timer_quit = OneShotTimer::new();
+        timer_quit.run_once(duration, clone!(@strong main_loop => @default-panic, move || { main_loop.quit(); }));
+        timer_quit
+    }
 
+    fn timer_no_update(main_loop: &glib::MainLoop) {
+        let timer = OneShotTimer::new();
         let tstart = std::time::Instant::now();
+        let handler_run = Rc::new(RefCell::new(false));
 
         timer.run_once(
-            std::time::Duration::from_millis(200),
-            move || { assert!(tstart.elapsed() > ms(190) && tstart.elapsed() < ms(210)) }
+            std::time::Duration::from_millis(20),
+            clone!(@weak handler_run, @strong main_loop => @default-panic, move || {
+                assert!(tstart.elapsed() > ms(19) && tstart.elapsed() < ms(21));
+                *handler_run.borrow_mut() = true;
+            })
         );
+
+        let _q = loop_for(main_loop, ms(50));
+        main_loop.run();
+
+        assert!(*handler_run.borrow() == true);
     }
 
-    fn timer_update_once() {
-        let timer = OneShotTimer::new();
-
+    fn timer_update_once(main_loop: &glib::MainLoop) {
+        let timer = Rc::new(RefCell::new(OneShotTimer::new()));
+        let timer_aux = OneShotTimer::new();
         let tstart = std::time::Instant::now();
+        let handler_run = Rc::new(RefCell::new(false));
 
-        timer.run_once(ms(200), move || not_run_handler());
+        timer.borrow_mut().run_once(ms(20), move || not_run_handler());
 
-        std::thread::sleep(ms(100));
+        timer_aux.run_once(ms(10), clone!(@weak timer, @weak handler_run => @default-panic, move || {
+            timer.borrow_mut().run_once(
+                ms(20),
+                clone!(@weak handler_run => @default-panic, move || {
+                    assert!(tstart.elapsed() > ms(29) && tstart.elapsed() < ms(31));
+                    *handler_run.borrow_mut() = true;
+                })
+            );
+        }));
 
-        timer.run_once(
-            ms(200),
-            move || { assert!(tstart.elapsed() > ms(290) && tstart.elapsed() < ms(310)) }
-        )
+        let _q = loop_for(main_loop, ms(50));
+        main_loop.run();
+
+        assert!(*handler_run.borrow() == true);
     }
 
-    fn timer_update_twice() {
-        let timer = OneShotTimer::new();
-
+    fn timer_update_twice(main_loop: &glib::MainLoop) {
+        let timer = Rc::new(RefCell::new(OneShotTimer::new()));
+        let timer_aux1 = OneShotTimer::new();
+        let timer_aux2 = OneShotTimer::new();
         let tstart = std::time::Instant::now();
+        let handler_run = Rc::new(RefCell::new(false));
 
-        timer.run_once(ms(200), move || not_run_handler());
+        timer.borrow_mut().run_once(ms(20), move || not_run_handler());
 
-        std::thread::sleep(ms(100));
+        timer_aux1.run_once(ms(10), clone!(@weak timer, @weak handler_run => @default-panic, move || {
+            timer.borrow_mut().run_once(ms(20), move || not_run_handler());
+        }));
 
-        timer.run_once(ms(200), move || not_run_handler());
+        timer_aux2.run_once(ms(20), clone!(@weak timer, @weak handler_run => @default-panic, move || {
+            timer.borrow_mut().run_once(
+                ms(20),
+                clone!(@weak handler_run => @default-panic, move || {
+                    assert!(tstart.elapsed() > ms(39) && tstart.elapsed() < ms(41));
+                    *handler_run.borrow_mut() = true;
+                })
+            );
+        }));
 
-        std::thread::sleep(ms(100));
+        let _q = loop_for(main_loop, ms(50));
+        main_loop.run();
 
-        timer.run_once(
-            ms(200),
-            move || { assert!(tstart.elapsed() > ms(390) && tstart.elapsed() < ms(410)) }
-        );
+        assert!(*handler_run.borrow() == true);
     }
 
-    fn timer_stop() {
-        let timer = OneShotTimer::new();
+    fn timer_stop(main_loop: &glib::MainLoop) {
+        let timer = Rc::new(RefCell::new(OneShotTimer::new()));
+        timer.borrow_mut().run_once(ms(20), move || not_run_handler());
 
-        timer.run_once(ms(200), move || not_run_handler());
+        let timer_aux = OneShotTimer::new();
+        timer_aux.run_once(ms(10), clone!(@weak timer, @strong main_loop => @default-panic, move || {
+            let t = timer.borrow();
+            t.stop();
+        }));
 
-        std::thread::sleep(ms(100));
+        let _q = loop_for(main_loop, ms(50));
 
-        timer.stop();
+        main_loop.run();
     }
 }
