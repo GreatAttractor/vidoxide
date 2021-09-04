@@ -27,7 +27,8 @@ impl OneShotTimer {
 
         let (sender_timer, receiver_main) = glib::MainContext::channel::<()>(glib::PRIORITY_DEFAULT);
         receiver_main.attach(None, clone!(@weak handler => @default-panic, move |_| {
-            (*(*handler).borrow().as_ref().unwrap())();
+            let handler = handler.take().unwrap();
+            handler();
             return glib::Continue(true);
         }));
 
@@ -91,6 +92,7 @@ mod tests {
         timer_update_once(&main_loop);
         timer_update_twice(&main_loop);
         timer_stop(&main_loop);
+        timer_update_from_handler(&main_loop);
     }
 
     fn ms(num_millis: u64) -> std::time::Duration {
@@ -117,7 +119,7 @@ mod tests {
             std::time::Duration::from_millis(20),
             clone!(@weak handler_run, @strong main_loop => @default-panic, move || {
                 assert!(tstart.elapsed() > ms(19) && tstart.elapsed() < ms(21));
-                *handler_run.borrow_mut() = true;
+                handler_run.replace(true);
             })
         );
 
@@ -140,7 +142,7 @@ mod tests {
                 ms(20),
                 clone!(@weak handler_run => @default-panic, move || {
                     assert!(tstart.elapsed() > ms(29) && tstart.elapsed() < ms(31));
-                    *handler_run.borrow_mut() = true;
+                    handler_run.replace(true);
                 })
             );
         }));
@@ -169,7 +171,7 @@ mod tests {
                 ms(20),
                 clone!(@weak handler_run => @default-panic, move || {
                     assert!(tstart.elapsed() > ms(39) && tstart.elapsed() < ms(41));
-                    *handler_run.borrow_mut() = true;
+                    handler_run.replace(true);
                 })
             );
         }));
@@ -191,7 +193,23 @@ mod tests {
         }));
 
         let _q = loop_for(main_loop, ms(50));
-
         main_loop.run();
+    }
+
+    fn timer_update_from_handler(main_loop: &glib::MainLoop) {
+        let handler_run = Rc::new(RefCell::new(false));
+        let timer = Rc::new(RefCell::new(OneShotTimer::new()));
+
+        timer.borrow_mut().run_once(ms(10), clone!(@weak timer, @weak handler_run => @default-panic, move || {
+            timer.borrow_mut().run_once(
+                ms(10),
+                clone!(@weak handler_run => @default-panic, move || { handler_run.replace(true); })
+            );
+        }));
+
+        let _q = loop_for(main_loop, ms(50));
+        main_loop.run();
+
+        assert!(*handler_run.borrow() == true);
     }
 }
