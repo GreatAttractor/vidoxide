@@ -753,6 +753,8 @@ dependencies = [
 [[package]]
 name = "libspinnaker-sys"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "94587577eb5cda1db6d82ec14682679be05555ac5f29bc833674c94e98fc8209"
 
 [[package]]
 name = "libudev"
