@@ -50,6 +50,8 @@ use std::path::Path;
 use std::rc::Rc;
 use std::sync::atomic::Ordering;
 
+pub use mount_gui::on_mount_error;
+
 /// Control padding in pixels.
 const PADDING: u32 = 10;
 
@@ -906,26 +908,39 @@ pub fn on_timer(program_data_rc: &Rc<RefCell<ProgramData>>) {
 }
 
 fn on_tracking_ended(program_data_rc: &Rc<RefCell<ProgramData>>) {
-    let mut pd = program_data_rc.borrow_mut();
-    pd.tracking = None;
-    if pd.mount_data.calibration_in_progress() {
-        pd.mount_data.calibration_timer.stop();
-        pd.mount_data.calibration = None;
-    }
-    pd.mount_data.guiding_timer.stop();
-
-    let sd_on = pd.mount_data.sidereal_tracking_on;
-
-    if let Some(mount) = &mut pd.mount_data.mount {
-        mount.stop_motion(mount::Axis::Secondary).unwrap();
-        mount.set_motion(
-            mount::Axis::Primary,
-            if sd_on { 1.0 * mount::SIDEREAL_RATE } else { 0.0 }
-        ).unwrap();
-        pd.mount_data.guide_slewing = false;
+    {
+        let mut pd = program_data_rc.borrow_mut();
+        pd.tracking = None;
+        if pd.mount_data.calibration_in_progress() {
+            pd.mount_data.calibration_timer.stop();
+            pd.mount_data.calibration = None;
+        }
+        pd.mount_data.guiding_timer.stop();
     }
 
-    pd.gui.as_ref().unwrap().mount_widgets.on_target_tracking_ended();
+    let sd_on = program_data_rc.borrow().mount_data.sidereal_tracking_on;
+    let has_mount = program_data_rc.borrow().mount_data.mount.is_some();
+
+    if has_mount {
+        program_data_rc.borrow_mut().mount_data.guide_slewing = false;
+
+        //TODO: stop only if a guiding or calibration slew is in progress, not one started by user via an arrow button
+
+        let r = program_data_rc.borrow_mut().mount_data.mount.as_mut().unwrap().stop_motion(mount::Axis::Secondary);
+        if let Err(e) = &r {
+            mount_gui::on_mount_error(e);
+        } else {
+            let r = program_data_rc.borrow_mut().mount_data.mount.as_mut().unwrap().set_motion(
+                mount::Axis::Primary,
+                if sd_on { 1.0 * mount::SIDEREAL_RATE } else { 0.0 }
+            );
+            if let Err(e) = &r {
+                mount_gui::on_mount_error(e);
+            }
+        }
+    }
+
+    program_data_rc.borrow().gui.as_ref().unwrap().mount_widgets.on_target_tracking_ended();
     println!("Tracking disabled.");
 }
 

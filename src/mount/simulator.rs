@@ -23,15 +23,15 @@ impl Mount for Simulator {
         Ok("Simulator".to_string())
     }
 
-    fn set_motion(&mut self, axis: Axis, speed: f64) -> Result<(), MountError> {
+    fn set_motion(&mut self, _axis: Axis, _speed: f64) -> Result<(), MountError> {
         Ok(())
     }
 
-    fn stop_motion(&mut self, axis: Axis) -> Result<(), MountError> {
+    fn stop_motion(&mut self, _axis: Axis) -> Result<(), MountError> {
         Ok(())
     }
 
-    fn get_motion_speed(&self, axis: Axis) -> Result<f64, MountError> {
+    fn get_motion_speed(&self, _axis: Axis) -> Result<f64, MountError> {
         Ok(1.0)
     }
 }

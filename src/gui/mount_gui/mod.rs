@@ -116,9 +116,19 @@ impl MountWidgets {
 }
 
 fn on_stop(program_data_rc: &Rc<RefCell<ProgramData>>) {
+    let r = program_data_rc.borrow_mut().mount_data.mount.as_mut().unwrap().stop_motion(mount::Axis::Primary);
+    if let Err(e) = &r {
+        on_mount_error(e);
+        return;
+    }
+
+    let r = program_data_rc.borrow_mut().mount_data.mount.as_mut().unwrap().stop_motion(mount::Axis::Secondary);
+    if let Err(e) = &r {
+        on_mount_error(e);
+        return;
+    }
+
     let mut pd = program_data_rc.borrow_mut();
-    pd.mount_data.mount.as_mut().unwrap().stop_motion(mount::Axis::Primary).unwrap();
-    pd.mount_data.mount.as_mut().unwrap().stop_motion(mount::Axis::Secondary).unwrap();
 
     pd.mount_data.guide_slewing = false;
     pd.mount_data.guiding_timer.stop();
@@ -143,51 +153,58 @@ fn on_start_calibration(btn: &gtk::Button, program_data_rc: &Rc<RefCell<ProgramD
         return;
     }
 
-    btn.set_sensitive(false);
-    let mut pd = program_data_rc.borrow_mut();
-    pd.mount_data.calibration = Some(MountCalibration{
-        origin: pd.tracking.as_ref().unwrap().pos,
-        primary_dir: None,
-        secondary_dir: None,
-        img_to_mount_axes: None
-    });
+    {
+        let mut pd = program_data_rc.borrow_mut();
+        pd.mount_data.calibration = Some(MountCalibration{
+            origin: pd.tracking.as_ref().unwrap().pos,
+            primary_dir: None,
+            secondary_dir: None,
+            img_to_mount_axes: None
+        });
+    }
 
-    let slew_speed = pd.gui.as_ref().unwrap().mount_widgets.slew_speed() * mount::SIDEREAL_RATE;
-    pd.mount_data.mount.as_mut().unwrap().set_motion(mount::Axis::Primary, slew_speed).unwrap();
-
-    pd.mount_data.calibration_timer.run_once(
-        CALIBRATION_DURATION,
-        clone!(@weak program_data_rc => @default-panic, move || { on_calibration_timer(&program_data_rc); }
-    ));
+    let slew_speed = program_data_rc.borrow().gui.as_ref().unwrap().mount_widgets.slew_speed() * mount::SIDEREAL_RATE;
+    let r = program_data_rc.borrow_mut().mount_data.mount.as_mut().unwrap().set_motion(mount::Axis::Primary, slew_speed);
+    if let Err(e) = &r {
+        on_mount_error(e);
+    } else {
+        program_data_rc.borrow_mut().mount_data.calibration_timer.run_once(
+            CALIBRATION_DURATION,
+            clone!(@weak program_data_rc => @default-panic, move || { on_calibration_timer(&program_data_rc); }
+        ));
+        btn.set_sensitive(false);
+    }
 }
 
 fn on_calibration_timer(program_data_rc: &Rc<RefCell<ProgramData>>) {
     if program_data_rc.borrow().mount_data.calibration.is_none() { return; }
 
     const MIN_VECTOR_LENGTH: f64 = 50.0;
-    let mut must_show_error: Option<String> = None;
-    { // `program_data_rc` borrow starts
+    let must_show_error: RefCell<Option<String>> = RefCell::new(None);
+    loop { // `program_data_rc` borrow starts
         let mut pd = program_data_rc.borrow_mut();
         let tracking_pos = pd.tracking.as_ref().unwrap().pos;
 
         let sd_on = pd.mount_data.sidereal_tracking_on;
         if pd.mount_data.calibration.as_ref().unwrap().primary_dir.is_none() {
-            pd.mount_data.mount.as_mut().unwrap().set_motion(
+            let r = pd.mount_data.mount.as_mut().unwrap().set_motion(
                 mount::Axis::Primary,
                 if sd_on { 1.0 * mount::SIDEREAL_RATE } else { 0.0 }
-            ).unwrap();
+            );
+            if let Err(e) = &r { must_show_error.replace(Some(mount_error_msg(e))); break; }
         } else {
-            pd.mount_data.mount.as_mut().unwrap().stop_motion(mount::Axis::Secondary).unwrap();
+            let r = pd.mount_data.mount.as_mut().unwrap().stop_motion(mount::Axis::Secondary);
+            if let Err(e) = &r { must_show_error.replace(Some(mount_error_msg(e))); break; }
         }
 
-        let mut dir_getter = || -> Option<(f64, f64)> {
+        let dir_getter = || -> Option<(f64, f64)> {
             let delta = tracking_pos - pd.mount_data.calibration.as_ref().unwrap().origin;
             let len = delta.dist_from_origin();
             if len < MIN_VECTOR_LENGTH {
-                must_show_error = Some(
+                must_show_error.replace(Some(
                     format!("Calibration failed: image moved by less than {:.0} pixels.\n \
                         Try increasing the slewing speed.", MIN_VECTOR_LENGTH)
-                );
+                ));
                 None
             } else {
                 Some((delta.x as f64 / len, delta.y as f64 / len))
@@ -199,13 +216,19 @@ fn on_calibration_timer(program_data_rc: &Rc<RefCell<ProgramData>>) {
                 pd.mount_data.calibration.as_mut().unwrap().primary_dir = Some(dir);
 
                 let slew_speed = pd.gui.as_ref().unwrap().mount_widgets.slew_speed() * mount::SIDEREAL_RATE;
-                pd.mount_data.mount.as_mut().unwrap().set_motion(mount::Axis::Secondary, slew_speed).unwrap();
-
-                pd.mount_data.calibration.as_mut().unwrap().origin = pd.tracking.as_ref().unwrap().pos;
-                pd.mount_data.calibration_timer.run_once(
-                    CALIBRATION_DURATION,
-                    clone!(@weak program_data_rc => @default-panic, move || { on_calibration_timer(&program_data_rc); })
-                );
+                let r = pd.mount_data.mount.as_mut().unwrap().set_motion(mount::Axis::Secondary, slew_speed);
+                if let Err(e) = &r {
+                    must_show_error.replace(Some(mount_error_msg(e)));
+                    break;
+                } else {
+                    pd.mount_data.calibration.as_mut().unwrap().origin = pd.tracking.as_ref().unwrap().pos;
+                    pd.mount_data.calibration_timer.run_once(
+                        CALIBRATION_DURATION,
+                        clone!(@weak program_data_rc => @default-panic, move || {
+                            on_calibration_timer(&program_data_rc);
+                        })
+                    );
+                }
             }
         } else {
             pd.mount_data.calibration.as_mut().unwrap().secondary_dir = dir_getter();
@@ -215,12 +238,21 @@ fn on_calibration_timer(program_data_rc: &Rc<RefCell<ProgramData>>) {
                 *pd.mount_data.calibration.as_mut().unwrap().secondary_dir.as_ref().unwrap()
             );
 
-            pd.mount_data.calibration.as_mut().unwrap().img_to_mount_axes =
-                Some(guiding::create_img_to_mount_axes_matrix(primary_dir, secondary_dir));
+            match guiding::create_img_to_mount_axes_matrix(primary_dir, secondary_dir) {
+                Ok(matrix) => { pd.mount_data.calibration.as_mut().unwrap().img_to_mount_axes = Some(matrix); },
+                _ => {
+                    must_show_error.replace(
+                        Some("Mount-axes-to-image transformation matrix is non-invertible.".to_string())
+                    );
+                    break;
+                }
+            }
         }
+
+        break;
     } // `program_data_rc` borrow ends
 
-    if let Some(msg) = must_show_error {
+    if let Some(msg) = must_show_error.take() {
         program_data_rc.borrow_mut().mount_data.calibration = None;
         show_message(&msg, "Error", gtk::MessageType::Error);
         program_data_rc.borrow().gui.as_ref().unwrap().mount_widgets.calibrate.set_sensitive(true);
@@ -299,7 +331,9 @@ pub fn create_mount_box(program_data_rc: &Rc<RefCell<ProgramData>>) -> MountWidg
         if btn.is_active() {
             guiding::start_guiding(&program_data_rc);
         } else {
-            guiding::stop_guiding(&program_data_rc);
+            if let Err(e) = guiding::stop_guiding(&program_data_rc) {
+                on_mount_error(&e);
+            }
         }
     }));
     lower_box.pack_start(&btn_guide, false, false, PADDING);
@@ -324,15 +358,39 @@ pub fn create_mount_box(program_data_rc: &Rc<RefCell<ProgramData>>) -> MountWidg
     }
 }
 
+fn mount_error_msg(e: &mount::MountError) -> String {
+    format!("Error communicating with mount: {:?}.", e)
+}
+
+/// Shows mount error message.
+///
+/// Active borrows of `program_data` *must not be held* when calling this function.
+///
+pub fn on_mount_error(e: &mount::MountError) {
+    show_message(&mount_error_msg(e), "Error", gtk::MessageType::Error);
+}
+
 fn on_toggle_sidereal_tracking(btn: &gtk::ToggleButton, program_data_rc: &Rc<RefCell<ProgramData>>) {
-    let mut pd = program_data_rc.borrow_mut();
-    pd.mount_data.sidereal_tracking_on = btn.is_active();
     if btn.is_active() {
         // TODO: abort calibration; or do not allow toggling ST during calibration
-        pd.mount_data.mount.as_mut().unwrap().set_motion(mount::Axis::Primary, mount::SIDEREAL_RATE).unwrap();
+        let r = program_data_rc.borrow_mut().mount_data.mount.as_mut().unwrap().set_motion(
+            mount::Axis::Primary, mount::SIDEREAL_RATE
+        );
+        if let Err(e) = &r {
+            btn.set_active(false);
+            on_mount_error(e);
+            return;
+        }
     } else {
-        pd.mount_data.mount.as_mut().unwrap().stop_motion(mount::Axis::Primary).unwrap();
+        let r = program_data_rc.borrow_mut().mount_data.mount.as_mut().unwrap().stop_motion(mount::Axis::Primary);
+        if let Err(e) = &r {
+            btn.set_active(true);
+            on_mount_error(e);
+            return;
+        }
     }
+
+    program_data_rc.borrow_mut().mount_data.sidereal_tracking_on = btn.is_active();
 }
 
 /// Returns slewing buttons: (Primary-, Secondary+, Secondary-, Primary+).
@@ -344,14 +402,16 @@ fn create_direction_buttons(program_data_rc: &Rc<RefCell<ProgramData>>)
     dir_primary_neg.connect_button_press_event(clone!(@weak program_data_rc => @default-panic, move |_, _| {
         let base = if program_data_rc.borrow().mount_data.sidereal_tracking_on { mount::SIDEREAL_RATE } else { 0.0 };
         let speed = program_data_rc.borrow().gui.as_ref().unwrap().mount_widgets.slew_speed();
-        program_data_rc.borrow_mut().mount_data.mount.as_mut().unwrap().set_motion(
+        let r = program_data_rc.borrow_mut().mount_data.mount.as_mut().unwrap().set_motion(
             mount::Axis::Primary, -speed * mount::SIDEREAL_RATE + base
-        ).unwrap();
-        gtk::Inhibit(false)
+        );
+        if let Err(e) = &r { on_mount_error(e) }
+        gtk::Inhibit(r.is_err())
     }));
     dir_primary_neg.connect_button_release_event(clone!(@weak program_data_rc => @default-panic, move |_, _| {
         let base = if program_data_rc.borrow().mount_data.sidereal_tracking_on { mount::SIDEREAL_RATE } else { 0.0 };
-        program_data_rc.borrow_mut().mount_data.mount.as_mut().unwrap().set_motion(mount::Axis::Primary, base).unwrap();
+        let r = program_data_rc.borrow_mut().mount_data.mount.as_mut().unwrap().set_motion(mount::Axis::Primary, base);
+        if let Err(e) = &r { on_mount_error(e) }
         gtk::Inhibit(false)
     }));
 
@@ -359,13 +419,15 @@ fn create_direction_buttons(program_data_rc: &Rc<RefCell<ProgramData>>)
     dir_secondary_pos.set_tooltip_text(Some("Secondary axis positive slew"));
     dir_secondary_pos.connect_button_press_event(clone!(@weak program_data_rc => @default-panic, move |_, _| {
         let speed = program_data_rc.borrow().gui.as_ref().unwrap().mount_widgets.slew_speed();
-        program_data_rc.borrow_mut().mount_data.mount.as_mut().unwrap().set_motion(
+        let r = program_data_rc.borrow_mut().mount_data.mount.as_mut().unwrap().set_motion(
             mount::Axis::Secondary, speed * mount::SIDEREAL_RATE
-        ).unwrap();
-        gtk::Inhibit(false)
+        );
+        if let Err(e) = &r { on_mount_error(e) }
+        gtk::Inhibit(r.is_err())
     }));
     dir_secondary_pos.connect_button_release_event(clone!(@weak program_data_rc => @default-panic, move |_, _| {
-        program_data_rc.borrow_mut().mount_data.mount.as_mut().unwrap().stop_motion(mount::Axis::Secondary).unwrap();
+        let r = program_data_rc.borrow_mut().mount_data.mount.as_mut().unwrap().stop_motion(mount::Axis::Secondary);
+        if let Err(e) = &r { on_mount_error(e) }
         gtk::Inhibit(false)
     }));
 
@@ -373,13 +435,15 @@ fn create_direction_buttons(program_data_rc: &Rc<RefCell<ProgramData>>)
     dir_secondary_neg.set_tooltip_text(Some("Secondary axis negative slew"));
     dir_secondary_neg.connect_button_press_event(clone!(@weak program_data_rc => @default-panic, move |_, _| {
         let speed = program_data_rc.borrow().gui.as_ref().unwrap().mount_widgets.slew_speed();
-        program_data_rc.borrow_mut().mount_data.mount.as_mut().unwrap().set_motion(
+        let r = program_data_rc.borrow_mut().mount_data.mount.as_mut().unwrap().set_motion(
             mount::Axis::Secondary, -speed * mount::SIDEREAL_RATE
-        ).unwrap();
-        gtk::Inhibit(false)
+        );
+        if let Err(e) = &r { on_mount_error(e) }
+        gtk::Inhibit(r.is_err())
     }));
     dir_secondary_neg.connect_button_release_event(clone!(@weak program_data_rc => @default-panic, move |_, _| {
-        program_data_rc.borrow_mut().mount_data.mount.as_mut().unwrap().stop_motion(mount::Axis::Secondary).unwrap();
+        let r = program_data_rc.borrow_mut().mount_data.mount.as_mut().unwrap().stop_motion(mount::Axis::Secondary);
+        if let Err(e) = &r { on_mount_error(e) }
         gtk::Inhibit(false)
     }));
 
@@ -388,14 +452,16 @@ fn create_direction_buttons(program_data_rc: &Rc<RefCell<ProgramData>>)
     dir_primary_pos.connect_button_press_event(clone!(@weak program_data_rc => @default-panic, move |_, _| {
         let base = if program_data_rc.borrow().mount_data.sidereal_tracking_on { mount::SIDEREAL_RATE } else { 0.0 };
         let speed = program_data_rc.borrow().gui.as_ref().unwrap().mount_widgets.slew_speed();
-        program_data_rc.borrow_mut().mount_data.mount.as_mut().unwrap().set_motion(
+        let r = program_data_rc.borrow_mut().mount_data.mount.as_mut().unwrap().set_motion(
             mount::Axis::Primary, speed * mount::SIDEREAL_RATE + base
-        ).unwrap();
-        gtk::Inhibit(false)
+        );
+        if let Err(e) = &r { on_mount_error(e) }
+        gtk::Inhibit(r.is_err())
     }));
     dir_primary_pos.connect_button_release_event(clone!(@weak program_data_rc => @default-panic, move |_, _| {
         let base = if program_data_rc.borrow().mount_data.sidereal_tracking_on { mount::SIDEREAL_RATE } else { 0.0 };
-        program_data_rc.borrow_mut().mount_data.mount.as_mut().unwrap().set_motion(mount::Axis::Primary, base).unwrap();
+        let r = program_data_rc.borrow_mut().mount_data.mount.as_mut().unwrap().set_motion(mount::Axis::Primary, base);
+        if let Err(e) = &r { on_mount_error(e) }
         gtk::Inhibit(false)
     }));
 
