@@ -324,7 +324,7 @@ mod spin {
             let mut available: bool8_t = False;
             checked_call!(spinNodeIsAvailable(handle, &mut available));
             if available != True {
-                return Err(SpinnakerError::Error(format!("Node \"{}\" is not available.", name)).into());
+                return Err(SpinnakerError::Error(format!("node \"{}\" is not available", name)).into());
             }
 
             Ok(Node{ handle, name: name.to_string(), node_type: RefCell::new(None) })
@@ -354,7 +354,7 @@ mod spin {
             let mut readable: bool8_t = False;
             checked_call!(spinNodeIsReadable(self.handle, &mut readable));
             if readable != True {
-                return Err(SpinnakerError::Error(format!("Node \"{}\" is not readable.", self.name)).into());
+                return Err(SpinnakerError::Error(format!("node \"{}\" is not readable", self.name)).into());
             }
 
             read_string(self.handle, spinStringGetValue)
@@ -392,7 +392,7 @@ mod spin {
             let mut readable: bool8_t = False;
             checked_call!(spinNodeIsReadable(self.handle, &mut readable));
             if readable != True {
-                return Err(SpinnakerError::Error(format!("Node \"{}\" is not readable.", self.name)).into());
+                return Err(SpinnakerError::Error(format!("node \"{}\" is not readable", self.name)).into());
             }
 
             read_string(self.handle, spinNodeToString)
@@ -536,7 +536,7 @@ fn to_pix_format(pix_format: _spinPixelFormatEnums) -> Result<ga_image::PixelFor
         _spinPixelFormatEnums_PixelFormat_BayerGB16 => Ok(ga_image::PixelFormat::CfaGBRG16),
         _spinPixelFormatEnums_PixelFormat_BayerBG16 => Ok(ga_image::PixelFormat::CfaBGGR16),
 
-        _ => Err(SpinnakerError::Error(format!("Unsupported Spinnaker pixel format: {}", pix_format)).into())
+        _ => Err(SpinnakerError::Error(format!("unsupported Spinnaker pixel format: {}", pix_format)).into())
     }
 }
 
@@ -585,7 +585,7 @@ impl Driver for SpinnakerDriver {
     fn open_camera(&mut self, id: CameraId) -> Result<Box<dyn Camera>, CameraError> {
         let index: usize = id.into();
         if self.cameras.is_none() || index > self.cameras.as_ref().unwrap().num_cameras()? {
-            return Err(SpinnakerError::Error(format!("Invalid camera id: {}", index)).into());
+            return Err(SpinnakerError::Error(format!("invalid camera id: {}", index)).into());
         }
 
         let mut camera_handle = self.cameras.as_ref().unwrap().camera(index)?;
@@ -1010,7 +1010,7 @@ impl FrameCapturer for SpinnakerFrameCapturer {
             }
 
             _ => return Err(SpinnakerError::Error(
-                format!("Error code: {}. {}", status, spin::read_string(status, spinImageGetStatusDescription)?)
+                format!("error {} ({})", status, spin::read_string(status, spinImageGetStatusDescription)?)
             ).into())
         }
 

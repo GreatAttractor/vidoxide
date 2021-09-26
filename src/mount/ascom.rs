@@ -250,7 +250,7 @@ impl Ascom {
         checked_call!(unsafe { ((*(*telescope).lpVtbl).Connected)(telescope, &mut is_connected as *mut _) });
         if is_connected == VariantBool::FALSE {
             return Err(AscomError(
-                "Connection to mount is not active. Try using the ASCOM configuration dialog of the driver.".to_string()
+                "connection to mount is not active; try using the ASCOM configuration dialog of the driver".to_string()
             ));
         }
 

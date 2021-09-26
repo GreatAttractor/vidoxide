@@ -702,7 +702,7 @@ impl Camera for IIDCCamera {
 
     fn set_roi(&mut self, x0: u32, y0: u32, width: u32, height: u32) -> Result<(), CameraError> {
         if !is_scalable(self.current_vid_mode) {
-            return Err(CameraError::UnableToSetROI("IIDC: ROI can only be set for Format7 video modes.".to_string()));
+            return Err(CameraError::UnableToSetROI("ROI can only be set for Format7 video modes".to_string()));
         }
 
         let cam = self.camera_handle.handle;

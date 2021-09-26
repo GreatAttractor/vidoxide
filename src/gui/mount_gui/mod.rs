@@ -429,7 +429,7 @@ pub fn init_mount_menu(program_data_rc: &Rc<RefCell<ProgramData>>, app_window: &
                 Some(connection) => {
                     match mount::connect_to_mount(connection) {
                         Err(e) => show_message(
-                            &format!("Failed to connect to mount:\n\n({:?}).", e),
+                            &format!("Failed to connect to mount: {:?}.", e),
                             "Error",
                             gtk::MessageType::Error
                         ),

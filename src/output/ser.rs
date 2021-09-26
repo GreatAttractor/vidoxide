@@ -114,13 +114,13 @@ impl OutputWriter for SerVideo {
                 };
                 match utils::write_struct(&ser_header, &mut self.writer) {
                     Ok(_) => (),
-                    Err(err) => return Err(format!("Error writing SER header: {:?}.", err))
+                    Err(err) => return Err(format!("error writing SER header: {:?}", err))
                 }
             }
             Some(f) => if image.width() != f.0 ||
                           image.height() != f.1 ||
                           image.pixel_format() != f.2 {
-                return Err(format!("Unexpected frame: {}x{}, {:?} (expected {}x{}, {:?}).",
+                return Err(format!("unexpected frame: {}x{}, {:?} (expected {}x{}, {:?})",
                     image.width(), image.height(), image.pixel_format(),
                     f.0, f.1, f.2)
                 );
@@ -144,11 +144,11 @@ impl OutputWriter for SerVideo {
 
     fn finalize(&mut self) -> Result<(), String> {
         match self.writer.seek(SeekFrom::Start(38 /* offset of `frame_count` */)) {
-            Err(err) => { return Err(format!("I/O error: {:?}.", err)); },
+            Err(err) => { return Err(format!("I/O error: {:?}", err)); },
             _ => ()
         }
         match utils::write_struct(&self.frame_count.to_le(), &mut self.writer) {
-            Err(err) => { return Err(format!("I/O error: {:?}.", err)); },
+            Err(err) => { return Err(format!("I/O error: {:?}", err)); },
             _ => ()
         }
 

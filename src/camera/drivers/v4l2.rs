@@ -239,7 +239,7 @@ impl Camera for V4L2Camera {
     }
 
     fn set_roi(&mut self, _x0: u32, _y0: u32, _width: u32, _height: u32) -> Result<(), CameraError> {
-        Err(CameraError::UnableToSetROI("V4L2: Setting ROI is not supported.".to_string()))
+        Err(CameraError::UnableToSetROI("setting ROI is not supported".to_string()))
     }
 
     fn unset_roi(&mut self) -> Result<(), CameraError> {
