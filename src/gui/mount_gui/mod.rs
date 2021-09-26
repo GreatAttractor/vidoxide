@@ -12,6 +12,7 @@
 
 #[cfg(feature = "mount_ascom")]
 mod ascom;
+mod simulator;
 mod skywatcher;
 pub mod connection_dialog;
 

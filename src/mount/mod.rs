@@ -12,6 +12,7 @@
 
 #[cfg(feature = "mount_ascom")]
 mod ascom;
+mod simulator;
 mod skywatcher;
 
 #[derive(Copy, Clone)]
@@ -24,7 +25,9 @@ pub enum MountError {
     SkyWatcherError(skywatcher::SWError),
 
     #[cfg(feature = "mount_ascom")]
-    AscomError(ascom::AscomError)
+    AscomError(ascom::AscomError),
+
+    SimulatorError(simulator::SimulatorError)
 }
 
 #[derive(strum_macros::EnumIter)]
@@ -34,7 +37,9 @@ pub enum MountConnection {
 
     /// Contains ProgID of telescope (e.g., "EQMOD.Telescope").
     #[cfg(feature = "mount_ascom")]
-    Ascom(String)
+    Ascom(String),
+
+    Simulator
 }
 
 pub const SECONDS_PER_DAY: f64 = 86164.09065;
@@ -71,6 +76,10 @@ pub fn connect_to_mount(connection: MountConnection) -> Result<Box<dyn Mount>, M
         #[cfg(feature = "mount_ascom")]
         MountConnection::Ascom(progid) => {
             Ok(Box::new(ascom::Ascom::new(&progid)?))
+        },
+
+        MountConnection::Simulator => {
+            Ok(Box::new(simulator::Simulator::new()))
         }
     }
 }

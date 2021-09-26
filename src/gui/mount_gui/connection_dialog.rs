@@ -13,6 +13,7 @@
 use crate::gui::DialogDestroyer;
 #[cfg(feature = "mount_ascom")]
 use crate::gui::mount_gui::ascom;
+use crate::gui::mount_gui::simulator;
 use crate::gui::mount_gui::skywatcher;
 use crate::mount::MountConnection;
 use crate::ProgramData;
@@ -51,6 +52,9 @@ pub fn show_mount_connect_dialog(parent: &gtk::ApplicationWindow, program_data_r
         match mount_type {
             #[cfg(feature = "mount_ascom")]
             MountConnection::Ascom(_) => creators.push(ascom::AscomConnectionCreator::new(&configuration!())),
+
+            MountConnection::Simulator =>
+                creators.push(simulator::SimulatorConnectionCreator::new(&configuration!())),
 
             MountConnection::SkyWatcherSerial(_) =>
                 creators.push(skywatcher::SWConnectionCreator::new(&configuration!())),
