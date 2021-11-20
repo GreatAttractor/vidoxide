@@ -45,8 +45,8 @@ impl ConnectionCreator for AscomConnectionCreator {
     fn dialog_tab(&self) -> &gtk::Box { &self.dialog_tab }
 
     fn create(&self, configuration: &crate::config::Configuration) -> MountConnection {
-        configuration.set_ascom_last_driver(&self.entry.text().unwrap());
-        MountConnection::Ascom(self.entry.text().unwrap().as_str().to_string())
+        configuration.set_ascom_last_driver(&self.entry.text());
+        MountConnection::Ascom(self.entry.text().as_str().to_string())
     }
 
     fn label(&self) -> &'static str { "ASCOM" }
