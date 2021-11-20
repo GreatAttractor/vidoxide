@@ -41,6 +41,15 @@ pub struct NumberControlWidgets {
     pub spin_btn_changed_signal: Rc<RefCell<Option<glib::SignalHandlerId>>>
 }
 
+impl Drop for NumberControlWidgets {
+    fn drop(&mut self) {
+        // disable signals to avoid problems with `ProgramData` being borrowed during controls removal
+        // (if the spin button's text box has focus and the control is removed, the changed signal handler gets called)
+        self.spin_btn.block_signal(self.spin_btn_changed_signal.borrow().as_ref().unwrap());
+        self.slider.block_signal(self.slider_changed_signal.borrow().as_ref().unwrap());
+    }
+}
+
 pub struct BooleanControlWidgets {
     pub state_checkbox: gtk::CheckButton,
     pub checkbox_changed_signal: glib::SignalHandlerId
