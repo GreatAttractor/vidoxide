@@ -908,12 +908,14 @@ pub fn on_timer(program_data_rc: &Rc<RefCell<ProgramData>>) {
 }
 
 fn on_tracking_ended(program_data_rc: &Rc<RefCell<ProgramData>>) {
+    let mut reenable_calibration = false;
     {
         let mut pd = program_data_rc.borrow_mut();
         pd.tracking = None;
         if pd.mount_data.calibration_in_progress() {
             pd.mount_data.calibration_timer.stop();
             pd.mount_data.calibration = None;
+            reenable_calibration = true;
         }
         pd.mount_data.guiding_timer.stop();
     }
@@ -940,7 +942,7 @@ fn on_tracking_ended(program_data_rc: &Rc<RefCell<ProgramData>>) {
         }
     }
 
-    program_data_rc.borrow().gui.as_ref().unwrap().mount_widgets.on_target_tracking_ended();
+    program_data_rc.borrow().gui.as_ref().unwrap().mount_widgets.on_target_tracking_ended(reenable_calibration);
     println!("Tracking disabled.");
 }
 

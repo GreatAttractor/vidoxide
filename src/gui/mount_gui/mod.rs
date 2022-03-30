@@ -73,8 +73,11 @@ pub struct MountWidgets {
 impl MountWidgets {
     pub fn wbox(&self) -> &gtk::Box { &self.wbox }
 
-    pub fn on_target_tracking_ended(&self) {
+    pub fn on_target_tracking_ended(&self, reenable_calibration_button: bool) {
         self.disable_guide();
+        if reenable_calibration_button {
+            self.calibrate.set_sensitive(true);
+        }
     }
 
     fn on_connect(&self, mount_info: &str, _tracking_enabled: bool)
