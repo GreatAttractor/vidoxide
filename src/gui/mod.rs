@@ -149,7 +149,10 @@ impl DialogDestroyer {
 
 impl Drop for DialogDestroyer {
     fn drop(&mut self) {
-        self.dialog.close();
+        // `close` is not sufficient if another modal dialog is shown subsequently (`self.dialog` would remain visible,
+        // blocking the event loop and requiring clicking the titlebar close icon); `hide` works, but does not delete
+        // the dialog
+        unsafe { self.dialog.destroy(); }
     }
 }
 
