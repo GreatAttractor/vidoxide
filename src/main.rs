@@ -168,7 +168,7 @@ fn main() {
     }
 
     let main_context = glib::MainContext::default();
-    let guard = main_context.acquire().unwrap();
+    let _guard = main_context.acquire().unwrap();
 
     let (histogram_sender_worker, histogram_receiver_main) = glib::MainContext::channel(glib::PRIORITY_DEFAULT);
     let (histogram_sender_main, histogram_receiver_worker) = crossbeam::channel::bounded(1);

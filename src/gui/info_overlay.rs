@@ -120,13 +120,13 @@ fn draw_guiding_info(ctx: &cairo::Context, zoom: f64, guiding_pos: Point, tracki
     ctx.set_line_width(1.0);
     ctx.set_dash(&[6.0, 4.0], 0.0);
     ctx.arc(guiding_pos.x as f64 * zoom, guiding_pos.y as f64 * zoom, GUIDING_POS_CIRCLE_R, 0.0, 2.0 * std::f64::consts::PI);
-    ctx.stroke();
+    ctx.stroke().unwrap();
 
     if blink_on {
         ctx.set_dash(&[], 0.0);
         ctx.move_to(tracking_pos.x as f64 * zoom, tracking_pos.y as f64 * zoom);
         ctx.line_to(guiding_pos.x as f64 * zoom, guiding_pos.y as f64 * zoom);
-        ctx.stroke();
+        ctx.stroke().unwrap();
     }
 }
 
@@ -137,7 +137,7 @@ fn draw_screen_selection(ctx: &cairo::Context, zoom: f64, sel: &ScreenSelection)
     let width = (sel.start.x - sel.end.x).abs() as f64 * zoom;
     let height = (sel.start.y - sel.end.y).abs() as f64 * zoom;
     ctx.rectangle(pos_x, pos_y, width, height);
-    ctx.fill();
+    ctx.fill().unwrap();
 }
 
 fn draw_calibration(ctx: &cairo::Context, zoom: f64, calibration: &MountCalibration, target_pos: Point) {
@@ -148,12 +148,12 @@ fn draw_calibration(ctx: &cairo::Context, zoom: f64, calibration: &MountCalibrat
 
     let origin = (calibration.origin.x as f64 * zoom, calibration.origin.y as f64 * zoom);
     ctx.arc(origin.0, origin.1, 2.5, 0.0, 2.0 * std::f64::consts::PI);
-    ctx.fill();
+    ctx.fill().unwrap();
 
     ctx.set_line_width(1.0);
     ctx.move_to(origin.0, origin.1);
     ctx.line_to(target_pos.x as f64 * zoom, target_pos.y as f64 * zoom);
-    ctx.stroke();
+    ctx.stroke().unwrap();
 }
 
 fn draw_crop_area(ctx: &cairo::Context, zoom: f64, font_size: f64, area: Rect) {
@@ -166,12 +166,12 @@ fn draw_crop_area(ctx: &cairo::Context, zoom: f64, font_size: f64, area: Rect) {
         area.height as f64 * zoom
     );
     ctx.set_dash(&[6.0, 4.0], 0.0);
-    ctx.stroke();
+    ctx.stroke().unwrap();
 
     ctx.move_to(area.x as f64 * zoom, area.y as f64 * zoom - INFO_OVERLAY_LABEL_OFFSET as f64);
     ctx.set_font_size(font_size);
-    ctx.show_text("CROP");
-    ctx.fill();
+    ctx.show_text("CROP").unwrap();
+    ctx.fill().unwrap();
 }
 
 fn draw_histogram_area(ctx: &cairo::Context, zoom: f64, font_size: f64, area: Rect) {
@@ -184,12 +184,12 @@ fn draw_histogram_area(ctx: &cairo::Context, zoom: f64, font_size: f64, area: Re
         area.height as f64 * zoom
     );
     ctx.set_dash(&[6.0, 8.0], 0.0);
-    ctx.stroke();
+    ctx.stroke().unwrap();
 
     ctx.move_to(area.x as f64 * zoom, area.y as f64 * zoom - INFO_OVERLAY_LABEL_OFFSET as f64);
     ctx.set_font_size(font_size);
-    ctx.show_text("HIST");
-    ctx.fill();
+    ctx.show_text("HIST").unwrap();
+    ctx.fill().unwrap();
 }
 
 fn draw_tracking_target_pos(ctx: &cairo::Context, zoom: f64, pos: Point) {
@@ -207,7 +207,7 @@ fn draw_tracking_target_pos(ctx: &cairo::Context, zoom: f64, pos: Point) {
     ctx.rel_line_to(0.0, CROSS_SIZE / 2.0);
 
     ctx.set_dash(&[], 0.0);
-    ctx.stroke();
+    ctx.stroke().unwrap();
 }
 
 fn draw_centroid_rect(ctx: &cairo::Context, rect: Rect, zoom: f64, font_size: f64) {
@@ -220,17 +220,17 @@ fn draw_centroid_rect(ctx: &cairo::Context, rect: Rect, zoom: f64, font_size: f6
         rect.height as f64 * zoom
     );
     ctx.set_dash(&[1.0, 6.0], 0.0);
-    ctx.stroke();
+    ctx.stroke().unwrap();
 
     ctx.move_to(rect.x as f64 * zoom, rect.y as f64 * zoom - INFO_OVERLAY_LABEL_OFFSET as f64);
     ctx.set_font_size(font_size);
-    ctx.show_text("CENTROID");
-    ctx.fill();
+    ctx.show_text("CENTROID").unwrap();
+    ctx.fill().unwrap();
 }
 
 fn draw_anchor(ctx: &cairo::Context, pos: Point, zoom: f64) {
     ctx.set_line_width(1.0);
     ctx.set_source_rgb(1.0, 0.0, 0.0);
     ctx.arc(pos.x as f64 * zoom, pos.y as f64 * zoom, 32.0, 0.0, 6.0);
-    ctx.stroke();
+    ctx.stroke().unwrap();
 }

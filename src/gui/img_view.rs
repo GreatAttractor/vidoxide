@@ -149,14 +149,14 @@ impl ImgView {
                         matrix
                     });
                     source.set_filter(cairo::Filter::Bilinear);
-                    ctx.set_source(&source);
+                    ctx.set_source(&source).unwrap();
                     //TODO: redraw only the invalidated areas (use `copy_clip_rectangle_list`)
                     ctx.rectangle(
                         0.0, 0.0,
                         surface.width() as f64 * state.zoom,
                         surface.height() as f64 * state.zoom
                     );
-                    ctx.fill();
+                    ctx.fill().unwrap();
 
                     draw_info_overlay(ctx, state.zoom);
                 },

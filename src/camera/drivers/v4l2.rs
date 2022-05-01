@@ -189,6 +189,7 @@ struct VideoMode {
 
 pub struct V4L2Camera {
     id: CameraId,
+    #[allow(dead_code)]
     device_file: std::fs::File,
     /// Raw file descriptor of `device_file`.
     fd: std::os::unix::io::RawFd,

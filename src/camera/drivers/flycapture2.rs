@@ -106,7 +106,7 @@ fn video_mode_description(mode: fc2VideoMode) -> &'static str {
         fc2VideoMode::FC2_VIDEOMODE_1600x1200RGB    => "1600x1200 RGB 8-bit",
         fc2VideoMode::FC2_VIDEOMODE_1600x1200Y8     => "1600x1200 Mono 8-bit",
         fc2VideoMode::FC2_VIDEOMODE_1600x1200Y16    => "1600x1200 Mono 16-bit",
-        _ => panic!(format!("Invalid video mode: {}", mode as u32))
+        _ => panic!("Invalid video mode: {}", mode as u32)
     }
 }
 
@@ -138,7 +138,7 @@ fn pixel_format_from_video_mode(mode: fc2VideoMode) -> fc2PixelFormat {
 
         fc2VideoMode::FC2_VIDEOMODE_FORMAT7  => panic!("Expected non-Format7 video mode."),
 
-        _ => panic!(format!("Invalid video mode: {}", mode as u32))
+        _ => panic!("Invalid video mode: {}", mode as u32)
     }
 }
 
@@ -163,7 +163,7 @@ fn pixel_format_name(fc2_pixel_format: fc2PixelFormat) -> &'static str {
         fc2PixelFormat::FC2_PIXEL_FORMAT_BGR16        => "BGR 16-bit",
         fc2PixelFormat::FC2_PIXEL_FORMAT_BGRU16       => "BGRU 16-bit",
         fc2PixelFormat::FC2_PIXEL_FORMAT_422YUV8_JPEG => "JPEG YUV422",
-        _ => panic!(format!("Invalid FC2 pixel format: {}", fc2_pixel_format as u32))
+        _ => panic!("Invalid FC2 pixel format: {}", fc2_pixel_format as u32)
     }
 }
 
@@ -177,7 +177,7 @@ fn frame_rate_name(fr: fc2FrameRate) -> &'static str {
         fc2FrameRate::FC2_FRAMERATE_60 => "60 fps",
         fc2FrameRate::FC2_FRAMERATE_120 => "120 fps",
         fc2FrameRate::FC2_FRAMERATE_240 => "240 fps",
-        _ => panic!(format!("Invalid frame rate: {}", fr as u32))
+        _ => panic!("Invalid frame rate: {}", fr as u32)
     }
 }
 
@@ -206,7 +206,7 @@ fn as_video_mode(mode: u32) -> fc2VideoMode {
        20 => fc2VideoMode::FC2_VIDEOMODE_1600x1200RGB,
        21 => fc2VideoMode::FC2_VIDEOMODE_1600x1200Y8,
        22 => fc2VideoMode::FC2_VIDEOMODE_1600x1200Y16,
-       _ => panic!(format!("Invalid video mode: {}", mode))
+       _ => panic!("Invalid video mode: {}", mode)
     }
 }
 
@@ -220,7 +220,7 @@ fn as_frame_rate(frame_rate: u32) -> fc2FrameRate {
         5 => fc2FrameRate::FC2_FRAMERATE_60,
         6 => fc2FrameRate::FC2_FRAMERATE_120,
         7 => fc2FrameRate::FC2_FRAMERATE_240,
-        _ => panic!(format!("Invalid frame rate: {}", frame_rate))
+        _ => panic!("Invalid frame rate: {}", frame_rate)
     }
 }
 
@@ -258,7 +258,7 @@ fn as_fmt7_mode(mode: u32) -> fc2Mode {
         29 => fc2Mode::FC2_MODE_29,
         30 => fc2Mode::FC2_MODE_30,
         31 => fc2Mode::FC2_MODE_31,
-        _ => panic!(format!("Invalid Format7 mode: {}", mode))
+        _ => panic!("Invalid Format7 mode: {}", mode)
     }
 }
 
@@ -283,7 +283,7 @@ fn as_property_type(prop: u32) -> fc2PropertyType {
         16 => fc2PropertyType::FC2_FRAME_RATE,
         17 => fc2PropertyType::FC2_TEMPERATURE,
 
-        _ => panic!(format!("Invalid property type: {}", prop))
+        _ => panic!("Invalid property type: {}", prop)
     }
 }
 

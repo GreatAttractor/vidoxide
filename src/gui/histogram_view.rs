@@ -129,7 +129,7 @@ fn draw_histogram(histogram: &Histogram, log_scale: bool, d_area: &gtk::DrawingA
             );
         }
 
-        ctx.fill();
+        ctx.fill().unwrap();
 
         // second, draw the color bars additively
 
@@ -160,7 +160,7 @@ fn draw_histogram(histogram: &Histogram, log_scale: bool, d_area: &gtk::DrawingA
                 );
             }
 
-            ctx.fill();
+            ctx.fill().unwrap();
         }
     } else {
         ctx.set_source_rgb(brightness, brightness, brightness);
@@ -178,7 +178,7 @@ fn draw_histogram(histogram: &Histogram, log_scale: bool, d_area: &gtk::DrawingA
                 bar_height
             );
         }
-        ctx.fill();
+        ctx.fill().unwrap();
     }
 
     // draw grid and info
@@ -191,7 +191,7 @@ fn draw_histogram(histogram: &Histogram, log_scale: bool, d_area: &gtk::DrawingA
         ctx.move_to(i as f64 * width as f64 / 4.0, 0.0);
         ctx.line_to(i as f64 * width as f64 / 4.0, (height - 1) as f64);
     }
-    ctx.stroke();
+    ctx.stroke().unwrap();
 
     ctx.set_source_rgba(1.0, 0.0, 0.0, 0.5);
 
@@ -215,7 +215,7 @@ fn draw_histogram(histogram: &Histogram, log_scale: bool, d_area: &gtk::DrawingA
         ctx.set_line_width(2.0);
         ctx.move_to(first_x, 0.0);
         ctx.line_to(first_x, (height - 1) as f64);
-        ctx.stroke();
+        ctx.stroke().unwrap();
 
         // ctx.move_to(first_x + 5.0, height as f64 / 5.0);
         // ctx.set_font_size(30.0/*TODO: configurable*/);
@@ -225,7 +225,7 @@ fn draw_histogram(histogram: &Histogram, log_scale: bool, d_area: &gtk::DrawingA
         let last_x = last_nonzero_idx.unwrap() as f64 / histogram.values().len() as f64 * width as f64;
         ctx.move_to(last_x, 0.0);
         ctx.line_to(last_x, (height - 1) as f64);
-        ctx.stroke();
+        ctx.stroke().unwrap();
 
         // let right_text = format!("{:.1}% →", last_nonzero_idx.unwrap() as f64 / (histogram.values().len() - 1) as f64 * 100.0);
         // ctx.move_to(last_x - 5.0 - ctx.text_extents(&right_text).width, height as f64 / 5.0 + 35.0);

@@ -1,8 +1,5 @@
 use crate::gui::{show_message, DialogDestroyer};
-use crate::ProgramData;
 use gtk::prelude::*;
-use std::cell::RefCell;
-use std::rc::Rc;
 
 /// Control padding in pixels.
 const PADDING: u32 = 10;

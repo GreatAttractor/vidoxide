@@ -139,7 +139,8 @@ pub fn guiding_step(program_data_rc: &Rc<RefCell<ProgramData>>) {
     }
 
     if let Some(e) = error {
-        stop_guiding(program_data_rc); // mount already failed, so ignore further mount errors from this call, if any
+        // mount already failed, so ignore further mount errors from this call, if any
+        let _ = stop_guiding(program_data_rc);
         program_data_rc.borrow().gui.as_ref().unwrap().mount_widgets().disable_guide();
         crate::gui::on_mount_error(&e);
     }

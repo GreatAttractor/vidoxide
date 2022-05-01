@@ -99,7 +99,7 @@ impl OutputWriter for SerVideo {
                         ga_image::PixelFormat::CfaGRBG8 | ga_image::PixelFormat::CfaGRBG16 => (SerColorFormat::BayerGRBG as u32).to_le(),
                         ga_image::PixelFormat::CfaGBRG8 | ga_image::PixelFormat::CfaGBRG16 => (SerColorFormat::BayerGBRG as u32).to_le(),
                         ga_image::PixelFormat::CfaBGGR8 | ga_image::PixelFormat::CfaBGGR16 => (SerColorFormat::BayerBGGR as u32).to_le(),
-                        other => panic!(format!("Recording {:?} as SER video not implemented yet.", other))
+                        other => panic!("Recording {:?} as SER video not implemented yet.", other)
                     },
                     little_endian: if is_machine_big_endian { SER_BIG_ENDIAN.to_le() } else { SER_LITTLE_ENDIAN.to_le() },
                     img_width: image.width().to_le(),
