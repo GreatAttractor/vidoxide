@@ -13,6 +13,8 @@
 use crate::{CameraControlChange, OnCapturePauseAction, ProgramData};
 use crate::camera;
 use crate::camera::{BaseProperties, CameraControl, CameraControlId, CameraInfo, ControlAccessMode, Driver};
+use crate::gui::dec_intervals::DecIntervalsWidget;
+use crate::gui::non_signaling::NonSignalingWrapper;
 use crate::gui::{actions, disconnect_camera, on_capture_thread_message, show_message};
 use crate::workers::capture;
 use crate::workers::capture::MainToCaptureThreadMsg;
@@ -35,19 +37,9 @@ pub struct ListControlWidgets {
 }
 
 pub struct NumberControlWidgets {
-    pub slider: gtk::Scale,
-    pub spin_btn: gtk::SpinButton,
-    pub slider_changed_signal: Rc<RefCell<Option<glib::SignalHandlerId>>>,
-    pub spin_btn_changed_signal: Rc<RefCell<Option<glib::SignalHandlerId>>>
-}
-
-impl Drop for NumberControlWidgets {
-    fn drop(&mut self) {
-        // disable signals to avoid problems with `ProgramData` being borrowed during controls removal
-        // (if the spin button's text box has focus and the control is removed, the changed signal handler gets called)
-        self.spin_btn.block_signal(self.spin_btn_changed_signal.borrow().as_ref().unwrap());
-        self.slider.block_signal(self.slider_changed_signal.borrow().as_ref().unwrap());
-    }
+    pub slider: Rc<RefCell<NonSignalingWrapper<gtk::Scale>>>,
+    pub spin_btn: Rc<RefCell<NonSignalingWrapper<gtk::SpinButton>>>,
+    pub intervals: Option<Rc<RefCell<DecIntervalsWidget>>>
 }
 
 pub struct BooleanControlWidgets {
@@ -86,7 +78,9 @@ impl Editability for ListControlWidgets {
 
 impl Editability for NumberControlWidgets {
     fn set_editable(&self, state: bool) {
-        self.slider.set_sensitive(state);
+        if let Some(intervals) = &self.intervals { intervals.borrow().combo().set_sensitive(state); }
+        self.slider.borrow().get().set_sensitive(state);
+        self.spin_btn.borrow().get().set_sensitive(state);
     }
 }
 
@@ -453,6 +447,8 @@ fn create_number_control_widgets(
     h_box: &gtk::Box,
     program_data_rc: &Rc<RefCell<ProgramData>>
 ) -> ControlWidgetBundle {
+    let num_control_step = number_ctrl.step();
+
     // As of `gtk-sys` 0.9.2, cannot set min = max (contrary to what GTK 3 documentation allows).
     // Create a disabled slider instead with range = 1.
 
@@ -468,66 +464,114 @@ fn create_number_control_widgets(
     let ctrl_id = number_ctrl.base().id;
     let requires_capture_pause = number_ctrl.base().requires_capture_pause;
 
+    // create the decimal intervals combo box --------------------
+
+    let intervals = if number_ctrl.is_exposure_time() && min > 0.0 && max > 0.0 {
+        let intervals = DecIntervalsWidget::new(min, max, number_ctrl.value(), number_ctrl.num_decimals());
+        h_box.pack_start(intervals.combo(), true, true, PADDING);
+        Some(Rc::new(RefCell::new(intervals)))
+    } else {
+        None
+    };
+
     // create the slider -----------------------------------------
 
-    let slider = gtk::Scale::with_range(
+    let (slider_min, slider_max) = if let Some(intervals) = &intervals {
+        intervals.borrow().interval()
+    } else {
+        (min, max)
+    };
+
+    let slider = Rc::new(RefCell::new(NonSignalingWrapper::new(gtk::Scale::with_range(
         gtk::Orientation::Horizontal,
-        min,
-        max,
+        slider_min,
+        slider_max,
         if must_disable { 1.0 } else { number_ctrl.step() }
-    );
-    slider.set_digits(number_ctrl.num_decimals() as i32);
-    slider.set_value(if must_disable { min } else { number_ctrl.value() });
+    ), None)));
+    slider.borrow().get().set_digits(number_ctrl.num_decimals() as i32);
+    slider.borrow().get().set_value(if must_disable { min } else { number_ctrl.value() });
 
-    if must_disable || !is_control_editable(number_ctrl.base()) { slider.set_sensitive(false); }
-
-    h_box.pack_start(&slider, true, true, PADDING);
+    h_box.pack_start(slider.borrow().get(), true, true, PADDING);
 
     // create the spin button -----------------------------------------
 
-    let spin_btn = gtk::SpinButton::new(
+    let spin_btn = Rc::new(RefCell::new(NonSignalingWrapper::new(gtk::SpinButton::new(
         Some(&gtk::Adjustment::new(
             number_ctrl.value(), min, max, number_ctrl.step(), 10.0, 0.0
         )),
         0.0,
         number_ctrl.num_decimals() as u32
-    );
+    ), None)));
 
-    if must_disable || !is_control_editable(number_ctrl.base()) { spin_btn.set_sensitive(false); }
+    if must_disable || !is_control_editable(number_ctrl.base()) {
+        if let Some(intervals) = &intervals { intervals.borrow().combo().set_sensitive(false); }
+        slider.borrow().get().set_sensitive(false);
+        spin_btn.borrow().get().set_sensitive(false);
+    }
 
-    h_box.pack_start(&spin_btn, false, true, PADDING);
+    h_box.pack_start(spin_btn.borrow().get(), false, true, PADDING);
 
     // set up event handlers -----------------------------------------
 
-    // It is a hassle with storing those signals, but in GTK one cannot just say "freeze event handling temporarily and
-    // let me change a slider/spin button value" - the specific event handler's signal ID must be explicitly blocked.
-    // And we want to update both the slider and the spin button if either is changed.
+    if let Some(intervals) = &intervals {
+        let signal = intervals.borrow().combo().connect_changed(clone!(
+            @weak program_data_rc, @weak spin_btn, @weak slider, @strong intervals => @default-panic,
+            move |_| {
+                let old_value = spin_btn.borrow().get().value();
+                let (new_interval_min, new_interval_max) = intervals.borrow().interval();
 
-    let slider_changed_signal: Rc<RefCell<Option<glib::SignalHandlerId>>> = Rc::new(RefCell::new(None));
-    let spin_btn_changed_signal: Rc<RefCell<Option<glib::SignalHandlerId>>> = Rc::new(RefCell::new(None));
+                let new_value: Option<f64> = if old_value < new_interval_min {
+                    Some(new_interval_min)
+                } else if old_value > new_interval_max {
+                    Some(new_interval_max)
+                } else {
+                    None
+                };
 
-    slider_changed_signal.borrow_mut().replace(slider.connect_value_changed(clone!(
-        @weak program_data_rc, @weak spin_btn_changed_signal, @weak spin_btn => @default-panic,
+                if let Some(new_value) = new_value {
+                    spin_btn.borrow().do_without_signaling(|spin_btn| spin_btn.set_value(new_value));
+                    {
+                        let slider = slider.borrow();
+                        slider.do_without_signaling(|slider| {
+                            let adj = slider.adjustment();
+                            adj.set_lower(new_interval_min);
+                            adj.set_upper(new_interval_max);
+                            adj.set_value(new_value);
+                        });
+                    }
+                    on_camera_number_control_change(new_value, &program_data_rc, ctrl_id, requires_capture_pause);
+                }
+            }
+        ));
+        intervals.borrow_mut().set_signal(signal);
+    }
+
+    let signal = slider.borrow().get().connect_value_changed(clone!(
+        @weak program_data_rc, @weak spin_btn, @strong intervals => @default-panic,
         move |slider| {
-            spin_btn.block_signal(spin_btn_changed_signal.borrow().as_ref().unwrap());
-            spin_btn.set_value(slider.value());
-            spin_btn.unblock_signal(spin_btn_changed_signal.borrow().as_ref().unwrap());
+            spin_btn.borrow().do_without_signaling(|spin_btn| spin_btn.set_value(slider.value()));
+            if let Some(intervals) = &intervals {
+                intervals.borrow().set_value(slider.value());
+            }
             on_camera_number_control_change(slider.value(), &program_data_rc, ctrl_id, requires_capture_pause);
         }
-    )));
+    ));
+    slider.borrow_mut().set_signal(signal);
 
-    spin_btn_changed_signal.borrow_mut().replace(spin_btn.connect_value_changed(clone!(
-        @weak program_data_rc, @weak slider_changed_signal, @weak slider => @default-panic,
+    let signal = spin_btn.borrow().get().connect_value_changed(clone!(
+        @weak program_data_rc, @weak slider, @strong intervals => @default-panic,
         move |spin_btn| {
-            slider.block_signal(slider_changed_signal.borrow().as_ref().unwrap());
-            slider.set_value(spin_btn.value());
-            slider.unblock_signal(slider_changed_signal.borrow().as_ref().unwrap());
+            slider.borrow().do_without_signaling(|slider| slider.set_value(spin_btn.value()));
+            if let Some(intervals) = &intervals {
+                intervals.borrow().set_value(spin_btn.value());
+            }
             on_camera_number_control_change(spin_btn.value(), &program_data_rc, ctrl_id, requires_capture_pause);
         }
-    )));
+    ));
+    spin_btn.borrow_mut().set_signal(signal);
 
     ControlWidgetBundle::NumberControl(
-        NumberControlWidgets{ slider, spin_btn, slider_changed_signal, spin_btn_changed_signal }
+        NumberControlWidgets{ slider, spin_btn, intervals }
     )
 }
 

@@ -85,7 +85,7 @@ mod tests {
     #[test]
     fn test_suite() {
         let main_context = glib::MainContext::default();
-        let guard = main_context.acquire().unwrap();
+        let _guard = main_context.acquire().unwrap();
         let main_loop = glib::MainLoop::new(Some(&main_context), false);
 
         timer_no_update(&main_loop);

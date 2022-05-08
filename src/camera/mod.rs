@@ -158,7 +158,8 @@ pub struct NumberControl {
     min: f64,
     max: f64,
     step: f64,
-    num_decimals: usize
+    num_decimals: usize,
+    is_exposure_time: bool
 }
 
 impl NumberControl {
@@ -167,6 +168,7 @@ impl NumberControl {
     pub fn max(&self) -> f64 { self.max }
     pub fn step(&self) -> f64 { self.step }
     pub fn num_decimals(&self) -> usize { self.num_decimals }
+    pub fn is_exposure_time(&self) -> bool { self.is_exposure_time }
 }
 
 impl BaseProperties for NumberControl {

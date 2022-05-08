@@ -630,7 +630,8 @@ impl SpinnakerCamera {
         name: &str,
         display_name: &str,
         step: f64,
-        num_decimals: usize
+        num_decimals: usize,
+        is_exposure_time: bool
     ) -> Result<(), CameraError> {
         match node_map.node(name).ok() {
             Some(node) => {
@@ -648,7 +649,8 @@ impl SpinnakerCamera {
                     min: node.min_float()?,
                     max: node.max_float()?,
                     step,
-                    num_decimals
+                    num_decimals,
+                    is_exposure_time
                 }));
 
                 control_data.push(ControlData{ node, enum_entries: None });
@@ -761,7 +763,8 @@ impl Camera for SpinnakerCamera {
             genicam::EXPOSURE_TIME,
             "Exposure Time (µs)",
             1.0,
-            0
+            0,
+            true
         )?;
 
         SpinnakerCamera::add_list_control(
@@ -782,7 +785,8 @@ impl Camera for SpinnakerCamera {
             genicam::GAIN,
             "Gain",
             0.01,
-            2
+            2,
+            false
         )?;
 
         SpinnakerCamera::add_list_control(
@@ -802,7 +806,8 @@ impl Camera for SpinnakerCamera {
             genicam::GAMMA,
             "Gamma",
             0.1,
-            2
+            2,
+            false
         )?;
 
         SpinnakerCamera::add_bool_control(
@@ -830,7 +835,8 @@ impl Camera for SpinnakerCamera {
             genicam::ACQUISITION_FRAME_RATE,
             "Frame Rate",
             1.0,
-            0
+            0,
+            false
         )?;
 
         SpinnakerCamera::add_list_control(

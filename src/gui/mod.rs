@@ -11,11 +11,13 @@
 //!
 
 mod camera_gui;
+mod dec_intervals;
 mod histogram_utils;
 mod histogram_view;
 mod img_view;
 mod info_overlay;
 mod mount_gui;
+mod non_signaling;
 mod rec_gui;
 mod roi_dialog;
 
@@ -834,7 +836,7 @@ fn update_refreshable_camera_controls(program_data_rc: &Rc<RefCell<ProgramData>>
                 },
 
                 ControlWidgetBundle::NumberControl(
-                    NumberControlWidgets{ slider, spin_btn, slider_changed_signal, spin_btn_changed_signal }
+                    NumberControlWidgets{ slider, spin_btn, intervals }
                 ) => {
                     let new_value = match program_data.camera.as_ref().unwrap().get_number_control(*c_widget.0) {
                         Ok(value) => value,
@@ -844,14 +846,20 @@ fn update_refreshable_camera_controls(program_data_rc: &Rc<RefCell<ProgramData>>
                         }
                     };
 
-                    slider.block_signal(slider_changed_signal.borrow().as_ref().unwrap());
-                    slider.set_value(new_value);
-                    slider.unblock_signal(slider_changed_signal.borrow().as_ref().unwrap());
+                    if let Some(intervals) = &intervals {
+                        intervals.borrow().set_value(new_value);
+                        let (new_interval_min, new_interval_max) = intervals.borrow().interval();
+                        let slider = slider.borrow();
+                        slider.do_without_signaling(|slider| {
+                            let adj = slider.adjustment();
+                            adj.set_lower(new_interval_min);
+                            adj.set_upper(new_interval_max);
+                            adj.set_value(new_value);
+                        });
+                    }
 
-                    if !spin_btn.has_focus() {
-                        spin_btn.block_signal(spin_btn_changed_signal.borrow().as_ref().unwrap());
-                        spin_btn.set_value(new_value);
-                        spin_btn.unblock_signal(spin_btn_changed_signal.borrow().as_ref().unwrap());
+                    if !spin_btn.borrow().get().has_focus() {
+                        spin_btn.borrow().do_without_signaling(|spin_btn| spin_btn.set_value(new_value));
                     }
                 },
 

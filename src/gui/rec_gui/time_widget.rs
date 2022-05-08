@@ -63,13 +63,3 @@ impl TimeWidget {
         )
     }
 }
-
-
-// slider.set_adjustment(&gtk::Adjustment::new(
-//     number_control.value(),
-//     number_control.min(),
-//     number_control.max(),
-//     number_control.step(),
-//     number_control.step() * 5.0,
-//     0.0
-// ));

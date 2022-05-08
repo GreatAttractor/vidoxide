@@ -22,6 +22,7 @@ mod control_ids {
     pub const DUMMY_1: u64 = 2;
     pub const DUMMY_2: u64 = 3;
     pub const FRAME_RATE: u64 = 4;
+    pub const EXPOSURE_TIME: u64 = 5;
 }
 
 #[derive(Debug)]
@@ -64,7 +65,8 @@ impl Driver for SimDriver {
             image_cfa8,
             image_shown,
             dummy1: RefCell::new(5.0),
-            frame_rate: Arc::new(RwLock::new(30.0))
+            frame_rate: Arc::new(RwLock::new(30.0)),
+            exposure_time: RefCell::new(5.0)
         }))
     }
 }
@@ -75,7 +77,8 @@ pub struct SimCamera {
     image_mono8: ga_image::Image,
     image_cfa8: ga_image::Image,
     image_shown: Arc<RwLock<ga_image::Image>>,
-    frame_rate: Arc<RwLock<f64>>
+    frame_rate: Arc<RwLock<f64>>,
+    exposure_time: RefCell<f64>
 }
 
 #[derive(strum_macros::EnumIter)]
@@ -116,6 +119,24 @@ impl Camera for SimCamera {
             current_idx: 0
         });
 
+        let dummy_exposure_time = CameraControl::Number(NumberControl{
+            base: CameraControlBase{
+                id: CameraControlId(control_ids::EXPOSURE_TIME),
+                label: "Exposure time".to_string(),
+                refreshable: true,
+                access_mode: ControlAccessMode::ReadWrite,
+                on_off_state: None,
+                auto_state: Some(false),
+                requires_capture_pause: false
+            },
+            value: *self.exposure_time.borrow(),
+            min: 40.0e-6,
+            max: 30.0,
+            step: 1.0e-6,
+            num_decimals: 6,
+            is_exposure_time: true
+        });
+
         let dummy_control_1 = CameraControl::Number(NumberControl{
             base: CameraControlBase{
                 id: CameraControlId(control_ids::DUMMY_1),
@@ -130,7 +151,8 @@ impl Camera for SimCamera {
             min: 0.0,
             max: 10.0,
             step: 0.1,
-            num_decimals: 1
+            num_decimals: 1,
+            is_exposure_time: false
         });
 
         let dummy_control_2 = CameraControl::List(ListControl{
@@ -161,12 +183,14 @@ impl Camera for SimCamera {
             min: 1.0,
             max: 1000.0,
             step: 10.0,
-            num_decimals: 0
+            num_decimals: 0,
+            is_exposure_time: false
         });
 
         Ok(vec![
             image_shown,
             frame_rate,
+            dummy_exposure_time,
             dummy_control_1,
             dummy_control_2
         ])
@@ -192,6 +216,11 @@ impl Camera for SimCamera {
                 Ok(())
             },
 
+            control_ids::EXPOSURE_TIME => {
+                *self.exposure_time.borrow_mut() = value;
+                Ok(())
+            }
+
             _ => Err(SimulatorError::Internal).map_err(CameraError::SimulatorError)
         }
     }
@@ -216,6 +245,7 @@ impl Camera for SimCamera {
     fn get_number_control(&self, id: CameraControlId) -> Result<f64, CameraError> {
         match id.0 {
             control_ids::DUMMY_1 => Ok(*self.dummy1.borrow()),
+            control_ids::EXPOSURE_TIME => Ok(*self.exposure_time.borrow()),
             _ => Err(SimulatorError::Internal).map_err(CameraError::SimulatorError)
         }
     }

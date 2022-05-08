@@ -523,7 +523,8 @@ impl Camera for IIDCCamera {
                 min,
                 max,
                 step,
-                num_decimals
+                num_decimals,
+                is_exposure_time: feature.id == dc1394feature_t::DC1394_FEATURE_SHUTTER
             };
 
             if feature.id == dc1394feature_t::DC1394_FEATURE_SHUTTER {

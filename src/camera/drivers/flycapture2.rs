@@ -799,7 +799,8 @@ impl Camera for FlyCapture2Camera {
                 min,
                 max,
                 step,
-                num_decimals
+                num_decimals,
+                is_exposure_time: as_property_type(i) as u32 == fc2PropertyType::FC2_SHUTTER as u32
             };
 
             if i == fc2PropertyType::FC2_SHUTTER as u32 {
