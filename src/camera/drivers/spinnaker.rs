@@ -904,7 +904,7 @@ impl Camera for SpinnakerCamera {
         Ok(())
     }
 
-    fn set_auto(&self, id: CameraControlId, state: bool) -> Result<(), CameraError> {
+    fn set_auto(&mut self, id: CameraControlId, state: bool) -> Result<(), CameraError> {
         unimplemented!()
     }
 
@@ -1059,11 +1059,11 @@ impl FrameCapturer for SpinnakerFrameCapturer {
         Ok(())
     }
 
-    fn pause(&mut self) {
-        let _ = self.camera_handle.end_acquisition();
+    fn pause(&mut self) -> Result<(), CameraError> {
+        self.camera_handle.end_acquisition()
     }
 
-    fn resume(&mut self) {
-        let _ = self.camera_handle.begin_acquisition();
+    fn resume(&mut self) -> Result<(), CameraError> {
+        self.camera_handle.begin_acquisition()
     }
 }

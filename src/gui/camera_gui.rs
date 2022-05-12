@@ -10,7 +10,7 @@
 //! Camera GUI.
 //!
 
-use crate::{CameraControlChange, OnCapturePauseAction, ProgramData};
+use crate::{CameraControlChange, NewControlValue, OnCapturePauseAction, ProgramData};
 use crate::camera;
 use crate::camera::{BaseProperties, CameraControl, CameraControlId, CameraInfo, ControlAccessMode, Driver};
 use crate::gui::dec_intervals::DecIntervalsWidget;
@@ -279,10 +279,13 @@ pub fn create_control_widgets(
         Some(value) => {
             let cb = gtk::CheckButtonBuilder::new().label("auto").active(value).build();
             cb.connect_toggled(clone!(@weak program_data_rc => @default-panic, move|cb| {
-                program_data_rc.borrow().camera.as_ref().unwrap().set_auto(
-                    ctrl_id,
-                    cb.is_active()
-                ).unwrap();
+                {
+                    let mut pd = program_data_rc.borrow_mut();
+                    pd.camera.as_mut().unwrap().set_auto(
+                        ctrl_id,
+                        cb.is_active()
+                    ).unwrap();
+                }
 
                 let program_data = program_data_rc.borrow();
                 let control_widgets = &program_data.gui.as_ref().unwrap().control_widgets[&ctrl_id];
@@ -435,6 +438,8 @@ fn create_bool_control_widgets(
     ));
 
     h_box.pack_start(&state_checkbox, true, true, PADDING);
+
+    if !is_control_editable(bool_ctrl.base()) { state_checkbox.set_sensitive(false); }
 
     ControlWidgetBundle::BooleanControl(BooleanControlWidgets{
         state_checkbox,
@@ -629,7 +634,7 @@ fn on_camera_list_control_change(
 
         program_data_rc.borrow_mut().on_capture_pause_action = Some(OnCapturePauseAction::ControlChange(CameraControlChange{
             id: ctrl_id,
-            option_idx: combo.active().unwrap() as usize
+            value: NewControlValue::ListOptionIndex(combo.active().unwrap() as usize)
         }));
     } else {
         program_data_rc.borrow_mut().camera.as_mut().unwrap().set_list_control(
@@ -648,7 +653,17 @@ fn on_camera_number_control_change(
     requires_capture_pause: bool
 ) {
     if requires_capture_pause {
-        panic!("Not implemented yet.");
+        if program_data_rc.borrow_mut().capture_thread_data.as_mut().unwrap().sender.send(
+            MainToCaptureThreadMsg::Pause
+        ).is_err() {
+            crate::on_capture_thread_failure(program_data_rc);
+            return;
+        }
+
+        program_data_rc.borrow_mut().on_capture_pause_action = Some(OnCapturePauseAction::ControlChange(CameraControlChange{
+            id: ctrl_id,
+            value: NewControlValue::Numerical(value)
+        }));
     } else {
         let result = program_data_rc.borrow_mut().camera.as_mut().unwrap().set_number_control(ctrl_id, value);
         if let Err(error) = result {
@@ -666,7 +681,17 @@ fn on_camera_boolean_control_change(
     requires_capture_pause: bool
 ) {
     if requires_capture_pause {
-        panic!("Not implemented yet.");
+        if program_data_rc.borrow_mut().capture_thread_data.as_mut().unwrap().sender.send(
+            MainToCaptureThreadMsg::Pause
+        ).is_err() {
+            crate::on_capture_thread_failure(program_data_rc);
+            return;
+        }
+
+        program_data_rc.borrow_mut().on_capture_pause_action = Some(OnCapturePauseAction::ControlChange(CameraControlChange{
+            id: ctrl_id,
+            value: NewControlValue::Boolean(state_checkbox.is_active())
+        }));
     } else {
         program_data_rc.borrow_mut().camera.as_mut().unwrap().set_boolean_control(
             ctrl_id,

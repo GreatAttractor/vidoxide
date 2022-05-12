@@ -28,6 +28,8 @@ pub enum CameraError {
     FlyCapture2Error(drivers::flycapture2::FlyCapture2Error),
     #[cfg(feature = "camera_spinnaker")]
     SpinnakerError(drivers::spinnaker::SpinnakerError),
+    #[cfg(feature = "camera_asi")]
+    ASIError(drivers::asi::ASIError),
 }
 
 #[derive(Clone, Copy)]
@@ -61,7 +63,7 @@ pub trait Camera {
 
     fn set_boolean_control(&mut self, id: CameraControlId, state: bool) -> Result<(), CameraError>;
 
-    fn set_auto(&self, id: CameraControlId, state: bool) -> Result<(), CameraError>;
+    fn set_auto(&mut self, id: CameraControlId, state: bool) -> Result<(), CameraError>;
 
     fn set_on_off(&self, id: CameraControlId, state: bool) -> Result<(), CameraError>;
 
@@ -88,9 +90,9 @@ pub trait FrameCapturer {
     // TODO: add policy (wait, poll)
     fn capture_frame(&mut self, dest_image: &mut Image) -> Result<(), CameraError>;
 
-    fn pause(&mut self);
+    fn pause(&mut self) -> Result<(), CameraError>;
 
-    fn resume(&mut self);
+    fn resume(&mut self) -> Result<(), CameraError>;
 }
 
 pub trait Driver {

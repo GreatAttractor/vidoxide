@@ -254,7 +254,7 @@ impl Camera for SimCamera {
         unimplemented!();
     }
 
-    fn set_auto(&self, _id: CameraControlId, _state: bool) -> Result<(), CameraError> {
+    fn set_auto(&mut self, _id: CameraControlId, _state: bool) -> Result<(), CameraError> {
         Ok(())
     }
 
@@ -288,9 +288,9 @@ pub struct SimFrameCapturer {
 }
 
 impl FrameCapturer for SimFrameCapturer {
-    fn pause(&mut self) {}
+    fn pause(&mut self) -> Result<(), CameraError> { Ok(()) }
 
-    fn resume(&mut self) {}
+    fn resume(&mut self) -> Result<(), CameraError> { Ok(()) }
 
     fn capture_frame(&mut self, dest_image: &mut Image) -> Result<(), CameraError> {
         let t_between_frames = std::time::Duration::from_secs_f64(1.0 / self.frame_rate.read().unwrap().clone());

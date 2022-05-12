@@ -231,7 +231,7 @@ impl Camera for V4L2Camera {
         panic!("Not implemented yet.");
     }
 
-    fn set_auto(&self, _id: CameraControlId, _state: bool) -> Result<(), CameraError> {
+    fn set_auto(&mut self, _id: CameraControlId, _state: bool) -> Result<(), CameraError> {
         panic!("Not implemented yet.");
     }
 
@@ -268,12 +268,12 @@ pub struct V4L2FrameCapturer {
 unsafe impl Send for V4L2FrameCapturer {}
 
 impl FrameCapturer for V4L2FrameCapturer {
-    fn pause(&mut self)
+    fn pause(&mut self) -> Result<(), CameraError>
     {
         panic!("Not implemented yet.");
     }
 
-    fn resume(&mut self)
+    fn resume(&mut self) -> Result<(), CameraError>
     {
         panic!("Not implemented yet.");
     }

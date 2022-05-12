@@ -52,11 +52,19 @@ pub struct RecordingThreadData {
     pub buffered_kib: Arc<AtomicIsize>
 }
 
+
+#[derive(Copy, Clone)]
+pub enum NewControlValue {
+    ListOptionIndex(usize),
+    Numerical(f64),
+    Boolean(bool)
+}
+
 /// Describes a camera control change to be performed after the capture thread confirms it is paused.
 #[derive(Copy, Clone)]
 pub struct CameraControlChange {
     id: camera::CameraControlId,
-    option_idx: usize //TODO: handle numeric controls too
+    value: NewControlValue
 }
 
 pub struct MountCalibration {

@@ -652,7 +652,7 @@ impl Camera for IIDCCamera {
         panic!("Not implemented yet.")
     }
 
-    fn set_auto(&self, id: CameraControlId, state: bool) -> Result<(), CameraError> {
+    fn set_auto(&mut self, id: CameraControlId, state: bool) -> Result<(), CameraError> {
         let new_mode = if state {
             dc1394feature_mode_t::DC1394_FEATURE_MODE_AUTO
         } else {
@@ -747,9 +747,9 @@ impl Camera for IIDCCamera {
 
 impl FrameCapturer for IIDCFrameCapturer {
 
-    fn pause(&mut self) {}
+    fn pause(&mut self) -> Result<(), CameraError> { Ok(()) }
 
-    fn resume(&mut self) {}
+    fn resume(&mut self) -> Result<(), CameraError> { Ok(()) }
 
     fn capture_frame(&mut self, dest_image: &mut Image) -> Result<(), CameraError> {
         let mut frame_ptr: *mut dc1394video_frame_t = std::ptr::null_mut();

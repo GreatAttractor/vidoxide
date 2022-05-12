@@ -208,13 +208,13 @@ pub fn capture_thread(
                 MainToCaptureThreadMsg::Finish => break,
 
                 MainToCaptureThreadMsg::Pause => {
-                    camera.pause();
+                    camera.pause().unwrap();
                     sender.send(CaptureToMainThreadMsg::Paused).unwrap();
                     paused = true;
                 },
 
                 MainToCaptureThreadMsg::Resume => {
-                    camera.resume();
+                    camera.resume().unwrap();
                     paused = false;
                 },
 

@@ -1,5 +1,5 @@
 # Vidoxide
-Copyright (C) 2020-2021 Filip Szczerek (ga.software@yahoo.com)
+Copyright (C) 2020-2022 Filip Szczerek (ga.software@yahoo.com)
 
 *This program is licensed under MIT license (see LICENSE.txt for details).*
 
@@ -32,6 +32,7 @@ Demonstration video: *upcoming*
   - IIDC (DC1394); multiplatform
   - FlyCapture2 (FLIR, formerly Point Grey); multiplatform
   - Spinnaker (FLIR); multiplatform
+  - ASICamera2 (ZWO); multiplatform
   - Video4Linux2 – extremely basic support (only YUYV video modes, no camera controls); Linux only
 
 **Supported telescope mounts:**
@@ -57,9 +58,9 @@ $ git clone --recurse-submodules https://github.com/GreatAttractor/vidoxide.git
 
 Camera drivers to build are selected as features in invocation of `cargo`, e.g.:
 ```Bash
-$ cargo build --release --features "camera_iidc camera_v4l2 camera_flycap2 camera_spinnaker"
+$ cargo build --release --features "camera_iidc camera_v4l2 camera_flycap2 camera_spinnaker camera_asi"
 ```
-will build Vidoxide with the IIDC, V4L2, FlyCapture 2 and Spinnaker drivers.
+will build Vidoxide with the IIDC, V4L2, FlyCapture 2, Spinnaker and ASI drivers.
 
 
 ### 3.1. Linux and alikes
@@ -88,13 +89,13 @@ $ export PATH=$PATH:/c/Users/MY_USERNAME/.cargo/bin
 ```
 then change to the Vidoxide source directory and build it:
 ```bash
-$ SPINNAKER_LIBDIR="C:\Program Files\FLIR Systems\Spinnaker\bin64\vs2015" FLYCAP_LIBDIR="C:\Program Files\Point Grey Research\FlyCapture2\bin64" cargo build --release --features "camera_flycap2 camera_spinnaker mount_ascom"
+$ SPINNAKER_LIBDIR="C:\Program Files\FLIR Systems\Spinnaker\bin64\vs2015" FLYCAP_LIBDIR="C:\Program Files\Point Grey Research\FlyCapture2\bin64" ASICAMERA_LIBDIR="C:\Downloads\ASI SDK\lib\x64" cargo build --release --features "camera_flycap2 camera_spinnaker mount_ascom"
 ```
-Initially it will take several minutes, as all dependencies have to be downloaded and built first. Note that the location of FC2 DLLs must be given in `FLYCAP_LIBDIR`, and of Spinnaker DLLs in `SPINNAKER_LIBDIR`.
+Initially it will take several minutes, as all dependencies have to be downloaded and built first. Note that the location of FC2 DLLs must be given in `FLYCAP_LIBDIR`, Spinnaker DLLs in `SPINNAKER_LIBDIR`, and ASI DLL in `ASICAMERA_LIBDIR`.
 
 After a successful build, Vidoxide can be run locally with:
 ```bash
-$ PATH="$PATH:C:\Program Files\Point Grey Research\FlyCapture2\bin64:C:\Program Files\FLIR Systems\Spinnaker\bin64\vs2015" target/release/vidoxide.exe
+$ PATH="$PATH:C:\Program Files\Point Grey Research\FlyCapture2\bin64:C:\Program Files\FLIR Systems\Spinnaker\bin64\vs2015:C:\Downloads\ASI SDK\lib\x64" target/release/vidoxide.exe
 ```
 
 *Upcoming: creating a binary distribution*

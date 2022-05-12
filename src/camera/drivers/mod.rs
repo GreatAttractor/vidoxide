@@ -19,6 +19,8 @@ pub mod simulator;
 pub mod v4l2;
 #[cfg(feature = "camera_spinnaker")]
 pub mod spinnaker;
+#[cfg(feature = "camera_asi")]
+pub mod asi;
 
 use crate::camera::Driver;
 use std::cell::RefCell;
@@ -45,6 +47,11 @@ pub fn init_drivers<'a>(disabled_drivers: &[&str]) -> Vec<Rc<RefCell<Box<dyn Dri
     #[cfg(feature = "camera_spinnaker")]
     if !disabled_drivers.contains(&"camera_spinnaker") {
         drivers.push(Rc::new(RefCell::new(Box::new(spinnaker::SpinnakerDriver::new().unwrap()))));
+    }
+
+    #[cfg(feature = "camera_asi")]
+    if !disabled_drivers.contains(&"camera_asi") {
+        drivers.push(Rc::new(RefCell::new(Box::new(asi::ASIDriver::new().unwrap()))));
     }
 
     // add more drivers here

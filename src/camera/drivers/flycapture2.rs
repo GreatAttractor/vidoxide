@@ -933,7 +933,7 @@ impl Camera for FlyCapture2Camera {
         panic!("Not implemented yet.");
     }
 
-    fn set_auto(&self, id: CameraControlId, state: bool) -> Result<(), CameraError> {
+    fn set_auto(&mut self, id: CameraControlId, state: bool) -> Result<(), CameraError> {
         let mut prop: fc2Property = unsafe { std::mem::zeroed() };
         prop.type_ = as_property_type(id.0 as u32);
         checked_call!(fc2GetProperty(self.context.handle, &mut prop));
@@ -1081,9 +1081,9 @@ impl FrameCapturer for FlyCapture2FrameCapturer {
         Ok(())
     }
 
-    fn pause(&mut self) {}
+    fn pause(&mut self) -> Result<(), CameraError> { Ok(()) }
 
-    fn resume(&mut self) {}
+    fn resume(&mut self) -> Result<(), CameraError> { Ok(()) }
 }
 
 fn get_first_supported_pixel_format(mask: std::os::raw::c_uint) -> fc2PixelFormat {

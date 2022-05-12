@@ -28,7 +28,7 @@ use camera_gui::{
     NumberControlWidgets,
     BooleanControlWidgets
 };
-use crate::{CameraControlChange, OnCapturePauseAction, ProgramData};
+use crate::{CameraControlChange, NewControlValue, OnCapturePauseAction, ProgramData};
 use crate::camera;
 use crate::camera::CameraError;
 use crate::mount;
@@ -755,7 +755,7 @@ fn show_about_dialog() {
     show_message(
         &format!(
             "<big><big><b>Vidoxide</b></big></big>\n\n\
-            Copyright © 2020-2021 Filip Szczerek (ga.software@yahoo.com)\n\n\
+            Copyright © 2020-2022 Filip Szczerek (ga.software@yahoo.com)\n\n\
             This project is licensed under the terms of the MIT license (see the LICENSE file for details).\n\n\
             OS: {}",
             os_info::get()
@@ -1031,8 +1031,18 @@ fn on_capture_thread_message(
             let action = program_data_rc.borrow().on_capture_pause_action;
             match action {
                 Some(action) => match action {
-                    OnCapturePauseAction::ControlChange(CameraControlChange{ id, option_idx }) => {
-                        let res = program_data_rc.borrow_mut().camera.as_mut().unwrap().set_list_control(id, option_idx);
+                    OnCapturePauseAction::ControlChange(CameraControlChange{ id, value }) => {
+                        let res = match value {
+                            NewControlValue::ListOptionIndex(option_idx) =>
+                                program_data_rc.borrow_mut().camera.as_mut().unwrap().set_list_control(id, option_idx),
+
+                            NewControlValue::Boolean(state) =>
+                                program_data_rc.borrow_mut().camera.as_mut().unwrap().set_boolean_control(id, state),
+
+                            NewControlValue::Numerical(num_val) =>
+                                program_data_rc.borrow_mut().camera.as_mut().unwrap().set_number_control(id, num_val),
+                        };
+
                         if let Err(e) = res {
                             show_message(
                                 &format!("Failed to set camera control:\n{:?}", e),
