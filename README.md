@@ -20,7 +20,7 @@ Copyright (C) 2020-2022 Filip Szczerek (ga.software@yahoo.com)
 
 Vidoxide is a video capture tool with features targeted at Solar System astrophotographers.
 
-Demonstration video: *upcoming*
+Demonstration video: [link](https://www.youtube.com/watch?v=7s_nibrTrsU)
 
 
 ## 2. Features
