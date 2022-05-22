@@ -752,12 +752,16 @@ fn init_preview_menu(program_data_rc: &Rc<RefCell<ProgramData>>, accel_group: &g
 }
 
 fn show_about_dialog() {
+    const VERSION_STRING: &'static str = include_str!(concat!(env!("OUT_DIR"), "/version"));
+
     show_message(
         &format!(
             "<big><big><b>Vidoxide</b></big></big>\n\n\
             Copyright © 2020-2022 Filip Szczerek (ga.software@yahoo.com)\n\n\
             This project is licensed under the terms of the MIT license (see the LICENSE file for details).\n\n\
+            version: {}\n\
             OS: {}",
+            VERSION_STRING,
             os_info::get()
         ),
         "About Vidoxide",
