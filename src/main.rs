@@ -236,6 +236,13 @@ fn main() {
         snapshot_counter: 1
     }));
 
+    if !disabled_drivers.is_empty() {
+        println!("The following drivers are disabled in the configuration file:");
+        for dd in &disabled_drivers {
+            println!("  {}", dd);
+        }
+    }
+
     std::thread::spawn(move || workers::histogram::histogram_thread(histogram_sender_worker, histogram_receiver_worker));
     histogram_receiver_main.attach(None, clone!(@weak program_data_rc
         => @default-panic, move |msg| {
