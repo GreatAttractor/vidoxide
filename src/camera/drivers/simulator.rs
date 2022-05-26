@@ -10,11 +10,12 @@
 //! Camera simulator.
 //!
 
+use cgmath::{InnerSpace, Vector2};
 use crate::camera::*;
 use crate::resources;
 use ga_image;
 use std::cell::RefCell;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, RwLock, atomic::Ordering};
 use strum::IntoEnumIterator;
 
 mod control_ids {
@@ -66,7 +67,8 @@ impl Driver for SimDriver {
             image_shown,
             dummy1: RefCell::new(5.0),
             frame_rate: Arc::new(RwLock::new(30.0)),
-            exposure_time: RefCell::new(5.0)
+            exposure_time: RefCell::new(5.0),
+            mount_simulator_data: crate::MountSimulatorData::default()
         }))
     }
 }
@@ -78,7 +80,8 @@ pub struct SimCamera {
     image_cfa8: ga_image::Image,
     image_shown: Arc<RwLock<ga_image::Image>>,
     frame_rate: Arc<RwLock<f64>>,
-    exposure_time: RefCell<f64>
+    exposure_time: RefCell<f64>,
+    mount_simulator_data: crate::MountSimulatorData
 }
 
 #[derive(strum_macros::EnumIter)]
@@ -200,7 +203,9 @@ impl Camera for SimCamera {
         Ok(Box::new(SimFrameCapturer{
             t_last_capture: std::time::Instant::now(),
             image: Arc::clone(&self.image_shown),
-            frame_rate: Arc::clone(&self.frame_rate)
+            frame_rate: Arc::clone(&self.frame_rate),
+            mount_simulator_data: self.mount_simulator_data.clone(),
+            img_offset: cgmath::Vector2::new(0.0, 0.0)
         }))
     }
 
@@ -279,12 +284,18 @@ impl Camera for SimCamera {
     fn get_boolean_control(&self, _id: CameraControlId) -> Result<bool, CameraError> {
         unimplemented!()
     }
+
+    fn set_mount_simulator_data(&mut self, data: crate::MountSimulatorData) {
+        self.mount_simulator_data = data;
+    }
 }
 
 pub struct SimFrameCapturer {
     t_last_capture: std::time::Instant,
     image: Arc<RwLock<ga_image::Image>>,
-    frame_rate: Arc<RwLock<f64>>
+    frame_rate: Arc<RwLock<f64>>,
+    mount_simulator_data: crate::MountSimulatorData,
+    img_offset: cgmath::Vector2<f64>
 }
 
 impl FrameCapturer for SimFrameCapturer {
@@ -298,8 +309,52 @@ impl FrameCapturer for SimFrameCapturer {
         if t_elapsed < t_between_frames {
             std::thread::sleep(t_between_frames - t_elapsed);
         }
+        let t_elapsed = self.t_last_capture.elapsed();
 
-        *dest_image = self.image.read().unwrap().clone();
+        let image = self.image.read().unwrap();
+        if dest_image.bytes_per_line() != image.bytes_per_line()
+            || dest_image.width() != image.width()
+            || dest_image.height() != image.height()
+            || dest_image.pixel_format() != image.pixel_format() {
+
+            *dest_image = ga_image::Image::new(
+                image.width(),
+                image.height(),
+                Some(image.bytes_per_line()),
+                image.pixel_format(),
+                None,
+                true
+            );
+        }
+
+        let msd = &self.mount_simulator_data;
+
+        let sky_rotation: Vector2<f64> = msd.sky_rotation_dir_in_img_space().cast::<f64>().unwrap().normalize() *
+            msd.sky_rotation_speed_pix_per_sec() as f64;
+
+        let primary_axis_slew_dir_in_img_space: Vector2<f64> =
+            msd.primary_axis_slew_dir_in_img_space().cast::<f64>().unwrap().normalize();
+
+        let secondary_axis_slew_dir_in_img_space = Vector2{
+            x: -primary_axis_slew_dir_in_img_space.y,
+            y: primary_axis_slew_dir_in_img_space.x
+        };
+
+        let mount_slew: Vector2<f64> =
+            primary_axis_slew_dir_in_img_space * msd.primary_axis_speed.load(Ordering::Acquire) as f64 +
+            secondary_axis_slew_dir_in_img_space * msd.secondary_axis_speed.load(Ordering::Acquire) as f64;
+
+        self.img_offset = self.img_offset +
+            t_elapsed.as_secs_f64() * (sky_rotation + mount_slew);
+
+        image.resize_and_translate_into(
+            dest_image,
+            ga_image::point::Point{ x: 0, y: 0 },
+            image.width(),
+            image.height(),
+            ga_image::point::Point{ x: self.img_offset.x as i32, y: self.img_offset.y as i32 },
+            true
+        );
 
         self.t_last_capture = std::time::Instant::now();
 

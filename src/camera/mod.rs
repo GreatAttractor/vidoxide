@@ -81,6 +81,9 @@ pub trait Camera {
 
     /// Restores full frame size.
     fn unset_roi(&mut self) -> Result<(), CameraError>;
+
+    /// Only implemented by camera simulator.
+    fn set_mount_simulator_data(&mut self, _mount_simulator_data: crate::MountSimulatorData) {}
 }
 
 pub trait FrameCapturer {

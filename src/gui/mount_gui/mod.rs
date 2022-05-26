@@ -502,12 +502,13 @@ pub fn init_mount_menu(program_data_rc: &Rc<RefCell<ProgramData>>, app_window: &
                             "Error",
                             gtk::MessageType::Error
                         ),
-                        Ok(mount) => {
+                        Ok(mut mount) => {
                             let tracking_enabled = program_data_rc.borrow().tracking.is_some();
                             program_data_rc.borrow().gui.as_ref().unwrap().mount_widgets.on_connect(
                                 &mount.get_info().unwrap(),
                                 tracking_enabled
                             );
+                            mount.set_mount_simulator_data(program_data_rc.borrow().mount_simulator_data.clone());
                             program_data_rc.borrow_mut().mount_data.mount = Some(mount);
                             program_data_rc.borrow_mut().mount_data.calibration = None;
                             item_disconnect.set_sensitive(true);

@@ -29,7 +29,7 @@ use gtk::gio::prelude::*;
 use glib::clone;
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::atomic::{AtomicBool, AtomicIsize};
+use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
 use std::sync::{Arc};
 use timer::OneShotTimer;
 use workers::capture::MainToCaptureThreadMsg;
@@ -99,6 +99,66 @@ impl MountData {
     }
 }
 
+mod sim_data {
+    use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
+    use std::sync::Arc;
+
+    /// Data shared between camera and mount simulators.
+    #[derive(Clone)]
+    pub struct MountSimulatorData {
+        pub mount_connected: Arc<AtomicBool>,
+        /// Value in camera simulator's pixels per second.
+        pub primary_axis_speed: Arc<atomic_float::AtomicF32>,
+        /// Value in camera simulator's pixels per second.
+        pub secondary_axis_speed: Arc<atomic_float::AtomicF32>,
+        sky_rotation_dir_in_img_space: cgmath::Vector2<i32>,
+        primary_axis_slew_dir_in_img_space: cgmath::Vector2<i32>,
+        sky_rotation_speed_pix_per_sec: u32
+        //primary_axis_slewing_speed: Arc<Atomic
+    }
+
+    impl Default for MountSimulatorData {
+        fn default() -> MountSimulatorData {
+            MountSimulatorData {
+                mount_connected: Arc::new(AtomicBool::new(false)),
+                primary_axis_speed: Arc::new(atomic_float::AtomicF32::new(0.0)),
+                secondary_axis_speed: Arc::new(atomic_float::AtomicF32::new(0.0)),
+                sky_rotation_dir_in_img_space: cgmath::Vector2::new(1, 0),
+                primary_axis_slew_dir_in_img_space: cgmath::Vector2::new(-1, 0),
+                sky_rotation_speed_pix_per_sec: 10
+            }
+        }
+    }
+
+    impl MountSimulatorData {
+        pub fn new(
+            sky_rotation_dir_in_img_space: cgmath::Vector2<i32>,
+            primary_axis_slew_dir_in_img_space: cgmath::Vector2<i32>,
+            sky_rotation_speed_pix_per_sec: u32
+        ) -> MountSimulatorData {
+            MountSimulatorData{
+                sky_rotation_dir_in_img_space,
+                primary_axis_slew_dir_in_img_space,
+                sky_rotation_speed_pix_per_sec,
+                ..Default::default()
+            }
+        }
+
+        pub fn sky_rotation_dir_in_img_space(&self) -> cgmath::Vector2<i32> {
+            self.sky_rotation_dir_in_img_space
+        }
+
+        pub fn primary_axis_slew_dir_in_img_space(&self) -> cgmath::Vector2<i32> {
+            self.primary_axis_slew_dir_in_img_space
+        }
+
+        pub fn sky_rotation_speed_pix_per_sec(&self) -> u32 {
+            self.sky_rotation_speed_pix_per_sec
+        }
+    }
+}
+pub use sim_data::MountSimulatorData;
+
 #[derive(Debug)]
 pub enum TrackingMode {
     Centroid(Rect),
@@ -147,7 +207,8 @@ pub struct ProgramData {
     last_displayed_preview_image: Option<ga_image::Image>,
     snapshot_counter: usize,
     /// Used to refresh/rebuild all controls after user modification.
-    camera_controls_refresh_timer: timer::OneShotTimer
+    camera_controls_refresh_timer: timer::OneShotTimer,
+    mount_simulator_data: MountSimulatorData
 }
 
 impl ProgramData {
@@ -193,6 +254,12 @@ fn main() {
 
     let preview_fps_limit = config.preview_fps_limit();
 
+    let mount_simulator_data = MountSimulatorData::new(
+        config.mount_simulator_sky_rotation_dir_in_img_space().unwrap_or(cgmath::Vector2::new(1, 0)),
+        config.mount_simulator_primary_axis_slew_dir_in_img_space().unwrap_or(cgmath::Vector2::new(1, 0)),
+        config.mount_simulator_sky_rotation_speed_pix_per_sec().unwrap_or(10)
+    );
+
     let program_data_rc = Rc::new(RefCell::new(ProgramData{
         config,
         camera: None,
@@ -233,7 +300,8 @@ fn main() {
         last_displayed_preview_image_timestamp: None,
         last_displayed_preview_image: None,
         camera_controls_refresh_timer: timer::OneShotTimer::new(),
-        snapshot_counter: 1
+        snapshot_counter: 1,
+        mount_simulator_data
     }));
 
     if !disabled_drivers.is_empty() {

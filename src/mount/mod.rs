@@ -65,6 +65,9 @@ pub trait Mount {
 
     #[must_use]
     fn get_motion_speed(&self, axis: Axis) -> Result<f64, MountError>;
+
+    /// Only implemented by mount simulator.
+    fn set_mount_simulator_data(&mut self, _mount_simulator_data: crate::MountSimulatorData) {}
 }
 
 pub fn connect_to_mount(connection: MountConnection) -> Result<Box<dyn Mount>, MountError> {

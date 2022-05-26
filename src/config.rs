@@ -10,6 +10,7 @@
 //! Program configuration.
 //!
 
+use cgmath::Vector2;
 use std::path::{Path, PathBuf};
 
 mod groups {
@@ -37,6 +38,10 @@ mod keys {
     // group MOUNT
     pub const SW_LAST_DEVICE: &str = "SkyWatcherLastDevice";
     pub const ASCOM_LAST_DRIVER: &str = "AscomLastDriver";
+    pub const SIM_SKY_ROTATION_DIR_IN_IMG_SPACE: &str = "SimulatorSkyRotationDirInImgSpace";
+    pub const SIM_PRIMARY_AXIS_SLEW_DIR_IN_IMG_SPACE: &str = "SimulatorPrimaryAxisSlewDirInImgSpace";
+    //TODO: orientation of secondary axis' slew direction rel. to primary's (to simulate the usage of a star diagonal)
+    pub const SIM_SKY_ROTATION_SPEED_PIX_PER_SEC: &str = "SimulatorSkyRotationSpeedPixelsPerSecond";
 }
 
 pub struct Configuration {
@@ -117,6 +122,21 @@ impl Configuration {
         self.key_file.set_string(groups::MOUNT, keys::SW_LAST_DEVICE, value);
     }
 
+    pub fn mount_simulator_sky_rotation_dir_in_img_space(&self) -> Option<Vector2<i32>> {
+        self.read_vec2(groups::MOUNT, keys::SIM_SKY_ROTATION_DIR_IN_IMG_SPACE)
+    }
+
+    pub fn mount_simulator_primary_axis_slew_dir_in_img_space(&self) -> Option<Vector2<i32>> {
+        self.read_vec2(groups::MOUNT, keys::SIM_PRIMARY_AXIS_SLEW_DIR_IN_IMG_SPACE)
+    }
+
+    pub fn mount_simulator_sky_rotation_speed_pix_per_sec(&self) -> Option<u32> {
+        match self.key_file.integer(groups::MOUNT, keys::SIM_SKY_ROTATION_SPEED_PIX_PER_SEC) {
+            Ok(value) => if value >= 0 { Some(value as u32) } else { None },
+            Err(_) => None
+        }
+    }
+
     fn store_rect(&self, group: &str, key: &str, rect: gtk::Rectangle) {
         self.key_file.set_string(group, key, &format!("{};{};{};{}", rect.x, rect.y, rect.width, rect.height));
     }
@@ -145,6 +165,32 @@ impl Configuration {
         }
 
         Some(gtk::Rectangle{ x: numbers[0], y: numbers[1], width: numbers[2], height: numbers[3] })
+    }
+
+    fn read_vec2(&self, group: &str, key: &str) -> Option<Vector2<i32>> {
+        let vec2_str = match self.key_file.string(group, key) {
+            Ok(s) => s,
+            Err(_) => return None
+        };
+
+        let mut numbers: Vec<i32> = vec![];
+        for frag in vec2_str.split(';') {
+            let num = match frag.parse::<i32>() {
+                Ok(n) => n,
+                Err(_) => {
+                    println!("WARNING: invalid configuration value for {}/{}: {}", group, key, frag);
+                    return None;
+                }
+            };
+            numbers.push(num);
+        }
+
+        if numbers.len() != 2 {
+            println!("WARNING: invalid configuration value for {}/{}: {}", group, key, vec2_str);
+            return None;
+        }
+
+        Some(Vector2{ x: numbers[0], y: numbers[1] })
     }
 
     pub fn recording_dest_path(&self) -> Option<String> {

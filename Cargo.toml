@@ -14,6 +14,8 @@ camera_spinnaker = ["libspinnaker-sys"]
 mount_ascom = ["com", "uuid", "winapi"]
 
 [dependencies]
+atomic_float = "0.1.0"
+cgmath = "0.18.0"
 chrono = "0.4.12"
 com = { version = "0.3.0", optional = true }
 crossbeam = "0.7.3"

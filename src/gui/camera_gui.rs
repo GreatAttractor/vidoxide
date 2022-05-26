@@ -176,6 +176,9 @@ fn on_select_camera(
             }
         };
 
+        let sim_data = program_data_rc.borrow().mount_simulator_data.clone();
+        program_data_rc.borrow_mut().camera.as_mut().unwrap().set_mount_simulator_data(sim_data);
+
         let fc_result = program_data_rc.borrow_mut().camera.as_mut().unwrap().create_capturer();
         let frame_capturer = match fc_result {
             Ok(capturer) => capturer,
