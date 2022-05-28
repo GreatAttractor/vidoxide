@@ -393,21 +393,13 @@ impl Camera for ASICamera {
     }
 
     fn set_roi(&mut self, x0: u32, y0: u32, width: u32, height: u32) -> Result<(), CameraError> {
-        let mut actual_w = width;
-        let mut actual_h = height;
-        let mut selector = 0;
-        while actual_w > 1 && actual_h > 1 && (actual_w * actual_h) % 1024 != 0 {
-            if selector % 1 == 0 {
-                actual_w -= 1;
-            } else {
-                actual_h -= 1;
-            }
-            selector += 1;
-        }
+        // ASI 120 requires width * height divisible by 1024 (other cameras are less stringent; TODO: take it into account)
+        let mut actual_w = width / 32 * 32;
+        let mut actual_h = height / 32 * 32;
 
         let (_, _, img_type) = get_roi_format(self.id)?;
 
-        checked_call!(ASISetROIFormat(self.id, actual_w as _, actual_h as _ , /*TODO*/1, img_type as _));
+        checked_call!(ASISetROIFormat(self.id, actual_w as _, actual_h as _ , /*TODO: binning*/1, img_type as _));
         checked_call!(ASISetStartPos(self.id, x0 as _, y0 as _));
 
         Ok(())
