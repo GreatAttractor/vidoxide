@@ -983,6 +983,13 @@ fn on_capture_thread_message(
             }
             program_data.last_displayed_preview_image_timestamp = Some(now);
 
+            if let Some(area) = program_data.histogram_area {
+                if !img.img_rect().contains_rect(&area) {
+                    println!("WARNING: histogram calculation area outside image boundaries; disabling.");
+                    program_data.histogram_area = None;
+                }
+            }
+
             let to_bgra24 = |img: &ga_image::Image| { img.convert_pix_fmt(
                 ga_image::PixelFormat::BGRA8,
                 if program_data.demosaic_preview { Some(ga_image::DemosaicMethod::Simple) } else { None }
