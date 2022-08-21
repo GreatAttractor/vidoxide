@@ -106,7 +106,8 @@ fn calculate_histogram(hist_request: HistogramRequest) -> Histogram {
             if img_view.pixel_format().bytes_per_channel() == 1 {
                 count_cfa_values::<u8>(&mut values, &img_view);
             } else if img_view.pixel_format().bytes_per_channel() == 2 {
-                count_cfa_values::<u16>(&mut values, &img_view);
+                //FIXME: need to scale down values to 0-255 before increasing the counters
+                //count_cfa_values::<u16>(&mut values, &img_view);
             }
         }
 

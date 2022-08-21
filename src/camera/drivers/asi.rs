@@ -27,6 +27,11 @@ macro_rules! checked_call {
 
 const MAX_NO_FRAME_PERIOD: std::time::Duration = std::time::Duration::from_secs(5);
 
+enum SpecialControlIds {
+    // add new items using i32::MAX - 1, i32::MAX - 2 etc. to avoid collision with ASI control IDs
+    PixelFormat = isize::MAX
+}
+
 #[derive(Debug)]
 pub enum ASIError {
     Internal(ASI_ERROR_CODE),
@@ -64,6 +69,16 @@ fn to_pix_fmt(img_type: ASI_IMG_TYPE, cfa_pattern: ASI_BAYER_PATTERN) -> Result<
         (ASI_IMG_TYPE_ASI_IMG_Y8, _) => Ok(ga_image::PixelFormat::Mono8),
 
         _ => Err(ASIError::UnsupportedPixelFormat(img_type).into())
+    }
+}
+
+fn as_string(img_type: ASI_IMG_TYPE) -> String {
+    match img_type {
+        ASI_IMG_TYPE_ASI_IMG_RAW8  => "RAW8".to_string(),
+        ASI_IMG_TYPE_ASI_IMG_RGB24 => "RGB24".to_string(),
+        ASI_IMG_TYPE_ASI_IMG_RAW16 => "RAW16".to_string(),
+        ASI_IMG_TYPE_ASI_IMG_Y8    => "Y8".to_string(),
+        _ => panic!("unrecognized ASI pixel format: {}", img_type)
     }
 }
 
@@ -133,6 +148,9 @@ impl Driver for ASIDriver {
             full_frame_size: (camera_info.MaxWidth as _, camera_info.MaxHeight as _),
             name: asi_char_array_to_string(&camera_info.Name),
             cfa_pattern: camera_info.BayerPattern,
+            supported_pixel_formats: camera_info.SupportedVideoFormat.iter()
+                .take_while(|i| **i != ASI_IMG_TYPE_ASI_IMG_END)
+                .map(|i| *i).collect(),
             control_auto_state: HashMap::new()
         }))
     }
@@ -141,9 +159,30 @@ impl Driver for ASIDriver {
 pub struct ASICamera {
     id: std::os::raw::c_int,
     cfa_pattern: ASI_BAYER_PATTERN,
+    supported_pixel_formats: Vec<ASI_IMG_TYPE>,
     full_frame_size: (u32, u32),
     name: String,
     control_auto_state: HashMap<u64, Option<bool>>
+}
+
+impl ASICamera {
+    fn create_pixel_format_control(&self) -> CameraControl {
+        let (_, _, img_format) = get_roi_format(self.id).unwrap();
+
+        CameraControl::List(ListControl{
+            base: CameraControlBase{
+                id: CameraControlId(SpecialControlIds::PixelFormat as u64),
+                label: "Pixel Format".to_string(),
+                refreshable: false,
+                access_mode: ControlAccessMode::WriteOnly,
+                auto_state: None,
+                on_off_state: None,
+                requires_capture_pause: true
+            },
+            items: self.supported_pixel_formats.iter().map(|pix_fmt| as_string(*pix_fmt)).collect(),
+            current_idx: self.supported_pixel_formats.iter().enumerate().find(|(_, &i)| i == img_format).unwrap().0
+        })
+    }
 }
 
 impl Drop for ASICamera {
@@ -173,6 +212,10 @@ impl Camera for ASICamera {
         self.control_auto_state.clear();
 
         let mut controls = vec![];
+
+        let pix_fmt_control = self.create_pixel_format_control();
+        self.control_auto_state.insert(pix_fmt_control.base().id.0, None);
+        controls.push(pix_fmt_control);
 
         for control_idx in 0..num_controls {
             let mut ccaps = std::mem::MaybeUninit::uninit();
@@ -307,7 +350,16 @@ impl Camera for ASICamera {
     }
 
     fn set_list_control(&mut self, id: CameraControlId, option_idx: usize) -> Result<(), CameraError> {
-        unimplemented!()
+        if id.0 != SpecialControlIds::PixelFormat as u64 { panic!("invalid list control id: {}", id.0); }
+
+        let new_img_type = self.supported_pixel_formats[option_idx];
+
+        let (width, height, img_type) = get_roi_format(self.id)?;
+        if new_img_type != img_type {
+            checked_call!(ASISetROIFormat(self.id, width as _, height as _, /*TODO: binning*/1, new_img_type));
+        }
+
+        Ok(())
     }
 
     fn set_boolean_control(&mut self, id: CameraControlId, state: bool) -> Result<(), CameraError> {
@@ -394,8 +446,8 @@ impl Camera for ASICamera {
 
     fn set_roi(&mut self, x0: u32, y0: u32, width: u32, height: u32) -> Result<(), CameraError> {
         // ASI 120 requires width * height divisible by 1024 (other cameras are less stringent; TODO: take it into account)
-        let mut actual_w = width / 32 * 32;
-        let mut actual_h = height / 32 * 32;
+        let actual_w = width / 32 * 32;
+        let actual_h = height / 32 * 32;
 
         let (_, _, img_type) = get_roi_format(self.id)?;
 
@@ -442,12 +494,12 @@ impl FrameCapturer for ASIFrameCapturer {
 
         let wait_timeout_ms = 500;
 
-        let num_pixel_bytes = dest_image.pixels::<u8>().len();
+        let num_pixel_bytes = dest_image.raw_pixels().len();
         let result = unsafe {
             //TODO: use a proper timeout
             ASIGetVideoData(
                 self.camera_id,
-                dest_image.pixels_mut::<u8>().as_mut_ptr(),
+                dest_image.raw_pixels_mut().as_mut_ptr(),
                 num_pixel_bytes as _,
                 wait_timeout_ms
             )
