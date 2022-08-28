@@ -184,7 +184,7 @@ impl SkyWatcher {
     #[must_use]
     fn is_stopped(&mut self, axis: Axis) -> Result<bool, SWError> {
         let response = send_cmd_and_get_reply(&mut self.serial_port, axis, Opcode::GetAxisStatus, "")?;
-        if response.len() < 2 {
+        if response.len() < 3 {
             Err(SWError::InvalidResponse)
         } else {
             Ok(response[2] & 0x01 == 0)
