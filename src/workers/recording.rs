@@ -65,6 +65,18 @@ pub fn recording_thread(
     let mut total_kib_written = 0;
     let mut written_kib_since_update = 0;
 
+    macro_rules! end_job { () => {
+        match job.as_mut().unwrap().writer.finalize() {
+            Err(err) => sender.send(RecordingToMainThreadMsg::Error(err)).unwrap(),
+            _ => ()
+        }
+
+        match jobs.pop() {
+            Ok(new_job) => job = Some(new_job),
+            Err(_) => job = None
+        }
+    }}
+
     loop {
         let mut sel = crossbeam::channel::Select::new();
         sel.recv(&receiver_main);
@@ -87,7 +99,11 @@ pub fn recording_thread(
                 Ok(msg) => match msg {
                     CaptureToRecordingThreadMsg::Captured((image, fragment, _timestamp)) => {
                         match job.as_mut().unwrap().writer.write(&ImageView::new(&*image, Some(fragment))) {
-                            Err(err) => sender.send(RecordingToMainThreadMsg::Error(err)).unwrap(),
+                            Err(err) => {
+                                sender.send(RecordingToMainThreadMsg::Error(err)).unwrap();
+                                end_job!();
+                            },
+
                             Ok(()) => {
                                 let kib_written = image.num_pixel_bytes_without_padding() / 1024;
                                 total_kib_written += kib_written;
@@ -96,17 +112,7 @@ pub fn recording_thread(
                         }
                     },
 
-                    CaptureToRecordingThreadMsg::Finished => {
-                        match job.as_mut().unwrap().writer.finalize() {
-                            Err(err) => sender.send(RecordingToMainThreadMsg::Error(err)).unwrap(),
-                            _ => ()
-                        }
-
-                        match jobs.pop() {
-                            Ok(new_job) => job = Some(new_job),
-                            Err(_) => job = None
-                        }
-                    }
+                    CaptureToRecordingThreadMsg::Finished => { end_job!(); }
                 },
 
                 Err(_) => {

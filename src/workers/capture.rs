@@ -167,15 +167,18 @@ pub fn capture_thread(
                     }
                 },
                 Ok(()) => {
-                    if let Some(ref mut rec_data) = rec_data {
-                        on_recording(
-                            rec_data,
+                    if let Some(ref mut rec_data_contents) = rec_data {
+                        if !on_recording(
+                            rec_data_contents,
                             &capture_buf[current_buf_idx],
                             &buffered_kib,
                             info.as_mut(),
                             &mut num_dropped_frames,
                             &crop_data
-                        );
+                        ) {
+                            // error communicating with the recording thread; there must have been a recording failure
+                            rec_data = None;
+                        }
                     }
 
                     if let Some(ref mut tracker) = tracking {
@@ -301,6 +304,8 @@ fn on_tracking(
     }
 }
 
+/// Returns false on communication-with-recording-thread error.
+#[must_use]
 fn on_recording(
     rec_data: &mut RecData,
     image: &Arc<Image>,
@@ -308,14 +313,16 @@ fn on_recording(
     info: Option<&mut Info>,
     num_dropped_frames: &mut usize,
     crop_data: &Option<CropData>
-) {
+) -> bool {
     let frame_kib_amount = image.num_pixel_bytes_without_padding() / 1024;
     if buffered_kib.load(Ordering::Relaxed) <= recording::MAX_BUFFERED_KIB {
-        rec_data.sender.send(recording::CaptureToRecordingThreadMsg::Captured((
+        if rec_data.sender.send(recording::CaptureToRecordingThreadMsg::Captured((
             Arc::clone(image),
             if let Some(crop_data) = crop_data { crop_data.area } else { image.img_rect() },
             std::time::SystemTime::now()
-        ))).unwrap();
+        ))).is_err() {
+            return false;
+        }
         rec_data.frame_counter += 1;
         buffered_kib.fetch_add(frame_kib_amount as isize, Ordering::Relaxed);
     } else {
@@ -352,4 +359,6 @@ fn on_recording(
             }
         });
     }
+
+    true
 }

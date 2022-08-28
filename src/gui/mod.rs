@@ -785,7 +785,10 @@ pub fn on_recording_thread_message(
             crate::on_capture_thread_failure(program_data_rc);
         },
 
-        _ => () // TODO: show errors
+        RecordingToMainThreadMsg::Error(err) => {
+            rec_gui::on_stop_recording(program_data_rc);
+            show_message(&format!("Error during recording:\n{}", err), "Recording error", gtk::MessageType::Error);
+        }
     }
 }
 
