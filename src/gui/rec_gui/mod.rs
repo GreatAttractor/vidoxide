@@ -163,7 +163,7 @@ fn on_start_recording(program_data_rc: &Rc<RefCell<ProgramData>>) {
         }
     };
 
-    let new_job = recording::Job{ receiver: rec_receiver, writer };
+    let new_job = recording::Job::new(rec_receiver, writer);
 
     let mut program_data = program_data_rc.borrow_mut();
     program_data.recording_thread_data.jobs.push(new_job);

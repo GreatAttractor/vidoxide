@@ -27,9 +27,25 @@ pub enum Limit {
 }
 
 #[derive(Debug)]
+struct CfaState {
+    crop_fragment_even_x_offset: bool,
+    crop_fragment_even_y_offset: bool
+}
+
+#[derive(Debug)]
 pub struct Job {
-    pub receiver: crossbeam::channel::Receiver<CaptureToRecordingThreadMsg>,
-    pub writer: Box<dyn OutputWriter>
+    receiver: crossbeam::channel::Receiver<CaptureToRecordingThreadMsg>,
+    writer: Box<dyn OutputWriter>,
+    cfa_state: Option<CfaState>
+}
+
+impl Job {
+    pub fn new(
+        receiver: crossbeam::channel::Receiver<CaptureToRecordingThreadMsg>,
+        writer: Box<dyn OutputWriter>
+    ) -> Job {
+        Job{ receiver, writer, cfa_state: None }
+    }
 }
 
 pub enum CaptureToRecordingThreadMsg {
@@ -97,8 +113,39 @@ pub fn recording_thread(
 
             RECEIVED_FROM_CAPTURE_THREAD => match sel_result.recv(&job.as_ref().unwrap().receiver) {
                 Ok(msg) => match msg {
-                    CaptureToRecordingThreadMsg::Captured((image, fragment, _timestamp)) => {
-                        match job.as_mut().unwrap().writer.write(&ImageView::new(&*image, Some(fragment))) {
+                    CaptureToRecordingThreadMsg::Captured((image, mut fragment, _timestamp)) => {
+                        let mut job = job.as_mut().unwrap();
+
+                        match &job.cfa_state {
+                            None => {
+                                if image.pixel_format().is_cfa() {
+                                    job.cfa_state = Some(CfaState{
+                                        crop_fragment_even_x_offset: fragment.x % 2 == 0,
+                                        crop_fragment_even_y_offset: fragment.y % 2 == 0
+                                    });
+                                }
+                            },
+
+                            // Care needs to be taken when recording CFA images with live cropping.
+                            // The crop fragment's offset can only be allowed to change with 2-pixel granularity
+                            // in each frame, so that always the same resulting CFA pattern is reported to the
+                            // output writer.
+                            Some(state) => {
+                                if state.crop_fragment_even_x_offset && fragment.x % 2 == 1 {
+                                    fragment.x -= 1;
+                                } else if !state.crop_fragment_even_x_offset && fragment.x % 2 == 0 {
+                                    if fragment.x > 0 { fragment.x -= 1; } else { fragment.x += 1; }
+                                }
+
+                                if state.crop_fragment_even_y_offset && fragment.y % 2 == 1 {
+                                    fragment.y -= 1;
+                                } else if !state.crop_fragment_even_y_offset && fragment.y % 2 == 0 {
+                                    if fragment.y > 0 { fragment.y -= 1; } else { fragment.y += 1; }
+                                }
+                            }
+                        }
+
+                        match job.writer.write(&ImageView::new(&*image, Some(fragment))) {
                             Err(err) => {
                                 sender.send(RecordingToMainThreadMsg::Error(err)).unwrap();
                                 end_job!();
