@@ -188,6 +188,7 @@ pub struct ProgramData {
     on_capture_pause_action: Option<OnCapturePauseAction>,
     preview_fps_counter: usize,
     preview_fps_last_timestamp: Option<std::time::Instant>,
+    /// Non-empty after the main window creation.
     gui: Option<gui::GuiData>,
     mount_data: MountData,
     tracking: Option<TrackingData>,

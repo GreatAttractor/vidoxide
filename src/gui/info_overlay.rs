@@ -35,7 +35,7 @@ pub struct InfoOverlay {
     pub enabled: bool,
     pub screen_sel: Option<ScreenSelection>,
     last_guiding_blink_change: Option<std::time::Instant>,
-    guiding_blink_state: Option<bool>
+    guiding_blink_state: Option<bool>,
 }
 
 impl InfoOverlay {

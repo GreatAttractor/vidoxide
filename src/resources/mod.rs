@@ -36,21 +36,24 @@ impl ToolbarIcon {
 
 pub enum SimulatorImage {
     SunHAlphaFullDisk,
-    Landscape
+    Landscape,
+    Star1
 }
 
 impl SimulatorImage {
     pub fn contents(&self) -> &[u8] {
         match self {
             SimulatorImage::SunHAlphaFullDisk => include_bytes!("images/simulator/sun_ha_fd.jpg"),
-            SimulatorImage::Landscape => include_bytes!("images/simulator/landscape_rgb.jpg")
+            SimulatorImage::Landscape => include_bytes!("images/simulator/landscape_rgb.jpg"),
+            SimulatorImage::Star1 => include_bytes!("images/simulator/star1.jpg")
         }
     }
 
     pub fn gdk_pixbuf_img_format(&self) -> &str {
         match self {
             SimulatorImage::SunHAlphaFullDisk
-            | SimulatorImage::Landscape => "jpeg"
+            | SimulatorImage::Landscape
+            | SimulatorImage::Star1 => "jpeg"
         }
     }
 }

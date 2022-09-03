@@ -65,6 +65,7 @@ impl Driver for SimDriver {
             image_mono8,
             image_cfa8,
             image_shown,
+            star1: resources::load_sim_image(resources::SimulatorImage::Star1).unwrap(),
             dummy1: RefCell::new(5.0),
             frame_rate: Arc::new(RwLock::new(30.0)),
             exposure_time: RefCell::new(5.0),
@@ -78,6 +79,7 @@ pub struct SimCamera {
     image_rgb8: ga_image::Image,
     image_mono8: ga_image::Image,
     image_cfa8: ga_image::Image,
+    star1: ga_image::Image,
     image_shown: Arc<RwLock<ga_image::Image>>,
     frame_rate: Arc<RwLock<f64>>,
     exposure_time: RefCell<f64>,
@@ -88,7 +90,8 @@ pub struct SimCamera {
 enum ImageShown {
     LandscapeRGB8,
     LandscapeMono8,
-    LandscapeCFA8
+    LandscapeCFA8,
+    Star1
 }
 
 impl Camera for SimCamera {
@@ -118,6 +121,7 @@ impl Camera for SimCamera {
                 "Landscape (RGB 8-bit)".to_string(),
                 "Landscape (mono 8-bit)".to_string(),
                 "Landscape (raw color 8-bit)".to_string(),
+                "Defocused star".to_string(),
             ],
             current_idx: 0
         });
@@ -238,6 +242,7 @@ impl Camera for SimCamera {
                     ImageShown::LandscapeRGB8 => *self.image_shown.write().unwrap() = self.image_rgb8.clone(),
                     ImageShown::LandscapeMono8 => *self.image_shown.write().unwrap() = self.image_mono8.clone(),
                     ImageShown::LandscapeCFA8 => *self.image_shown.write().unwrap() = self.image_cfa8.clone(),
+                    ImageShown::Star1 => *self.image_shown.write().unwrap() = self.star1.clone()
                 }
             },
 

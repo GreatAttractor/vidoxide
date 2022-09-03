@@ -43,12 +43,15 @@ impl ImgView {
     ///   (scrolling and zoom are applied).
     /// * `on_mouse_move` - Called on mouse move; receives image coordinates (scrolling and zoom are applied).
     /// * `draw_info_overlay` - Called after the image is drawn. Receives drawing context and zoom value.
+    /// * `draw_reticle` - Called after the image is drawn. Receives drawing context having with origin in the middle
+    ///    of the visible part of the image.
     ///
     pub fn new(
         on_button_down: Box<dyn Fn(Point)>,
         on_button_up: Box<dyn Fn(Point)>,
         on_mouse_move: Box<dyn Fn(Point)>,
-        draw_info_overlay: Box<dyn Fn(&cairo::Context, f64)>
+        draw_info_overlay: Box<dyn Fn(&cairo::Context, f64)>,
+        draw_reticle: Box<dyn Fn(&cairo::Context)>
     ) -> ImgView {
         let top_widget = gtk::ScrolledWindow::new::<gtk::Adjustment, gtk::Adjustment>(None, None);
         let drawing_area = gtk::DrawingAreaBuilder::new().app_paintable(true).build();
@@ -138,8 +141,9 @@ impl ImgView {
             }
         ));
 
-        drawing_area.connect_draw(clone!(@weak state => @default-panic, move |_, ctx| {
+        drawing_area.connect_draw(clone!(@weak state, @weak top_widget => @default-panic, move |_, ctx| {
             let state = state.borrow();
+
             match &state.image {
                 Some(surface) => {
                     let source = cairo::SurfacePattern::create(&surface);
@@ -162,6 +166,12 @@ impl ImgView {
                 },
                 None => ()
             }
+
+            ctx.translate(
+                top_widget.allocated_width() as f64 / 2.0 + top_widget.hadjustment().value(),
+                top_widget.allocated_height() as f64 / 2.0 + top_widget.vadjustment().value()
+            );
+            draw_reticle(ctx);
 
             gtk::Inhibit(true)
         }));

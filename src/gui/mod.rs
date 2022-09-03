@@ -19,6 +19,7 @@ mod info_overlay;
 mod mount_gui;
 mod non_signaling;
 mod rec_gui;
+mod reticle_dialog;
 mod roi_dialog;
 
 use camera_gui::{
@@ -46,6 +47,7 @@ use img_view::ImgView;
 use info_overlay::{InfoOverlay, ScreenSelection, draw_info_overlay};
 use mount_gui::MountWidgets;
 use rec_gui::RecWidgets;
+use reticle_dialog::create_reticle_dialog;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::Path;
@@ -118,6 +120,15 @@ impl MouseMode {
     }
 }
 
+pub struct Reticle {
+    enabled: bool,
+    dialog: gtk::Dialog,
+    diameter: f64,
+    opacity: f64,
+    step: f64,
+    line_width: f64
+}
+
 pub struct GuiData {
     controls_box: gtk::Box,
     control_widgets: std::collections::HashMap<camera::CameraControlId, (CommonControlWidgets, ControlWidgetBundle)>,
@@ -127,6 +138,7 @@ pub struct GuiData {
     camera_menu: gtk::Menu,
     preview_area: ImgView,
     rec_widgets: RecWidgets,
+    reticle: Reticle,
     mount_widgets: MountWidgets,
     mouse_mode: MouseMode,
     info_overlay: InfoOverlay,
@@ -308,7 +320,10 @@ pub fn init_main_window(app: &gtk::Application, program_data_rc: &Rc<RefCell<Pro
         Box::new(clone!(@weak program_data_rc => @default-panic, move |pos| { on_preview_area_mouse_move(pos, &program_data_rc); })),
         Box::new(clone!(@weak program_data_rc => @default-panic, move |ctx, zoom| {
             draw_info_overlay(ctx, zoom, &mut program_data_rc.borrow_mut());
-        }))
+        })),
+        Box::new(clone!(@weak program_data_rc => @default-panic, move |ctx| {
+            draw_reticle(ctx, &program_data_rc.borrow());
+        })),
     );
 
     let camera_controls_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
@@ -380,7 +395,12 @@ pub fn init_main_window(app: &gtk::Application, program_data_rc: &Rc<RefCell<Pro
         }
     ));
 
-    program_data_rc.borrow_mut().gui = Some(GuiData{
+    let rtc_opacity = 1.0;
+    let rtc_diameter = 100.0;
+    let rtc_step = 10.0;
+    let rtc_line_width = 2.0;
+
+    let gui = GuiData{
         controls_box: camera_controls_box,
         status_bar,
         control_widgets: Default::default(),
@@ -390,11 +410,21 @@ pub fn init_main_window(app: &gtk::Application, program_data_rc: &Rc<RefCell<Pro
         rec_widgets,
         mount_widgets,
         info_overlay: InfoOverlay::new(),
+        reticle: Reticle{
+            enabled: false,
+            dialog: create_reticle_dialog(&window, &program_data_rc, rtc_opacity, rtc_diameter, rtc_step, rtc_line_width),
+            diameter: rtc_diameter,
+            opacity: rtc_opacity,
+            step: rtc_step,
+            line_width: rtc_line_width
+        },
         mouse_mode: MouseMode::None,
         default_mouse_mode_button,
         histogram_view,
         action_map
-    });
+    };
+
+    program_data_rc.borrow_mut().gui = Some(gui);
 }
 
 fn setup_actions(app_window: &gtk::ApplicationWindow, program_data_rc: &Rc<RefCell<ProgramData>>)
@@ -550,6 +580,17 @@ fn create_toolbar(
     }));
     toolbar.insert(&btn_toggle_info_overlay, -1);
 
+    let btn_toggle_reticle = gtk::ToggleToolButtonBuilder::new()
+        .label("⊚") //TODO: use some pictograph
+        .tooltip_text("Toggle reticle")
+        .active(false)
+        .build();
+    btn_toggle_reticle.connect_toggled(clone!(@weak program_data_rc => @default-panic, move |btn| {
+        program_data_rc.borrow_mut().gui.as_mut().unwrap().reticle.enabled = btn.is_active();
+        program_data_rc.borrow_mut().gui.as_ref().unwrap().preview_area.refresh();
+    }));
+    toolbar.insert(&btn_toggle_reticle, -1);
+
     toolbar.insert(&gtk::SeparatorToolItem::new(), -1);
 
     let btn_mouse_none = gtk::RadioToolButtonBuilder::new()
@@ -642,7 +683,6 @@ fn create_toolbar(
             crate::on_capture_thread_failure(&program_data_rc);
         }
     }));
-
     toolbar.insert(&btn_unset_roi, -1);
 
     (toolbar, btn_mouse_none)
@@ -721,7 +761,10 @@ fn init_menu(
     (menu_bar, camera_menu, camera_menu_items)
 }
 
-fn init_preview_menu(program_data_rc: &Rc<RefCell<ProgramData>>, accel_group: &gtk::AccelGroup) -> gtk::Menu {
+fn init_preview_menu(
+    program_data_rc: &Rc<RefCell<ProgramData>>,
+    accel_group: &gtk::AccelGroup
+) -> gtk::Menu {
     let menu = gtk::Menu::new();
 
     let snapshot = gtk::MenuItem::with_label("Take snapshot");
@@ -747,6 +790,12 @@ fn init_preview_menu(program_data_rc: &Rc<RefCell<ProgramData>>, accel_group: &g
         program_data_rc.borrow_mut().histogram_area = None;
     }));
     menu.append(&disable_histogram_area);
+
+    let reticle_settings = gtk::MenuItem::with_label("Show reticle settings...");
+    reticle_settings.connect_activate(clone!(@weak program_data_rc => @default-panic, move |_| {
+        program_data_rc.borrow().gui.as_ref().unwrap().reticle.dialog.show();
+    }));
+    menu.append(&reticle_settings);
 
     menu
 }
@@ -1205,5 +1254,24 @@ fn show_custom_zoom_dialog(parent: &gtk::ApplicationWindow, old_value: f64) -> O
         }
     } else {
         None
+    }
+}
+
+/// Draws reticle on a context whose (0, 0) is the middle of the visible part of the preview area.
+fn draw_reticle(ctx: &cairo::Context, program_data: &ProgramData) {
+    let reticle = &program_data.gui.as_ref().unwrap().reticle;
+
+    if !reticle.enabled { return; }
+
+    ctx.set_dash(&[], 0.0);
+    ctx.set_line_width(reticle.line_width);
+    ctx.set_antialias(cairo::Antialias::Default);
+
+    ctx.set_source_rgba(1.0, 0.0, 0.0, reticle.opacity);
+    let mut radius = 10.0;
+    while radius < reticle.diameter {
+        ctx.arc(0.0, 0.0, radius, 0.0, 2.0 * std::f64::consts::PI);
+        ctx.stroke().unwrap();
+        radius += reticle.step;
     }
 }
