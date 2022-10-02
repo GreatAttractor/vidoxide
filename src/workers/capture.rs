@@ -167,6 +167,12 @@ pub fn capture_thread(
                     }
                 },
                 Ok(()) => {
+                    if let Some(ref mut tracker) = tracking {
+                        if on_tracking(tracker, &capture_buf[current_buf_idx], &sender, &mut crop_data).is_err() {
+                            tracking = None;
+                        }
+                    }
+
                     if let Some(ref mut rec_data_contents) = rec_data {
                         if !on_recording(
                             rec_data_contents,
@@ -178,12 +184,6 @@ pub fn capture_thread(
                         ) {
                             // error communicating with the recording thread; there must have been a recording failure
                             rec_data = None;
-                        }
-                    }
-
-                    if let Some(ref mut tracker) = tracking {
-                        if on_tracking(tracker, &capture_buf[current_buf_idx], &sender, &mut crop_data).is_err() {
-                            tracking = None;
                         }
                     }
 
