@@ -75,7 +75,7 @@ pub struct SimCamera {
     mount_simulator_data: crate::MountSimulatorData
 }
 
-#[derive(strum_macros::EnumIter)]
+#[derive(PartialEq, strum_macros::EnumIter)]
 enum ImageShown {
     LandscapeRGB8,
     LandscapeMono8,
@@ -112,7 +112,7 @@ impl Camera for SimCamera {
                 "Landscape (raw color 8-bit)".to_string(),
                 "Defocused star".to_string(),
             ],
-            current_idx: 0
+            current_idx: ImageShown::iter().enumerate().find(|(_, val)| *val == self.image_shown).unwrap().0
         });
 
         let dummy_exposure_time = CameraControl::Number(NumberControl{
