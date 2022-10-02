@@ -12,6 +12,7 @@
 
 use cgmath::{InnerSpace, Vector2};
 use crate::camera::*;
+use crate::input;
 use crate::resources;
 use ga_image;
 use std::cell::RefCell;
@@ -54,18 +55,9 @@ impl Driver for SimDriver {
     }
 
     fn open_camera(&mut self, _id: CameraId) -> Result<Box<dyn Camera>, CameraError> {
-        let image_rgb8 = resources::load_sim_image(resources::SimulatorImage::Landscape).unwrap();
-        let image_mono8 = image_rgb8.convert_pix_fmt(ga_image::PixelFormat::Mono8, None);
-        let image_cfa8 = rgb8_to_cfa8(&image_rgb8);
-
-        let image_shown = Arc::new(RwLock::new(image_rgb8.clone()));
-
         Ok(Box::new(SimCamera{
-            image_rgb8,
-            image_mono8,
-            image_cfa8,
-            image_shown,
-            star1: resources::load_sim_image(resources::SimulatorImage::Star1).unwrap(),
+            image_shown: ImageShown::LandscapeRGB8,
+            new_img_seq: RefCell::new(None),
             dummy1: RefCell::new(5.0),
             frame_rate: Arc::new(RwLock::new(30.0)),
             exposure_time: RefCell::new(5.0),
@@ -75,12 +67,9 @@ impl Driver for SimDriver {
 }
 
 pub struct SimCamera {
+    image_shown: ImageShown,
     dummy1: RefCell<f64>,
-    image_rgb8: ga_image::Image,
-    image_mono8: ga_image::Image,
-    image_cfa8: ga_image::Image,
-    star1: ga_image::Image,
-    image_shown: Arc<RwLock<ga_image::Image>>,
+    new_img_seq: RefCell<Option<crossbeam::channel::Sender<Box<dyn input::ImageSequence>>>>,
     frame_rate: Arc<RwLock<f64>>,
     exposure_time: RefCell<f64>,
     mount_simulator_data: crate::MountSimulatorData
@@ -204,9 +193,16 @@ impl Camera for SimCamera {
     }
 
     fn create_capturer(&self) -> Result<Box<dyn FrameCapturer + Send>, CameraError> {
+        let img_sequence = create_capturer_input(&self.image_shown);
+        let (sender, receiver) = crossbeam::channel::unbounded();
+        *self.new_img_seq.borrow_mut() = Some(sender);
+
+
         Ok(Box::new(SimFrameCapturer{
             t_last_capture: std::time::Instant::now(),
-            image: Arc::clone(&self.image_shown),
+            img_index: 0,
+            img_sequence,
+            new_img_seq: receiver,
             frame_rate: Arc::clone(&self.frame_rate),
             mount_simulator_data: self.mount_simulator_data.clone(),
             img_offset: cgmath::Vector2::new(0.0, 0.0)
@@ -237,13 +233,8 @@ impl Camera for SimCamera {
     fn set_list_control(&mut self, id: CameraControlId, option_idx: usize) -> Result<(), CameraError> {
         match id.0 {
             control_ids::IMAGE_SHOWN => {
-                let new_value: ImageShown = ImageShown::iter().skip(option_idx).next().unwrap();
-                match new_value {
-                    ImageShown::LandscapeRGB8 => *self.image_shown.write().unwrap() = self.image_rgb8.clone(),
-                    ImageShown::LandscapeMono8 => *self.image_shown.write().unwrap() = self.image_mono8.clone(),
-                    ImageShown::LandscapeCFA8 => *self.image_shown.write().unwrap() = self.image_cfa8.clone(),
-                    ImageShown::Star1 => *self.image_shown.write().unwrap() = self.star1.clone()
-                }
+                self.image_shown = ImageShown::iter().skip(option_idx).next().unwrap();
+                self.new_img_seq.borrow().as_ref().unwrap().send(create_capturer_input(&self.image_shown)).unwrap();
             },
 
             _ => ()
@@ -297,10 +288,12 @@ impl Camera for SimCamera {
 
 pub struct SimFrameCapturer {
     t_last_capture: std::time::Instant,
-    image: Arc<RwLock<ga_image::Image>>,
+    img_index: usize,
+    img_sequence: Box<dyn input::ImageSequence>,
     frame_rate: Arc<RwLock<f64>>,
     mount_simulator_data: crate::MountSimulatorData,
-    img_offset: cgmath::Vector2<f64>
+    img_offset: cgmath::Vector2<f64>,
+    new_img_seq: crossbeam::channel::Receiver<Box<dyn input::ImageSequence>>
 }
 
 impl FrameCapturer for SimFrameCapturer {
@@ -309,6 +302,16 @@ impl FrameCapturer for SimFrameCapturer {
     fn resume(&mut self) -> Result<(), CameraError> { Ok(()) }
 
     fn capture_frame(&mut self, dest_image: &mut Image) -> Result<(), CameraError> {
+        match self.new_img_seq.try_recv() {
+            Err(e) => if e != crossbeam::TryRecvError::Empty { panic!("unexpected receiver error {:?}.", e) },
+
+            Ok(img_seq) => {
+                self.img_index = 0;
+                self.img_sequence = img_seq;
+            }
+        }
+
+
         let t_between_frames = std::time::Duration::from_secs_f64(1.0 / self.frame_rate.read().unwrap().clone());
         let t_elapsed = self.t_last_capture.elapsed();
         if t_elapsed < t_between_frames {
@@ -316,7 +319,8 @@ impl FrameCapturer for SimFrameCapturer {
         }
         let t_elapsed = self.t_last_capture.elapsed();
 
-        let image = self.image.read().unwrap();
+        let image = self.img_sequence.get_image(self.img_index).unwrap();
+        self.img_index = (self.img_index + 1) % self.img_sequence.num_images();
         if dest_image.bytes_per_line() != image.bytes_per_line()
             || dest_image.width() != image.width()
             || dest_image.height() != image.height()
@@ -391,4 +395,26 @@ fn rgb8_to_cfa8(image: &ga_image::Image) -> ga_image::Image {
     }
 
     result
+}
+
+fn create_capturer_input(image_shown: &ImageShown) -> Box<dyn input::ImageSequence> {
+    match image_shown {
+        ImageShown::LandscapeRGB8 => {
+            input::create_image_list(vec![resources::load_sim_image(resources::SimulatorImage::Landscape).unwrap()])
+        },
+
+        ImageShown::LandscapeMono8 => {
+            input::create_image_list(vec![resources::load_sim_image(resources::SimulatorImage::Landscape).unwrap()
+                .convert_pix_fmt(ga_image::PixelFormat::Mono8, None)])
+        },
+
+        ImageShown::LandscapeCFA8 => {
+            let img = resources::load_sim_image(resources::SimulatorImage::Landscape).unwrap();
+            input::create_image_list(vec![rgb8_to_cfa8(&img)])
+        },
+
+        ImageShown::Star1 => {
+            input::create_image_list(vec![resources::load_sim_image(resources::SimulatorImage::Star1).unwrap()])
+        }
+    }
 }

@@ -101,7 +101,7 @@ impl MountData {
 }
 
 mod sim_data {
-    use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
+    use std::sync::atomic::{AtomicBool};
     use std::sync::Arc;
 
     /// Data shared between camera and mount simulators.

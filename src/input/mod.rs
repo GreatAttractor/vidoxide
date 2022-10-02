@@ -34,7 +34,7 @@ impl std::fmt::Display for ImgSeqError {
     }
 }
 
-pub trait ImageSequence {
+pub trait ImageSequence: Send {
     fn get_image(&mut self, index: usize) -> Result<ga_image::Image, ImgSeqError>;
 
     fn num_images(&self) -> usize;
