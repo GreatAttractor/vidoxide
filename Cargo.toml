@@ -18,7 +18,7 @@ atomic_float = "0.1.0"
 cgmath = "0.18.0"
 chrono = "0.4.12"
 com = { version = "0.3.0", optional = true }
-crossbeam = "0.7.3"
+crossbeam = "0.8.2"
 dirs = "2.0.2"
 enum_dispatch = "0.3.7"
 ga_image = { path = "ext/ga_image" }
@@ -32,7 +32,7 @@ libspinnaker-sys = { version = "0.1.0", optional = true }
 mmap = { version = "0.1.1", optional = true }
 num-traits = "0.2.12"
 os_info = "3.0"
-serialport = "3.3.0"
+serialport = "4.2.0"
 strum = "0.18.0"
 strum_macros = "0.18.0"
 uuid = { version = "0.8", optional = true }

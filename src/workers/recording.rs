@@ -87,10 +87,7 @@ pub fn recording_thread(
             _ => ()
         }
 
-        match jobs.pop() {
-            Ok(new_job) => job = Some(new_job),
-            Err(_) => job = None
-        }
+        job = jobs.pop();
     }}
 
     loop {
@@ -102,10 +99,7 @@ pub fn recording_thread(
         match sel_result.index() {
             RECEIVED_FROM_MAIN_THREAD => match sel_result.recv(&receiver_main).unwrap() {
                 MainToRecordingThreadMsg::CheckJobQueue => if job.is_none() {
-                    match jobs.pop() {
-                        Ok(new_job) => job = Some(new_job),
-                        Err(_) => ()
-                    }
+                    if let Some(new_job) = jobs.pop() { job = Some(new_job); }
                 },
 
                 MainToRecordingThreadMsg::Finish => break
@@ -170,10 +164,7 @@ pub fn recording_thread(
                         Err(err) => sender.send(RecordingToMainThreadMsg::Error(err)).unwrap(),
                         _ => ()
                     }
-                    match jobs.pop() {
-                        Ok(new_job) => job = Some(new_job),
-                        Err(_) => job = None
-                    }
+                    job = jobs.pop();
                 }
             },
 

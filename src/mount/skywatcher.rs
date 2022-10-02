@@ -13,7 +13,6 @@
 //! NOTE: this code has been only tested with a 2014 HEQ5 mount.
 //!
 
-use serialport::prelude::*;
 use std::f64::consts::PI;
 use crate::mount::{Axis, Mount, MountError, SIDEREAL_RATE};
 
@@ -113,7 +112,7 @@ mod motion {
 
 pub struct SkyWatcher {
     device: String,
-    serial_port: Box<dyn SerialPort>,
+    serial_port: Box<dyn serialport::SerialPort>,
     rad_rate_to_int: [f64; 2],
     hi_speed_ratio: [u32; 2],
     current_slewing_speed: [f64; 2]
@@ -129,17 +128,13 @@ impl SkyWatcher {
     ///
     #[must_use]
     pub fn new(device: &str) -> Result<SkyWatcher, SWError> {
-        let mut serial_port = serialport::open_with_settings(
-            device,
-            &SerialPortSettings{
-                baud_rate: 9600,
-                data_bits: DataBits::Eight,
-                flow_control: FlowControl::None,
-                parity: Parity::None,
-                stop_bits: StopBits::One,
-                timeout: std::time::Duration::from_millis(50),
-            }
-        ).map_err(|e| SWError::SerialPort(e))?;
+        let mut serial_port = serialport::new(device, 9600)
+            .data_bits(serialport::DataBits::Eight)
+            .flow_control(serialport::FlowControl::None)
+            .parity(serialport::Parity::None)
+            .stop_bits(serialport::StopBits::One)
+            .timeout(std::time::Duration::from_millis(50))
+            .open().map_err(|e| SWError::SerialPort(e))?;
 
         let mut rad_to_step = [0.0; 2];
 
@@ -310,7 +305,8 @@ fn extract_hex_number(mount_response: &[u8]) -> Vec<u8> {
     mount_response[1..1 + mount_response.len() - 2].to_vec()
 }
 
-fn send_cmd_and_get_reply(serial_port: &mut Box<dyn SerialPort>, axis: Axis, opcode: Opcode, params: &str) -> Result<Vec<u8>, SWError> {
+fn send_cmd_and_get_reply(serial_port: &mut Box<dyn serialport::SerialPort>, axis: Axis, opcode: Opcode, params: &str)
+-> Result<Vec<u8>, SWError> {
     let command_str = format!(
         "{}{}{}{}{}",
         command::START_CHAR_OUT as char,

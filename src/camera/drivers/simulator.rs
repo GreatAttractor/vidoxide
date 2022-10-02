@@ -303,7 +303,7 @@ impl FrameCapturer for SimFrameCapturer {
 
     fn capture_frame(&mut self, dest_image: &mut Image) -> Result<(), CameraError> {
         match self.new_img_seq.try_recv() {
-            Err(e) => if e != crossbeam::TryRecvError::Empty { panic!("unexpected receiver error {:?}.", e) },
+            Err(e) => if e != crossbeam::channel::TryRecvError::Empty { panic!("unexpected receiver error {:?}.", e) },
 
             Ok(img_seq) => {
                 self.img_index = 0;
