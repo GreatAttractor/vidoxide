@@ -14,6 +14,7 @@ mod camera;
 mod config;
 mod gui;
 mod guiding;
+mod input;
 mod mount;
 mod output;
 mod resources;
