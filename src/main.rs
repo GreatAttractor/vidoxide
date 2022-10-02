@@ -254,6 +254,8 @@ fn main() {
     let disabled_drivers_str = config.disabled_drivers();
     let disabled_drivers: Vec<&str> = disabled_drivers_str.split(',').collect();
 
+    let simulator_video_file = config.simulator_video_file();
+
     let preview_fps_limit = config.preview_fps_limit();
 
     let mount_simulator_data = MountSimulatorData::new(
@@ -265,7 +267,7 @@ fn main() {
     let program_data_rc = Rc::new(RefCell::new(ProgramData{
         config,
         camera: None,
-        drivers: drivers::init_drivers(&disabled_drivers),
+        drivers: drivers::init_drivers(&disabled_drivers, simulator_video_file),
         capture_thread_data: None,
         histogram_sender: histogram_sender_main,
         recording_thread_data: RecordingThreadData {

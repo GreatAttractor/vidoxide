@@ -39,11 +39,12 @@ impl From<SimulatorError> for CameraError {
 }
 
 pub struct SimDriver {
+    user_video: Option<std::path::PathBuf>
 }
 
 impl SimDriver {
-    pub fn new() -> Option<SimDriver> {
-        Some(SimDriver{})
+    pub fn new(user_video: Option<std::path::PathBuf>) -> Option<SimDriver> {
+        Some(SimDriver{ user_video })
     }
 }
 
@@ -61,7 +62,8 @@ impl Driver for SimDriver {
             dummy1: RefCell::new(5.0),
             frame_rate: Arc::new(RwLock::new(30.0)),
             exposure_time: RefCell::new(5.0),
-            mount_simulator_data: crate::MountSimulatorData::default()
+            mount_simulator_data: crate::MountSimulatorData::default(),
+            user_video: self.user_video.clone()
         }))
     }
 }
@@ -72,7 +74,8 @@ pub struct SimCamera {
     new_img_seq: RefCell<Option<crossbeam::channel::Sender<Box<dyn input::ImageSequence>>>>,
     frame_rate: Arc<RwLock<f64>>,
     exposure_time: RefCell<f64>,
-    mount_simulator_data: crate::MountSimulatorData
+    mount_simulator_data: crate::MountSimulatorData,
+    user_video: Option<std::path::PathBuf>
 }
 
 #[derive(PartialEq, strum_macros::EnumIter)]
@@ -80,7 +83,37 @@ enum ImageShown {
     LandscapeRGB8,
     LandscapeMono8,
     LandscapeCFA8,
-    Star1
+    Star1,
+    UserVideo
+}
+
+impl SimCamera {
+    fn create_capturer_input(&self) -> Box<dyn input::ImageSequence> {
+        match &self.image_shown {
+            ImageShown::LandscapeRGB8 => {
+                input::create_image_list(vec![resources::load_sim_image(resources::SimulatorImage::Landscape).unwrap()])
+            },
+
+            ImageShown::LandscapeMono8 => {
+                input::create_image_list(vec![resources::load_sim_image(resources::SimulatorImage::Landscape).unwrap()
+                    .convert_pix_fmt(ga_image::PixelFormat::Mono8, None)])
+            },
+
+            ImageShown::LandscapeCFA8 => {
+                let img = resources::load_sim_image(resources::SimulatorImage::Landscape).unwrap();
+                input::create_image_list(vec![rgb8_to_cfa8(&img)])
+            },
+
+            ImageShown::Star1 => {
+                input::create_image_list(vec![resources::load_sim_image(resources::SimulatorImage::Star1).unwrap()])
+            },
+
+            ImageShown::UserVideo => {
+                if self.user_video.is_none() { panic!("user video file must be specified in the configuration file"); }
+                input::open_ser_video(self.user_video.as_ref().unwrap()).unwrap()
+            }
+        }
+    }
 }
 
 impl Camera for SimCamera {
@@ -111,6 +144,7 @@ impl Camera for SimCamera {
                 "Landscape (mono 8-bit)".to_string(),
                 "Landscape (raw color 8-bit)".to_string(),
                 "Defocused star".to_string(),
+                "User-specified video".to_string()
             ],
             current_idx: ImageShown::iter().enumerate().find(|(_, val)| *val == self.image_shown).unwrap().0
         });
@@ -193,7 +227,7 @@ impl Camera for SimCamera {
     }
 
     fn create_capturer(&self) -> Result<Box<dyn FrameCapturer + Send>, CameraError> {
-        let img_sequence = create_capturer_input(&self.image_shown);
+        let img_sequence = self.create_capturer_input();
         let (sender, receiver) = crossbeam::channel::unbounded();
         *self.new_img_seq.borrow_mut() = Some(sender);
 
@@ -234,7 +268,7 @@ impl Camera for SimCamera {
         match id.0 {
             control_ids::IMAGE_SHOWN => {
                 self.image_shown = ImageShown::iter().skip(option_idx).next().unwrap();
-                self.new_img_seq.borrow().as_ref().unwrap().send(create_capturer_input(&self.image_shown)).unwrap();
+                self.new_img_seq.borrow().as_ref().unwrap().send(self.create_capturer_input()).unwrap();
             },
 
             _ => ()
@@ -395,26 +429,4 @@ fn rgb8_to_cfa8(image: &ga_image::Image) -> ga_image::Image {
     }
 
     result
-}
-
-fn create_capturer_input(image_shown: &ImageShown) -> Box<dyn input::ImageSequence> {
-    match image_shown {
-        ImageShown::LandscapeRGB8 => {
-            input::create_image_list(vec![resources::load_sim_image(resources::SimulatorImage::Landscape).unwrap()])
-        },
-
-        ImageShown::LandscapeMono8 => {
-            input::create_image_list(vec![resources::load_sim_image(resources::SimulatorImage::Landscape).unwrap()
-                .convert_pix_fmt(ga_image::PixelFormat::Mono8, None)])
-        },
-
-        ImageShown::LandscapeCFA8 => {
-            let img = resources::load_sim_image(resources::SimulatorImage::Landscape).unwrap();
-            input::create_image_list(vec![rgb8_to_cfa8(&img)])
-        },
-
-        ImageShown::Star1 => {
-            input::create_image_list(vec![resources::load_sim_image(resources::SimulatorImage::Star1).unwrap()])
-        }
-    }
 }

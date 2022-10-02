@@ -24,6 +24,7 @@ mod keys {
     pub const RECORDING_DEST_PATH: &str = "RecordingDestPath";
     pub const DISABLED_DRIVERS: &str = "DisabledDrivers";
     pub const PREVIEW_FPS_LIMIT: &str = "PreviewFpsLimit";
+    pub const SIM_VIDEO_FILE: &str = "SimulatorVideoFile";
 
     // group: UI
     pub const MAIN_WINDOW_POS_SIZE: &str = "MainWindowPosSize";
@@ -225,6 +226,13 @@ impl Configuration {
                 None
             },
             _ => None
+        }
+    }
+
+    pub fn simulator_video_file(&self) -> Option<std::path::PathBuf> {
+        match self.key_file.string(groups::MAIN, keys::SIM_VIDEO_FILE).ok() {
+            Some(s) => Some(std::path::PathBuf::from(s.as_str())),
+            None => None
         }
     }
 }

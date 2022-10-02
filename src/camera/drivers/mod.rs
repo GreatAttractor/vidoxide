@@ -26,7 +26,10 @@ use crate::camera::Driver;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-pub fn init_drivers<'a>(disabled_drivers: &[&str]) -> Vec<Rc<RefCell<Box<dyn Driver>>>> {
+pub fn init_drivers<'a>(
+    disabled_drivers: &[&str],
+    simulator_video_file: Option<std::path::PathBuf>
+)-> Vec<Rc<RefCell<Box<dyn Driver>>>> {
     let mut drivers: Vec<Rc<RefCell<Box<dyn Driver>>>> = vec![];
 
     #[cfg(feature = "camera_iidc")]
@@ -57,7 +60,7 @@ pub fn init_drivers<'a>(disabled_drivers: &[&str]) -> Vec<Rc<RefCell<Box<dyn Dri
     // add more drivers here
 
     if !disabled_drivers.contains(&"simulator") {
-        drivers.push(Rc::new(RefCell::new(Box::new(simulator::SimDriver::new().unwrap()))));
+        drivers.push(Rc::new(RefCell::new(Box::new(simulator::SimDriver::new(simulator_video_file).unwrap()))));
     }
 
     drivers
