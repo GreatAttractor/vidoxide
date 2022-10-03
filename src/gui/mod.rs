@@ -12,6 +12,7 @@
 
 mod camera_gui;
 mod dec_intervals;
+mod gamma_dialog;
 mod histogram_utils;
 mod histogram_view;
 mod img_view;
@@ -39,6 +40,7 @@ use crate::workers::histogram::{Histogram, HistogramRequest, MainToHistogramThre
 use crate::workers::recording::RecordingToMainThreadMsg;
 use ga_image;
 use ga_image::point::{Point, Rect};
+use gamma_dialog::create_gamma_dialog;
 use glib::clone;
 use gtk::cairo;
 use gtk::prelude::*;
@@ -46,6 +48,7 @@ use histogram_view::HistogramView;
 use img_view::ImgView;
 use info_overlay::{InfoOverlay, ScreenSelection, draw_info_overlay};
 use mount_gui::MountWidgets;
+use num_traits::cast::{FromPrimitive, AsPrimitive};
 use rec_gui::RecWidgets;
 use reticle_dialog::create_reticle_dialog;
 use std::cell::RefCell;
@@ -129,6 +132,11 @@ pub struct Reticle {
     line_width: f64
 }
 
+pub struct GammaCorrection {
+    dialog: gtk::Dialog,
+    gamma: f32
+}
+
 pub struct GuiData {
     controls_box: gtk::Box,
     control_widgets: std::collections::HashMap<camera::CameraControlId, (CommonControlWidgets, ControlWidgetBundle)>,
@@ -139,6 +147,7 @@ pub struct GuiData {
     preview_area: ImgView,
     rec_widgets: RecWidgets,
     reticle: Reticle,
+    gamma_correction: GammaCorrection,
     mount_widgets: MountWidgets,
     mouse_mode: MouseMode,
     info_overlay: InfoOverlay,
@@ -417,6 +426,10 @@ pub fn init_main_window(app: &gtk::Application, program_data_rc: &Rc<RefCell<Pro
             opacity: rtc_opacity,
             step: rtc_step,
             line_width: rtc_line_width
+        },
+        gamma_correction: GammaCorrection {
+            dialog: create_gamma_dialog(&window, &program_data_rc),
+            gamma: 1.0
         },
         mouse_mode: MouseMode::None,
         default_mouse_mode_button,
@@ -791,11 +804,17 @@ fn init_preview_menu(
     }));
     menu.append(&disable_histogram_area);
 
-    let reticle_settings = gtk::MenuItem::with_label("Show reticle settings...");
+    let reticle_settings = gtk::MenuItem::with_label("Reticle settings...");
     reticle_settings.connect_activate(clone!(@weak program_data_rc => @default-panic, move |_| {
         program_data_rc.borrow().gui.as_ref().unwrap().reticle.dialog.show();
     }));
     menu.append(&reticle_settings);
+
+    let gamma = gtk::MenuItem::with_label("Gamma correction...");
+    gamma.connect_activate(clone!(@weak program_data_rc => @default-panic, move |_| {
+        program_data_rc.borrow().gui.as_ref().unwrap().gamma_correction.dialog.show();
+    }));
+    menu.append(&gamma);
 
     menu
 }
@@ -1013,6 +1032,51 @@ fn on_tracking_ended(program_data_rc: &Rc<RefCell<ProgramData>>) {
     println!("Tracking disabled.");
 }
 
+fn apply_gamma_correction<T>(image: &mut ga_image::Image, max_value: T, gamma: f32, fragment: Rect)
+where T: Default + FromPrimitive + AsPrimitive<f32>
+{
+    let maxvf = AsPrimitive::<f32>::as_(max_value);
+    let num_ch = image.pixel_format().num_channels() as i32;
+
+    for y in fragment.y .. fragment.y + fragment.height as i32 {
+        let line = image.line_mut::<T>(y as u32);
+        for x in num_ch * fragment.x .. num_ch * (fragment.x + fragment.width as i32) {
+            line[x as usize] = FromPrimitive::from_f32(
+                (AsPrimitive::<f32>::as_(line[x as usize]) / maxvf).powf(gamma) * maxvf
+            ).unwrap_or(max_value);
+        }
+    }
+}
+
+fn gamma_correct(image: &mut ga_image::Image, gamma: f32, fragment: Rect) {
+    match image.pixel_format() {
+        ga_image::PixelFormat::Mono8 |
+        ga_image::PixelFormat::RGB8 |
+        ga_image::PixelFormat::BGR8 |
+        ga_image::PixelFormat::BGRA8 |
+        ga_image::PixelFormat::CfaRGGB8 |
+        ga_image::PixelFormat::CfaGRBG8 |
+        ga_image::PixelFormat::CfaGBRG8 |
+        ga_image::PixelFormat::CfaBGGR8 => apply_gamma_correction::<u8>(image, 0xFF, gamma, fragment),
+
+        ga_image::PixelFormat::Mono16 |
+        ga_image::PixelFormat::RGB16 |
+        ga_image::PixelFormat::RGBA16 |
+        ga_image::PixelFormat::CfaRGGB16 |
+        ga_image::PixelFormat::CfaGRBG16 |
+        ga_image::PixelFormat::CfaGBRG16 |
+        ga_image::PixelFormat::CfaBGGR16 => apply_gamma_correction::<u16>(image, 0xFFFF, gamma, fragment),
+
+        ga_image::PixelFormat::Mono32f |
+        ga_image::PixelFormat::RGB32f => apply_gamma_correction::<f32>(image, 1.0, gamma, fragment),
+
+        ga_image::PixelFormat::Mono64f |
+        ga_image::PixelFormat::RGB64f => apply_gamma_correction::<f64>(image, 1.0, gamma, fragment),
+
+        _ => unimplemented!()
+    }
+}
+
 fn on_capture_thread_message(
     msg: CaptureToMainThreadMsg,
     program_data_rc: &Rc<RefCell<ProgramData>>
@@ -1042,15 +1106,23 @@ fn on_capture_thread_message(
                 }
             }
 
+            let mut gamma_corrected = std::sync::Arc::clone(&img);
+            let gamma = program_data.gui.as_ref().unwrap().gamma_correction.gamma;
+            if gamma != 1.0 {
+                let mut new_image = (*img).clone();
+                gamma_correct(&mut new_image, gamma, program_data.histogram_area.unwrap_or(img.img_rect()));
+                gamma_corrected = std::sync::Arc::new(new_image);
+            }
+
             let to_bgra24 = |img: &ga_image::Image| { img.convert_pix_fmt(
                 ga_image::PixelFormat::BGRA8,
                 if program_data.demosaic_preview { Some(ga_image::DemosaicMethod::Simple) } else { None }
             ) };
 
             let img_bgra24 = if program_data.stretch_histogram {
-                to_bgra24(&histogram_utils::stretch_histogram(&*img, &program_data.histogram_area))
+                to_bgra24(&histogram_utils::stretch_histogram(&*gamma_corrected, &program_data.histogram_area))
             } else {
-                to_bgra24(&*img)
+                to_bgra24(&*gamma_corrected)
             };
 
             let stride = img_bgra24.bytes_per_line() as i32;
