@@ -14,6 +14,7 @@ use ga_image::{Image, ImageView, PixelFormat, point::{Point, Rect}};
 
 const ANCHOR_SEARCH_RADIUS: i32 = 20;
 const REF_BLOCK_SIZE: u32 = 64;
+const MIN_REL_BRIGHTNESS_FOR_CENTROID: f32 = 30.0 / 255.0;
 
 struct Anchor {
     pos: Point,
@@ -90,7 +91,24 @@ impl ImageTracker {
                     return Err(());
                 }
 
-                let new_c = image.centroid(Some(centroid.area));
+                let mut frag8 = image.convert_pix_fmt_of_subimage(
+                    PixelFormat::Mono8,
+                    centroid.area.pos(),
+                    centroid.area.width,
+                    centroid.area.height,
+                    None
+                );
+
+                let w = frag8.width();
+                let h = frag8.height();
+                for y in 0..h {
+                    let line = frag8.line_mut::<u8>(y);
+                    for x in 0..w {
+                        if line[x as usize] < (MIN_REL_BRIGHTNESS_FOR_CENTROID * 255.0) as u8 { line[x as usize] = 0; }
+                    }
+                }
+                let new_c = frag8.centroid(None);
+
                 centroid.area.x += new_c.x - centroid.offset.x;
                 centroid.area.y += new_c.y - centroid.offset.y;
 
