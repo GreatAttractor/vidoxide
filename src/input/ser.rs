@@ -47,11 +47,10 @@ fn get_ser_color_fmt(color_id: u32) -> Result<SerColorFormat, ImgSeqError> {
 
     match color_id {
         color_id if color_id == SerColorFormat::Mono      as u32 => Ok(SerColorFormat::Mono),
-//TODO: uncomment once demosaicing is ported
-//        color_id if color_id == SerColorFormat::BayerRGGB as u32 => Ok(SerColorFormat::BayerRGGB),
-//        color_id if color_id == SerColorFormat::BayerGRBG as u32 => Ok(SerColorFormat::BayerGRBG),
-//        color_id if color_id == SerColorFormat::BayerGBRG as u32 => Ok(SerColorFormat::BayerGBRG),
-//        color_id if color_id == SerColorFormat::BayerBGGR as u32 => Ok(SerColorFormat::BayerBGGR),
+        color_id if color_id == SerColorFormat::BayerRGGB as u32 => Ok(SerColorFormat::BayerRGGB),
+        color_id if color_id == SerColorFormat::BayerGRBG as u32 => Ok(SerColorFormat::BayerGRBG),
+        color_id if color_id == SerColorFormat::BayerGBRG as u32 => Ok(SerColorFormat::BayerGBRG),
+        color_id if color_id == SerColorFormat::BayerBGGR as u32 => Ok(SerColorFormat::BayerBGGR),
         color_id if color_id == SerColorFormat::RGB       as u32 => Ok(SerColorFormat::RGB),
         color_id if color_id == SerColorFormat::BGR       as u32 => Ok(SerColorFormat::BGR),
         _ => Err(ImgSeqError::new(format!("unsupported pixel format {}", color_id)))
@@ -114,11 +113,10 @@ impl SerVideo {
         let pix_fmt = match ser_color_fmt {
             SerColorFormat::Mono => if bits_per_channel <= 8 { PixelFormat::Mono8 } else { PixelFormat::Mono16 },
             SerColorFormat::RGB | SerColorFormat::BGR => if bits_per_channel <= 8 { PixelFormat::RGB8 } else { PixelFormat::RGB16 },
-//TODO: uncomment once demosaicing is ported
-//            SerColorFormat::BayerBGGR => if bits_per_channel <= 8 { PixelFormat::CfaBGGR8 } else { PixelFormat::CfaBGGR16 },
-//            SerColorFormat::BayerGBRG => if bits_per_channel <= 8 { PixelFormat::CfaGBRG8 } else { PixelFormat::CfaGBRG16 },
-//            SerColorFormat::BayerGRBG => if bits_per_channel <= 8 { PixelFormat::CfaGRBG8 } else { PixelFormat::CfaGRBG16 },
-//            SerColorFormat::BayerRGGB => if bits_per_channel <= 8 { PixelFormat::CfaRGGB8 } else { PixelFormat::CfaRGGB16 },
+            SerColorFormat::BayerBGGR => if bits_per_channel <= 8 { PixelFormat::CfaBGGR8 } else { PixelFormat::CfaBGGR16 },
+            SerColorFormat::BayerGBRG => if bits_per_channel <= 8 { PixelFormat::CfaGBRG8 } else { PixelFormat::CfaGBRG16 },
+            SerColorFormat::BayerGRBG => if bits_per_channel <= 8 { PixelFormat::CfaGRBG8 } else { PixelFormat::CfaGRBG16 },
+            SerColorFormat::BayerRGGB => if bits_per_channel <= 8 { PixelFormat::CfaRGGB8 } else { PixelFormat::CfaRGGB16 },
             _ => panic!() // cannot happen due, thanks get_ser_color_fmt()
         };
 

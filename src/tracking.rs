@@ -109,6 +109,16 @@ impl ImageTracker {
                 }
                 let new_c = frag8.centroid(None);
 
+                // TODO: make it configurable
+                // ignore a sudden jump which seems implausibly large; it's likely due to an image artifact
+                // (e.g., a damaged/shredded frame)
+                let old_c = centroid.offset + centroid.offset;
+                if (old_c.x - new_c.x).pow(2) + (old_c.y - new_c.y).pow(2)
+                    >= ((centroid.area.width as i32).pow(2) + (centroid.area.height as i32).pow(2)) * 3i32.pow(2) / 4i32.pow(2) {
+
+                    return Ok(());
+                }
+
                 centroid.area.x += new_c.x - centroid.offset.x;
                 centroid.area.y += new_c.y - centroid.offset.y;
 

@@ -110,6 +110,8 @@ pub fn recording_thread(
                     CaptureToRecordingThreadMsg::Captured((image, mut fragment, _timestamp)) => {
                         let mut job = job.as_mut().unwrap();
 
+                        let mut diag_error = None; //TODO: remove once diagnosed
+
                         match &job.cfa_state {
                             None => {
                                 if image.pixel_format().is_cfa() {
@@ -136,19 +138,34 @@ pub fn recording_thread(
                                 } else if !state.crop_fragment_even_y_offset && fragment.y % 2 == 0 {
                                     if fragment.y > 0 { fragment.y -= 1; } else { fragment.y += 1; }
                                 }
+
+                                //TODO: remove this once raw color recording issue is diagnosed
+                                // fragment.width = (image.width() - fragment.x as u32).min(fragment.width);
+                                // fragment.height = (image.height() - fragment.y as u32).min(fragment.height);
+                                if !(*image).img_rect().contains_rect(&fragment) {
+                                    diag_error = Some(format!("attempted to record fragment {:?} of image sized {}x{}", fragment, image.width(), image.height()));
+                                }
+                                //END TODO
                             }
                         }
 
-                        match job.writer.write(&ImageView::new(&*image, Some(fragment))) {
-                            Err(err) => {
-                                sender.send(RecordingToMainThreadMsg::Error(err)).unwrap();
-                                end_job!();
-                            },
+                        //TODO: remove once diagnosed
+                        if let Some(e) = diag_error {
+                            sender.send(RecordingToMainThreadMsg::Error(e)).unwrap();
+                            end_job!();
+                        } else {
+                        //END TODO
+                            match job.writer.write(&ImageView::new(&*image, Some(fragment))) {
+                                Err(err) => {
+                                    sender.send(RecordingToMainThreadMsg::Error(err)).unwrap();
+                                    end_job!();
+                                },
 
-                            Ok(()) => {
-                                let kib_written = image.num_pixel_bytes_without_padding() / 1024;
-                                total_kib_written += kib_written;
-                                written_kib_since_update += kib_written;
+                                Ok(()) => {
+                                    let kib_written = image.num_pixel_bytes_without_padding() / 1024;
+                                    total_kib_written += kib_written;
+                                    written_kib_since_update += kib_written;
+                                }
                             }
                         }
                     },
