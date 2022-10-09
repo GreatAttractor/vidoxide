@@ -42,6 +42,7 @@ Demonstration video: [link](https://www.youtube.com/watch?v=7s_nibrTrsU)
 **Image feature tracking:**
   - self-guiding (with supported mounts): selected image feature (or a planet – via centroid) stays in the same place of the FOV
   - live crop: only a ROI around a selected image feature is recorded
+  - preview stabilization (e.g., for focusing in windy conditions)
 
 **Output formats:**
   - TIFF or BMP image sequence

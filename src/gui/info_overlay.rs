@@ -10,8 +10,9 @@
 //! Informational overlay.
 //!
 
+use cgmath::Point2;
 use crate::{MountCalibration, ProgramData, TrackingMode};
-use ga_image::point::{Point, Rect};
+use ga_image::point::Rect;
 use gtk::cairo;
 
 /// Offset (in pixels) of labels from the associated rectangle in the informational overlay.
@@ -27,8 +28,8 @@ const DEFAULT_INFO_OVERLAY_FONT_SIZE: f64 = 10.0;
 
 /// Rectangular selection made by mouse in preview area; image coordinates.
 pub struct ScreenSelection {
-    pub start: Point,
-    pub end: Point
+    pub start: Point2<i32>,
+    pub end: Point2<i32>
 }
 
 pub struct InfoOverlay {
@@ -115,7 +116,7 @@ pub fn draw_info_overlay(
     }
 }
 
-fn draw_guiding_info(ctx: &cairo::Context, zoom: f64, guiding_pos: Point, tracking_pos: Point, blink_on: bool) {
+fn draw_guiding_info(ctx: &cairo::Context, zoom: f64, guiding_pos: Point2<i32>, tracking_pos: Point2<i32>, blink_on: bool) {
     ctx.set_source_rgb(1.0, 0.0, 0.0);
     ctx.set_line_width(1.0);
     ctx.set_dash(&[6.0, 4.0], 0.0);
@@ -140,7 +141,7 @@ fn draw_screen_selection(ctx: &cairo::Context, zoom: f64, sel: &ScreenSelection)
     ctx.fill().unwrap();
 }
 
-fn draw_calibration(ctx: &cairo::Context, zoom: f64, calibration: &MountCalibration, target_pos: Point) {
+fn draw_calibration(ctx: &cairo::Context, zoom: f64, calibration: &MountCalibration, target_pos: Point2<i32>) {
     if calibration.primary_dir.is_some() && calibration.secondary_dir.is_some() { return; }
 
     ctx.set_line_width(1.0);
@@ -192,7 +193,7 @@ fn draw_histogram_area(ctx: &cairo::Context, zoom: f64, font_size: f64, area: Re
     ctx.fill().unwrap();
 }
 
-fn draw_tracking_target_pos(ctx: &cairo::Context, zoom: f64, pos: Point) {
+fn draw_tracking_target_pos(ctx: &cairo::Context, zoom: f64, pos: Point2<i32>) {
     ctx.set_line_width(1.0);
     let pos_x = pos.x as f64 * zoom;
     let pos_y = pos.y as f64 * zoom;
@@ -228,7 +229,7 @@ fn draw_centroid_rect(ctx: &cairo::Context, rect: Rect, zoom: f64, font_size: f6
     ctx.fill().unwrap();
 }
 
-fn draw_anchor(ctx: &cairo::Context, pos: Point, zoom: f64) {
+fn draw_anchor(ctx: &cairo::Context, pos: Point2<i32>, zoom: f64) {
     ctx.set_line_width(1.0);
     ctx.set_source_rgb(1.0, 0.0, 0.0);
     ctx.arc(pos.x as f64 * zoom, pos.y as f64 * zoom, 32.0, 0.0, 6.0);

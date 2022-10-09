@@ -1,11 +1,11 @@
 use gtk::prelude::*;
-use crate::gui::non_signaling::NonSignalingWrapper;
+use crate::gui::freezeable::Freezeable;
 
 pub struct DecIntervalsWidget {
     /// Contains as many elements as `combo`.
     intervals: Vec<(f64, f64)>,
     /// Contains as many items as `intervals`.
-    combo: NonSignalingWrapper<gtk::ComboBoxText>
+    combo: Freezeable<gtk::ComboBoxText>
 }
 
 impl DecIntervalsWidget {
@@ -51,7 +51,7 @@ impl DecIntervalsWidget {
 
         let dec_intervals_widget = DecIntervalsWidget{
             intervals,
-            combo: NonSignalingWrapper::new(combo, None)
+            combo: Freezeable::new(combo, None)
         };
 
         dec_intervals_widget.set_value(current);
@@ -67,8 +67,10 @@ impl DecIntervalsWidget {
                 continue;
             }
 
-            let dows = |wrapper: &NonSignalingWrapper<gtk::ComboBoxText>, idx: u32| {
-                wrapper.do_without_signaling(|combo| combo.set_active(Some(idx)));
+            let dows = |wrapper: &Freezeable<gtk::ComboBoxText>, idx: u32| {
+                wrapper.freeze();
+                wrapper.set_active(Some(idx));
+                wrapper.thaw();
             };
 
             match prev_idx {
@@ -101,7 +103,7 @@ impl DecIntervalsWidget {
     }
 
     pub fn combo(&self) -> &gtk::ComboBoxText {
-        self.combo.get()
+        &self.combo
     }
 
     pub fn set_signal(&mut self, signal: glib::SignalHandlerId) {
@@ -109,7 +111,7 @@ impl DecIntervalsWidget {
     }
 
     pub fn interval(&self) -> (f64, f64) {
-        let idx = self.combo.get().active().unwrap();
+        let idx = self.combo.active().unwrap();
         self.intervals[idx as usize]
     }
 }

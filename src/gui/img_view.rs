@@ -11,6 +11,7 @@
 //!
 
 use crate::gui::{MOUSE_BUTTON_LEFT, MOUSE_BUTTON_RIGHT};
+use cgmath::{Point2, Vector2, Zero};
 use ga_image::point::Point;
 use gtk::{cairo, gdk};
 use glib::clone;
@@ -21,7 +22,8 @@ use std::rc::Rc;
 struct State {
     image: Option<cairo::ImageSurface>,
     zoom: f64,
-    drag_start_pos: Option<(f64, f64)>
+    drag_start_pos: Option<(f64, f64)>,
+    stabilization_offset: Vector2<i32>
 }
 
 /// Displays an image (stored in `state`) and handles scrolling with right mouse button and zooming with mouse wheel.
@@ -47,9 +49,9 @@ impl ImgView {
     ///    of the visible part of the image.
     ///
     pub fn new(
-        on_button_down: Box<dyn Fn(Point)>,
-        on_button_up: Box<dyn Fn(Point)>,
-        on_mouse_move: Box<dyn Fn(Point)>,
+        on_button_down: Box<dyn Fn(Point2<i32>)>,
+        on_button_up: Box<dyn Fn(Point2<i32>)>,
+        on_mouse_move: Box<dyn Fn(Point2<i32>)>,
         draw_info_overlay: Box<dyn Fn(&cairo::Context, f64)>,
         draw_reticle: Box<dyn Fn(&cairo::Context)>
     ) -> ImgView {
@@ -59,7 +61,12 @@ impl ImgView {
         evt_box.add(&drawing_area);
         top_widget.add(&evt_box);
 
-        let state = Rc::new(RefCell::new(State{ image: None, zoom: 1.0, drag_start_pos: None }));
+        let state = Rc::new(RefCell::new(State{
+            image: None,
+            zoom: 1.0,
+            drag_start_pos: None,
+            stabilization_offset: Vector2::zero()
+        }));
 
         evt_box.set_events(
             gdk::EventMask::POINTER_MOTION_MASK |
@@ -73,7 +80,7 @@ impl ImgView {
                 let image_pos = {
                     let (pos_x, pos_y) = evt.position();
                     let zoom = state.borrow().zoom;
-                    Point{ x: (pos_x / zoom) as i32, y: (pos_y / zoom) as i32 }
+                    Point2{ x: (pos_x / zoom) as i32, y: (pos_y / zoom) as i32 }
                 };
                 on_button_down(image_pos);
             }
@@ -90,7 +97,7 @@ impl ImgView {
                 let image_pos = {
                     let (pos_x, pos_y) = evt.position();
                     let zoom = state.borrow().zoom;
-                    Point{ x: (pos_x / zoom) as i32, y: (pos_y / zoom) as i32 }
+                    Point2{ x: (pos_x / zoom) as i32, y: (pos_y / zoom) as i32 }
                 };
                 on_button_up(image_pos);
             }
@@ -106,7 +113,7 @@ impl ImgView {
             let image_pos = {
                 let (pos_x, pos_y) = evt.position();
                 let zoom = state.borrow().zoom;
-                Point{ x: (pos_x / zoom) as i32, y: (pos_y / zoom) as i32 }
+                Point2{ x: (pos_x / zoom) as i32, y: (pos_y / zoom) as i32 }
             };
 
             on_mouse_move(image_pos);
@@ -143,6 +150,15 @@ impl ImgView {
 
         drawing_area.connect_draw(clone!(@weak state, @weak top_widget => @default-panic, move |_, ctx| {
             let state = state.borrow();
+
+            ctx.transform({
+                let mut m = cairo::Matrix::identity();
+                m.translate(
+                    -state.stabilization_offset.x as f64 * state.zoom,
+                    -state.stabilization_offset.y as f64 * state.zoom
+                );
+                m
+            });
 
             match &state.image {
                 Some(surface) => {
@@ -209,13 +225,14 @@ impl ImgView {
         self.set_zoom(zoom * factor);
     }
 
-    pub fn set_image(&self, image: cairo::ImageSurface) {
-        let zoom = self.state.borrow().zoom;
+    pub fn set_image(&self, image: cairo::ImageSurface, stabilization_offset: Vector2<i32>) {
+        let mut state = self.state.borrow_mut();
         self.drawing_area.set_size_request(
-            (image.width() as f64 * zoom) as i32,
-            (image.height() as f64 * zoom) as i32
+            (image.width() as f64 * state.zoom) as i32,
+            (image.height() as f64 * state.zoom) as i32
         );
-        self.state.borrow_mut().image = Some(image);
+        state.image = Some(image);
+        state.stabilization_offset = stabilization_offset;
         self.drawing_area.queue_draw();
     }
 

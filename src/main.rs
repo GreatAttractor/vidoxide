@@ -23,9 +23,10 @@ mod tracking;
 mod workers;
 
 use camera::drivers;
+use cgmath::{Point2, Vector2};
 use config::Configuration;
 use crossbeam;
-use ga_image::point::{Point, Rect};
+use ga_image::point::Rect;
 use gtk::gio::prelude::*;
 use glib::clone;
 use std::cell::RefCell;
@@ -53,6 +54,17 @@ pub struct RecordingThreadData {
     pub buffered_kib: Arc<AtomicIsize>
 }
 
+fn to_p2(p: ga_image::point::Point) -> Point2<i32> {
+    Point2{ x: p.x, y: p.y }
+}
+
+fn to_v2(p: ga_image::point::Point) -> Vector2<i32> {
+    Vector2{ x: p.x, y: p.y }
+}
+
+fn to_p(p: Point2<i32>) -> ga_image::point::Point {
+    ga_image::point::Point{ x: p.x, y: p.y }
+}
 
 #[derive(Copy, Clone)]
 pub enum NewControlValue {
@@ -69,13 +81,13 @@ pub struct CameraControlChange {
 }
 
 pub struct MountCalibration {
-    origin: Point,
+    origin: Point2<i32>,
     /// Image-space unit vector corresponding to positive slew around primary axis.
-    primary_dir: Option<(f64, f64)>,
+    primary_dir: Option<Vector2<f64>>,
     /// Image-space unit vector corresponding to positive slew around secondary axis.
-    secondary_dir: Option<(f64, f64)>,
+    secondary_dir: Option<Vector2<f64>>,
     /// Image-space-to-mount-axes-space slewing dir transformation matrix.
-    img_to_mount_axes: Option<[[f64; 2]; 2]>
+    img_to_mount_axes: Option<cgmath::Matrix2<f64>>
 }
 
 pub struct MountData {
@@ -83,7 +95,7 @@ pub struct MountData {
     sidereal_tracking_on: bool,
     /// Desired tracking position. If `Some`, guiding is active and the mount will be slewed so that
     /// `ProgramData::tracking.pos` reaches this value.
-    guiding_pos: Option<Point>,
+    guiding_pos: Option<Point2<i32>>,
     guiding_timer: OneShotTimer,
     guide_slewing: bool,
     calibration: Option<MountCalibration>,
@@ -163,12 +175,12 @@ pub use sim_data::MountSimulatorData;
 #[derive(Debug)]
 pub enum TrackingMode {
     Centroid(Rect),
-    Anchor(Point)
+    Anchor(Point2<i32>)
 }
 
 #[derive(Debug)]
 pub struct TrackingData {
-    pos: Point,
+    pos: Point2<i32>,
     mode: TrackingMode
 }
 
@@ -377,5 +389,5 @@ fn on_capture_thread_failure(program_data_rc: &Rc<RefCell<ProgramData>>) {
         "Error",
         gtk::MessageType::Error
     );
-    gui::disconnect_camera(&mut program_data_rc.borrow_mut(), true);
+    gui::disconnect_camera(program_data_rc, true);
 }

@@ -16,6 +16,7 @@ mod simulator;
 mod skywatcher;
 pub mod connection_dialog;
 
+use cgmath::{Point2, Vector2, InnerSpace};
 use crate::{MountCalibration, ProgramData};
 use crate::guiding;
 use crate::mount;
@@ -182,7 +183,7 @@ fn on_start_calibration(btn: &gtk::Button, program_data_rc: &Rc<RefCell<ProgramD
 fn on_calibration_timer(program_data_rc: &Rc<RefCell<ProgramData>>) {
     if program_data_rc.borrow().mount_data.calibration.is_none() { return; }
 
-    const MIN_VECTOR_LENGTH: f64 = 50.0;
+    const MIN_VECTOR_LENGTH: i32 = 50;
     let must_show_error: RefCell<Option<String>> = RefCell::new(None);
     loop { // `program_data_rc` borrow starts
         let mut pd = program_data_rc.borrow_mut();
@@ -200,17 +201,18 @@ fn on_calibration_timer(program_data_rc: &Rc<RefCell<ProgramData>>) {
             if let Err(e) = &r { must_show_error.replace(Some(mount_error_msg(e))); break; }
         }
 
-        let dir_getter = || -> Option<(f64, f64)> {
+        let dir_getter = || -> Option<Vector2<f64>> {
             let delta = tracking_pos - pd.mount_data.calibration.as_ref().unwrap().origin;
-            let len = delta.dist_from_origin();
-            if len < MIN_VECTOR_LENGTH {
+            let len_sq = delta.magnitude2();
+            if len_sq < MIN_VECTOR_LENGTH.pow(2) {
                 must_show_error.replace(Some(
-                    format!("Calibration failed: image moved by less than {:.0} pixels.\n \
+                    format!("Calibration failed: image moved by less than {} pixels.\n \
                         Try increasing the slewing speed.", MIN_VECTOR_LENGTH)
                 ));
                 None
             } else {
-                Some((delta.x as f64 / len, delta.y as f64 / len))
+                let len = (len_sq as f64).sqrt();
+                Some(Vector2{ x: delta.x as f64 / len, y: delta.y as f64 / len })
             }
         };
 

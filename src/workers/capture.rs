@@ -10,6 +10,8 @@
 //! Capture thread.
 //!
 
+use crate::{to_p, to_p2};
+use cgmath::{Point2, Vector2};
 use crate::camera::CameraError;
 use crate::camera::FrameCapturer;
 use crate::tracking::ImageTracker;
@@ -30,7 +32,8 @@ pub struct Info {
 
 #[derive(Debug)]
 pub enum CaptureToMainThreadMsg {
-    PreviewImageReady(Arc<Image>),
+    /// Includes tracking position if tracking is enabled.
+    PreviewImageReady((Arc<Image>, Option<Point2<i32>>)),
     Paused,
     CaptureError(CameraError),
     RecordingFinished,
@@ -51,7 +54,7 @@ pub enum MainToCaptureThreadMsg {
     StartRecording((RecordingSender, recording::Limit)),
     StopRecording,
     EnableCentroidTracking(Rect),
-    EnableAnchorTracking(Point),
+    EnableAnchorTracking(Point2<i32>),
     EnableRecordingCrop(Rect),
 }
 
@@ -65,7 +68,7 @@ struct RecData {
 /// Specifies live cropping parameters to use for recording.
 struct CropData {
     /// If `Some`, crop area follows the tracking position.
-    tracking_pos_offset: Option<Point>,
+    tracking_pos_offset: Option<Vector2<i32>>,
     area: Rect
 }
 
@@ -189,7 +192,10 @@ pub fn capture_thread(
 
                     if new_preview_wanted.swap(false, Ordering::Relaxed) == true {
                         match sender.send(
-                            CaptureToMainThreadMsg::PreviewImageReady(Arc::clone(&capture_buf[current_buf_idx]))
+                            CaptureToMainThreadMsg::PreviewImageReady((
+                                Arc::clone(&capture_buf[current_buf_idx]),
+                                if let Some(tracking) = &tracking { tracking.position() } else { None }
+                            ))
                         ) {
                             Ok(()) => (),
                             Err(err) => panic!("Capture thread: unexpected sender error {:?}.", err)
@@ -244,8 +250,8 @@ pub fn capture_thread(
                 },
 
                 MainToCaptureThreadMsg::EnableRecordingCrop(area) => {
-                    let tracking_pos_offset: Option<Point> = match &tracking {
-                        Some(tracking) => Some(area.pos() - tracking.position().unwrap()),
+                    let tracking_pos_offset: Option<Vector2<i32>> = match &tracking {
+                        Some(tracking) => Some(to_p2(area.pos()) - tracking.position().unwrap()),
                         None => None
                     };
 
@@ -266,7 +272,7 @@ fn on_tracking(
     sender: &glib::Sender<CaptureToMainThreadMsg>,
     crop_data: &mut Option<CropData>
 ) -> Result<(), ()> {
-    if tracking.update(image, Point{ x: 0, y: 0 }).is_err() {
+    if tracking.update(image, Vector2{ x: 0, y: 0 }).is_err() {
         sender.send(CaptureToMainThreadMsg::TrackingFailed).unwrap();
         Err(())
     } else {
@@ -279,7 +285,7 @@ fn on_tracking(
 
         if let Some(crop_data) = crop_data {
             match crop_data.tracking_pos_offset {
-                None => crop_data.tracking_pos_offset = Some(crop_data.area.pos() - tracking_pos),
+                None => crop_data.tracking_pos_offset = Some(to_p2(crop_data.area.pos()) - tracking_pos),
                 Some(offs) => {
                     let mut new_pos = tracking_pos + offs;
                     let width = crop_data.area.width as i32;
@@ -290,7 +296,7 @@ fn on_tracking(
                     if new_pos.x + width > image.width() as i32 { new_pos.x = image.width() as i32 - width; }
                     if new_pos.y + height > image.height() as i32 { new_pos.y = image.height() as i32 - height; }
 
-                    crop_data.area.set_pos(new_pos);
+                    crop_data.area.set_pos(to_p(new_pos));
                 }
             }
         }

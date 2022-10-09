@@ -14,7 +14,7 @@ use crate::{CameraControlChange, NewControlValue, OnCapturePauseAction, ProgramD
 use crate::camera;
 use crate::camera::{BaseProperties, CameraControl, CameraControlId, CameraInfo, ControlAccessMode, Driver};
 use crate::gui::dec_intervals::DecIntervalsWidget;
-use crate::gui::non_signaling::NonSignalingWrapper;
+use crate::gui::freezeable::Freezeable;
 use crate::gui::{actions, disconnect_camera, on_capture_thread_message, show_message};
 use crate::workers::capture;
 use crate::workers::capture::MainToCaptureThreadMsg;
@@ -37,8 +37,8 @@ pub struct ListControlWidgets {
 }
 
 pub struct NumberControlWidgets {
-    pub slider: Rc<RefCell<NonSignalingWrapper<gtk::Scale>>>,
-    pub spin_btn: Rc<RefCell<NonSignalingWrapper<gtk::SpinButton>>>,
+    pub slider: Rc<RefCell<Freezeable<gtk::Scale>>>,
+    pub spin_btn: Rc<RefCell<Freezeable<gtk::SpinButton>>>,
     pub intervals: Option<Rc<RefCell<DecIntervalsWidget>>>
 }
 
@@ -79,8 +79,8 @@ impl Editability for ListControlWidgets {
 impl Editability for NumberControlWidgets {
     fn set_editable(&self, state: bool) {
         if let Some(intervals) = &self.intervals { intervals.borrow().combo().set_sensitive(state); }
-        self.slider.borrow().get().set_sensitive(state);
-        self.spin_btn.borrow().get().set_sensitive(state);
+        self.slider.borrow().set_sensitive(state);
+        self.spin_btn.borrow().set_sensitive(state);
     }
 }
 
@@ -101,7 +101,7 @@ pub fn init_camera_menu(
 
     let rescan = gtk::MenuItem::with_label("Rescan");
     rescan.connect_activate(clone!(@weak program_data_rc => @default-panic, move |_| {
-        disconnect_camera(&mut program_data_rc.borrow_mut(), true);
+        disconnect_camera(&program_data_rc, true);
 
         for cam_item in &program_data_rc.borrow().gui.as_ref().unwrap().camera_menu_items {
             program_data_rc.borrow().gui.as_ref().unwrap().camera_menu.remove(&cam_item.0);
@@ -163,7 +163,7 @@ fn on_select_camera(
     program_data_rc: &Rc<RefCell<ProgramData>>
 ) -> Result<(), ()> {
     {
-        disconnect_camera(&mut program_data_rc.borrow_mut(), true);
+        disconnect_camera(&program_data_rc, true);
 
         // drop the camera first, to avoid constructing a second one with the same id
         program_data_rc.borrow_mut().camera = None;
@@ -184,7 +184,7 @@ fn on_select_camera(
             Ok(capturer) => capturer,
             Err(e) => {
                 show_message(&format!("Failed to open {}:\n{:?}", camera_info.name(), e), "Error", gtk::MessageType::Error);
-                disconnect_camera(&mut program_data_rc.borrow_mut(), false);
+                disconnect_camera(&program_data_rc, false);
                 return Err(());
             }
         };
@@ -490,20 +490,20 @@ fn create_number_control_widgets(
         (min, max)
     };
 
-    let slider = Rc::new(RefCell::new(NonSignalingWrapper::new(gtk::Scale::with_range(
+    let slider = Rc::new(RefCell::new(Freezeable::new(gtk::Scale::with_range(
         gtk::Orientation::Horizontal,
         slider_min,
         slider_max,
         if must_disable { 1.0 } else { number_ctrl.step() }
     ), None)));
-    slider.borrow().get().set_digits(number_ctrl.num_decimals() as i32);
-    slider.borrow().get().set_value(if must_disable { min } else { number_ctrl.value() });
+    slider.borrow().set_digits(number_ctrl.num_decimals() as i32);
+    slider.borrow().set_value(if must_disable { min } else { number_ctrl.value() });
 
-    h_box.pack_start(slider.borrow().get(), true, true, PADDING);
+    h_box.pack_start(&**slider.borrow(), true, true, PADDING);
 
     // create the spin button -----------------------------------------
 
-    let spin_btn = Rc::new(RefCell::new(NonSignalingWrapper::new(gtk::SpinButton::new(
+    let spin_btn = Rc::new(RefCell::new(Freezeable::new(gtk::SpinButton::new(
         Some(&gtk::Adjustment::new(
             number_ctrl.value(), min, max, number_ctrl.step(), 10.0, 0.0
         )),
@@ -513,11 +513,11 @@ fn create_number_control_widgets(
 
     if must_disable || !is_control_editable(number_ctrl.base()) {
         if let Some(intervals) = &intervals { intervals.borrow().combo().set_sensitive(false); }
-        slider.borrow().get().set_sensitive(false);
-        spin_btn.borrow().get().set_sensitive(false);
+        slider.borrow().set_sensitive(false);
+        spin_btn.borrow().set_sensitive(false);
     }
 
-    h_box.pack_start(spin_btn.borrow().get(), false, true, PADDING);
+    h_box.pack_start(&**spin_btn.borrow(), false, true, PADDING);
 
     // set up event handlers -----------------------------------------
 
@@ -525,7 +525,7 @@ fn create_number_control_widgets(
         let signal = intervals.borrow().combo().connect_changed(clone!(
             @weak program_data_rc, @weak spin_btn, @weak slider, @strong intervals => @default-panic,
             move |_| {
-                let old_value = spin_btn.borrow().get().value();
+                let old_value = spin_btn.borrow().value();
                 let (new_interval_min, new_interval_max) = intervals.borrow().interval();
 
                 let new_value: Option<f64> = if old_value < new_interval_min {
@@ -537,15 +537,17 @@ fn create_number_control_widgets(
                 };
 
                 if let Some(new_value) = new_value {
-                    spin_btn.borrow().do_without_signaling(|spin_btn| spin_btn.set_value(new_value));
+                    spin_btn.borrow().freeze();
+                    spin_btn.borrow().set_value(new_value);
+                    spin_btn.borrow().thaw();
                     {
                         let slider = slider.borrow();
-                        slider.do_without_signaling(|slider| {
-                            let adj = slider.adjustment();
-                            adj.set_lower(new_interval_min);
-                            adj.set_upper(new_interval_max);
-                            adj.set_value(new_value);
-                        });
+                        slider.freeze();
+                        let adj = slider.adjustment();
+                        adj.set_lower(new_interval_min);
+                        adj.set_upper(new_interval_max);
+                        adj.set_value(new_value);
+                        slider.thaw();
                     }
                     on_camera_number_control_change(new_value, &program_data_rc, ctrl_id, requires_capture_pause);
                 }
@@ -554,10 +556,12 @@ fn create_number_control_widgets(
         intervals.borrow_mut().set_signal(signal);
     }
 
-    let signal = slider.borrow().get().connect_value_changed(clone!(
+    let signal = slider.borrow().connect_value_changed(clone!(
         @weak program_data_rc, @weak spin_btn, @strong intervals => @default-panic,
         move |slider| {
-            spin_btn.borrow().do_without_signaling(|spin_btn| spin_btn.set_value(slider.value()));
+            spin_btn.borrow().freeze();
+            spin_btn.borrow().set_value(slider.value());
+            spin_btn.borrow().thaw();
             if let Some(intervals) = &intervals {
                 intervals.borrow().set_value(slider.value());
             }
@@ -566,10 +570,12 @@ fn create_number_control_widgets(
     ));
     slider.borrow_mut().set_signal(signal);
 
-    let signal = spin_btn.borrow().get().connect_value_changed(clone!(
+    let signal = spin_btn.borrow().connect_value_changed(clone!(
         @weak program_data_rc, @weak slider, @strong intervals => @default-panic,
         move |spin_btn| {
-            slider.borrow().do_without_signaling(|slider| slider.set_value(spin_btn.value()));
+            slider.borrow().freeze();
+            slider.borrow().set_value(spin_btn.value());
+            slider.borrow().thaw();
             if let Some(intervals) = &intervals {
                 intervals.borrow().set_value(spin_btn.value());
             }

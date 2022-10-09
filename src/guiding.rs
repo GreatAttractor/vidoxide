@@ -10,6 +10,7 @@
 //! Guiding.
 //!
 
+use cgmath::{InnerSpace, Point2, SquareMatrix, Matrix2, Vector2};
 use crate::ProgramData;
 use crate::gui::show_message;
 use crate::mount;
@@ -88,14 +89,14 @@ pub fn guiding_step(program_data_rc: &Rc<RefCell<ProgramData>>) {
         if dpos.x.abs() > GUIDE_POS_MARGIN || dpos.y.abs() > GUIDE_POS_MARGIN {
             let guide_dir_axis_space = guiding_direction(
                 pd.mount_data.calibration.as_ref().unwrap().img_to_mount_axes.as_ref().unwrap(),
-                dpos
+                dpos.cast::<f64>().unwrap()
             );
 
             let speed = pd.gui.as_ref().unwrap().mount_widgets().guide_speed() * mount::SIDEREAL_RATE;
 
             if let Err(e) = pd.mount_data.mount.as_mut().unwrap().set_motion(
                 mount::Axis::Primary,
-                speed * guide_dir_axis_space.0 + if st_on { 1.0 * mount::SIDEREAL_RATE } else { 0.0 }
+                speed * guide_dir_axis_space.x + if st_on { 1.0 * mount::SIDEREAL_RATE } else { 0.0 }
             ) {
                 error = Some(e);
                 break;
@@ -103,7 +104,7 @@ pub fn guiding_step(program_data_rc: &Rc<RefCell<ProgramData>>) {
 
             if let Err(e) = pd.mount_data.mount.as_mut().unwrap().set_motion(
                 mount::Axis::Secondary,
-                speed * guide_dir_axis_space.1
+                speed * guide_dir_axis_space.y
             ) {
                 error = Some(e);
                 break;
@@ -147,19 +148,9 @@ pub fn guiding_step(program_data_rc: &Rc<RefCell<ProgramData>>) {
 }
 
 /// Returns guiding direction (unit vector in RA&Dec space) in order to move along `target_offset` in image space.
-fn guiding_direction(img_to_mount_axes_matrix: &[[f64; 2]; 2], target_offset: ga_image::point::Point) -> (f64, f64) {
-    #[allow(non_snake_case)]
-    let M = img_to_mount_axes_matrix;
-
-    let mut guide_dir_axis_space: (f64, f64) = (
-        M[0][0] * target_offset.x as f64 + M[0][1] * target_offset.y as f64,
-        M[1][0] * target_offset.x as f64 + M[1][1] * target_offset.y as f64
-    );
-    let len = (guide_dir_axis_space.0.powi(2) + guide_dir_axis_space.1.powi(2)).sqrt();
-    guide_dir_axis_space.0 /= len;
-    guide_dir_axis_space.1 /= len;
-
-    guide_dir_axis_space
+fn guiding_direction(img_to_mount_axes_matrix: &Matrix2<f64>, target_offset: Vector2<f64>) -> Vector2<f64> {
+    let guide_dir_axis_space = img_to_mount_axes_matrix * target_offset.cast::<f64>().unwrap();
+    guide_dir_axis_space.normalize()
 }
 
 /// Creates a matrix transforming image-space vectors to mount-axes-space.
@@ -171,20 +162,14 @@ fn guiding_direction(img_to_mount_axes_matrix: &[[f64; 2]; 2], target_offset: ga
 ///
 /// Fails if the provided directions are (anti-)parallel.
 ///
-pub fn create_img_to_mount_axes_matrix(primary_dir: (f64, f64), secondary_dir: (f64, f64))
--> Result<[[f64; 2]; 2], ()> {
+pub fn create_img_to_mount_axes_matrix(primary_dir: Vector2<f64>, secondary_dir: Vector2<f64>)
+-> Result<Matrix2<f64>, ()> {
     // telescope-axes-space-to-image-space transformation matrix
-    let axes_to_img: [[f64; 2]; 2] = [[primary_dir.0, secondary_dir.0], [primary_dir.1, secondary_dir.1]];
+    let axes_to_img = Matrix2::from_cols(primary_dir, secondary_dir);
 
-    let determinant = axes_to_img[0][0] * axes_to_img[1][1] - axes_to_img[0][1] * axes_to_img[1][0];
-    if determinant == 0.0 {
-        return Err(())
-    } else {
-        // axes_to_img⁻¹
-        Ok([
-            [ axes_to_img[1][1] / determinant, -axes_to_img[0][1] / determinant],
-            [-axes_to_img[1][0] / determinant,  axes_to_img[0][0] / determinant]
-        ])
+    match axes_to_img.invert() {
+        None => Err(()),
+        Some(m) => Ok(m)
     }
 }
 
@@ -193,46 +178,46 @@ mod tests {
 
     macro_rules! assert_almost_eq {
         ($expected:expr, $actual:expr) => {
-            if ($expected.0 - $actual.0).abs() > 1.0e-9 {
-                panic!("expected: {}, but was: {}", $expected.0, $actual.0);
+            if ($expected.x - $actual.x).abs() > 1.0e-9 {
+                panic!("expected: {}, but was: {}", $expected.x, $actual.x);
             }
 
-            if ($expected.1 - $actual.1).abs() > 1.0e-9 {
-                panic!("expected: {}, but was: {}", $expected.1, $actual.1);
+            if ($expected.y - $actual.y).abs() > 1.0e-9 {
+                panic!("expected: {}, but was: {}", $expected.y, $actual.y);
             }
         };
     }
 
     #[test]
     fn test_guiding_direction() {
-        let point = |x, y| { ga_image::point::Point{ x, y } };
+        let v2 = |x, y| { Vector2{ x, y } };
         let mat = |primary_dir, secondary_dir| { create_img_to_mount_axes_matrix(primary_dir, secondary_dir).unwrap() };
         let s2 = 1.0 / 2.0f64.sqrt();
 
         // All test cases ask for primary & secondary axis direction corresponding to image space vector [1, 0].
 
-        assert_almost_eq!((1.0, 0.0), guiding_direction(&mat((1.0, 0.0), (0.0, 1.0)), point(1, 0)));
-        assert_almost_eq!((1.0, 0.0), guiding_direction(&mat((1.0, 0.0), (0.0, -1.0)), point(1, 0)));
+        assert_almost_eq!(v2(1.0, 0.0), guiding_direction(&mat(v2(1.0, 0.0), v2(0.0, 1.0)), v2(1.0, 0.0)));
+        assert_almost_eq!(v2(1.0, 0.0), guiding_direction(&mat(v2(1.0, 0.0), v2(0.0, -1.0)), v2(1.0, 0.0)));
 
-        assert_almost_eq!((s2, -s2), guiding_direction(&mat((1.0, 1.0), (-1.0, 1.0)), point(1, 0)));
-        assert_almost_eq!((s2,  s2), guiding_direction(&mat((1.0, 1.0), (1.0, -1.0)), point(1, 0)));
+        assert_almost_eq!(v2(s2, -s2), guiding_direction(&mat(v2(1.0, 1.0), v2(-1.0, 1.0)), v2(1.0, 0.0)));
+        assert_almost_eq!(v2(s2,  s2), guiding_direction(&mat(v2(1.0, 1.0), v2(1.0, -1.0)), v2(1.0, 0.0)));
 
-        assert_almost_eq!((0.0, 1.0), guiding_direction(&mat((0.0, 1.0), (1.0, 0.0)), point(1, 0)));
-        assert_almost_eq!((0.0, -1.0), guiding_direction(&mat((0.0, 1.0), (-1.0, 0.0)), point(1, 0)));
+        assert_almost_eq!(v2(0.0, 1.0), guiding_direction(&mat(v2(0.0, 1.0), v2(1.0, 0.0)), v2(1.0, 0.0)));
+        assert_almost_eq!(v2(0.0, -1.0), guiding_direction(&mat(v2(0.0, 1.0), v2(-1.0, 0.0)), v2(1.0, 0.0)));
 
-        assert_almost_eq!((-s2, s2), guiding_direction(&mat((-1.0, 1.0), (1.0, 1.0)), point(1, 0)));
-        assert_almost_eq!((-s2, -s2), guiding_direction(&mat((-1.0, 1.0), (-1.0, -1.0)), point(1, 0)));
+        assert_almost_eq!(v2(-s2, s2), guiding_direction(&mat(v2(-1.0, 1.0), v2(1.0, 1.0)), v2(1.0, 0.0)));
+        assert_almost_eq!(v2(-s2, -s2), guiding_direction(&mat(v2(-1.0, 1.0), v2(-1.0, -1.0)), v2(1.0, 0.0)));
 
-        assert_almost_eq!((-1.0, 0.0), guiding_direction(&mat((-1.0, 0.0), (0.0, 1.0)), point(1, 0)));
-        assert_almost_eq!((-1.0, 0.0), guiding_direction(&mat((-1.0, 0.0), (0.0, -1.0)), point(1, 0)));
+        assert_almost_eq!(v2(-1.0, 0.0), guiding_direction(&mat(v2(-1.0, 0.0), v2(0.0, 1.0)), v2(1.0, 0.0)));
+        assert_almost_eq!(v2(-1.0, 0.0), guiding_direction(&mat(v2(-1.0, 0.0), v2(0.0, -1.0)), v2(1.0, 0.0)));
 
-        assert_almost_eq!((-s2, -s2), guiding_direction(&mat((-1.0, -1.0), (-1.0, 1.0)), point(1, 0)));
-        assert_almost_eq!((-s2, s2), guiding_direction(&mat((-1.0, -1.0), (1.0, -1.0)), point(1, 0)));
+        assert_almost_eq!(v2(-s2, -s2), guiding_direction(&mat(v2(-1.0, -1.0), v2(-1.0, 1.0)), v2(1.0, 0.0)));
+        assert_almost_eq!(v2(-s2, s2), guiding_direction(&mat(v2(-1.0, -1.0), v2(1.0, -1.0)), v2(1.0, 0.0)));
 
-        assert_almost_eq!((0.0, 1.0), guiding_direction(&mat((0.0, -1.0), (1.0, 0.0)), point(1, 0)));
-        assert_almost_eq!((0.0, -1.0), guiding_direction(&mat((0.0, -1.0), (-1.0, 0.0)), point(1, 0)));
+        assert_almost_eq!(v2(0.0, 1.0), guiding_direction(&mat(v2(0.0, -1.0), v2(1.0, 0.0)), v2(1.0, 0.0)));
+        assert_almost_eq!(v2(0.0, -1.0), guiding_direction(&mat(v2(0.0, -1.0), v2(-1.0, 0.0)), v2(1.0, 0.0)));
 
-        assert_almost_eq!((s2, s2), guiding_direction(&mat((1.0, -1.0), (1.0, 1.0)), point(1, 0)));
-        assert_almost_eq!((s2, -s2), guiding_direction(&mat((1.0, -1.0), (-1.0, -1.0)), point(1, 0)));
+        assert_almost_eq!(v2(s2, s2), guiding_direction(&mat(v2(1.0, -1.0), v2(1.0, 1.0)), v2(1.0, 0.0)));
+        assert_almost_eq!(v2(s2, -s2), guiding_direction(&mat(v2(1.0, -1.0), v2(-1.0, -1.0)), v2(1.0, 0.0)));
     }
 }

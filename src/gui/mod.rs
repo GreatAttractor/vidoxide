@@ -12,13 +12,13 @@
 
 mod camera_gui;
 mod dec_intervals;
+mod freezeable;
 mod gamma_dialog;
 mod histogram_utils;
 mod histogram_view;
 mod img_view;
 mod info_overlay;
 mod mount_gui;
-mod non_signaling;
 mod rec_gui;
 mod reticle_dialog;
 mod roi_dialog;
@@ -30,6 +30,7 @@ use camera_gui::{
     NumberControlWidgets,
     BooleanControlWidgets
 };
+use cgmath::{EuclideanSpace, Point2, Vector2, Zero};
 use crate::{CameraControlChange, NewControlValue, OnCapturePauseAction, ProgramData};
 use crate::camera;
 use crate::camera::CameraError;
@@ -137,6 +138,11 @@ pub struct GammaCorrection {
     gamma: f32
 }
 
+pub struct Stabilization {
+    toggle_button: gtk::ToggleToolButton,
+    position: Point2<i32>
+}
+
 pub struct GuiData {
     controls_box: gtk::Box,
     control_widgets: std::collections::HashMap<camera::CameraControlId, (CommonControlWidgets, ControlWidgetBundle)>,
@@ -147,6 +153,7 @@ pub struct GuiData {
     preview_area: ImgView,
     rec_widgets: RecWidgets,
     reticle: Reticle,
+    stabilization: Stabilization,
     gamma_correction: GammaCorrection,
     mount_widgets: MountWidgets,
     mouse_mode: MouseMode,
@@ -204,7 +211,7 @@ fn create_status_bar() -> (gtk::Frame, StatusBarFields) {
     (status_bar_frame, StatusBarFields{ preview_fps, capture_fps, temperature, current_recording_info, recording_overview })
 }
 
-fn on_preview_area_button_down(pos: Point, program_data_rc: &Rc<RefCell<ProgramData>>) {
+fn on_preview_area_button_down(pos: Point2<i32>, program_data_rc: &Rc<RefCell<ProgramData>>) {
     let mut program_data = program_data_rc.borrow_mut();
     if program_data.gui.as_ref().unwrap().mouse_mode.is_rect_selection() {
         program_data.gui.as_mut().unwrap().info_overlay.screen_sel =
@@ -212,7 +219,7 @@ fn on_preview_area_button_down(pos: Point, program_data_rc: &Rc<RefCell<ProgramD
     }
 }
 
-fn on_preview_area_button_up(pos: Point, program_data_rc: &Rc<RefCell<ProgramData>>) {
+fn on_preview_area_button_up(pos: Point2<i32>, program_data_rc: &Rc<RefCell<ProgramData>>) {
     let preview_img_size = program_data_rc.borrow().gui.as_ref().unwrap().preview_area.image_size();
 
     let sel_rect: Option<Rect> = if let Some(ssel) = program_data_rc.borrow().gui.as_ref().unwrap().info_overlay.screen_sel.as_ref() {
@@ -293,7 +300,7 @@ fn on_preview_area_button_up(pos: Point, program_data_rc: &Rc<RefCell<ProgramDat
     }
 }
 
-fn on_preview_area_mouse_move(pos: Point, program_data_rc: &Rc<RefCell<ProgramData>>) {
+fn on_preview_area_mouse_move(pos: Point2<i32>, program_data_rc: &Rc<RefCell<ProgramData>>) {
     let mut program_data = program_data_rc.borrow_mut();
     let gui = program_data.gui.as_mut().unwrap();
     if let Some(screen_sel) = &mut gui.info_overlay.screen_sel {
@@ -381,7 +388,7 @@ pub fn init_main_window(app: &gtk::Application, program_data_rc: &Rc<RefCell<Pro
 
     let top_lvl_v_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
     top_lvl_v_box.pack_start(&menu_bar, false, false, PADDING);
-    let (toolbar, default_mouse_mode_button) = create_toolbar(&window, &program_data_rc);
+    let (toolbar, default_mouse_mode_button, stabilization_button) = create_toolbar(&window, &program_data_rc);
     top_lvl_v_box.pack_start(&toolbar, false, false, 0);
     top_lvl_v_box.pack_start(&window_contents, true, true, PADDING);
     top_lvl_v_box.pack_start(&status_bar_frame, false, false, PADDING);
@@ -427,6 +434,10 @@ pub fn init_main_window(app: &gtk::Application, program_data_rc: &Rc<RefCell<Pro
             step: rtc_step,
             line_width: rtc_line_width
         },
+        stabilization: Stabilization{
+            position: Point2::origin(),
+            toggle_button: stabilization_button
+        },
         gamma_correction: GammaCorrection {
             dialog: create_gamma_dialog(&window, &program_data_rc),
             gamma: 1.0
@@ -448,7 +459,7 @@ fn setup_actions(app_window: &gtk::ApplicationWindow, program_data_rc: &Rc<RefCe
     // ----------------------------
     let disconnect_action = gtk::gio::SimpleAction::new(actions::DISCONNECT_CAMERA, None);
     disconnect_action.connect_activate(clone!(@weak program_data_rc => @default-panic, move |_, _| {
-        disconnect_camera(&mut program_data_rc.borrow_mut(), true);
+        disconnect_camera(&program_data_rc, true);
     }));
     disconnect_action.set_enabled(false);
     action_group.add_action(&disconnect_action);
@@ -524,11 +535,11 @@ fn on_snapshot(program_data_rc: &Rc<RefCell<ProgramData>>) {
         .view().save(&dest_path.to_str().unwrap().to_string(), ga_image::FileType::Tiff).unwrap();
 }
 
-/// Returns (toolbar, default mouse mode button).
+/// Returns (toolbar, default mouse mode button, stabilization button).
 fn create_toolbar(
     main_wnd: &gtk::ApplicationWindow,
     program_data_rc: &Rc<RefCell<ProgramData>>
-) -> (gtk::Toolbar, gtk::RadioToolButton) {
+) -> (gtk::Toolbar, gtk::RadioToolButton, gtk::ToggleToolButton) {
     let toolbar = gtk::Toolbar::new();
 
     let icon_size = if let Some(s) = program_data_rc.borrow().config.toolbar_icon_size() {
@@ -594,7 +605,7 @@ fn create_toolbar(
     toolbar.insert(&btn_toggle_info_overlay, -1);
 
     let btn_toggle_reticle = gtk::ToggleToolButtonBuilder::new()
-        .label("⊚") //TODO: use some pictograph
+        .label("⊚")
         .tooltip_text("Toggle reticle")
         .active(false)
         .build();
@@ -603,6 +614,28 @@ fn create_toolbar(
         program_data_rc.borrow_mut().gui.as_ref().unwrap().preview_area.refresh();
     }));
     toolbar.insert(&btn_toggle_reticle, -1);
+
+    let btn_toggle_stabilization = gtk::ToggleToolButtonBuilder::new()
+        .label("⚓") // TODO: use some image
+        .tooltip_text("Toggle video stabilization")
+        .active(false)
+        .build();
+    btn_toggle_stabilization.connect_toggled(clone!(@weak program_data_rc => @default-panic, move |btn| {
+        let tracking_enabled = program_data_rc.borrow().tracking.is_some();
+        if btn.is_active() && !tracking_enabled {
+            btn.set_active(false);
+            show_message("Tracking is not enabled.", "Error", gtk::MessageType::Error);
+            return;
+        }
+
+        if btn.is_active() {
+            let mut pd = program_data_rc.borrow_mut();
+            let tracking_pos = pd.tracking.as_ref().unwrap().pos;
+            let mut gui = pd.gui.as_mut().unwrap();
+            gui.stabilization.position = tracking_pos;
+        }
+    }));
+    toolbar.insert(&btn_toggle_stabilization, -1);
 
     toolbar.insert(&gtk::SeparatorToolItem::new(), -1);
 
@@ -698,7 +731,7 @@ fn create_toolbar(
     }));
     toolbar.insert(&btn_unset_roi, -1);
 
-    (toolbar, btn_mouse_none)
+    (toolbar, btn_mouse_none, btn_toggle_stabilization)
 }
 
 fn on_main_window_delete(
@@ -925,16 +958,18 @@ fn update_refreshable_camera_controls(program_data_rc: &Rc<RefCell<ProgramData>>
                         intervals.borrow().set_value(new_value);
                         let (new_interval_min, new_interval_max) = intervals.borrow().interval();
                         let slider = slider.borrow();
-                        slider.do_without_signaling(|slider| {
-                            let adj = slider.adjustment();
-                            adj.set_lower(new_interval_min);
-                            adj.set_upper(new_interval_max);
-                            adj.set_value(new_value);
-                        });
+                        slider.freeze();
+                        let adj = slider.adjustment();
+                        adj.set_lower(new_interval_min);
+                        adj.set_upper(new_interval_max);
+                        adj.set_value(new_value);
+                        slider.thaw();
                     }
 
-                    if !spin_btn.borrow().get().has_focus() {
-                        spin_btn.borrow().do_without_signaling(|spin_btn| spin_btn.set_value(new_value));
+                    if !spin_btn.borrow().has_focus() {
+                        spin_btn.borrow().freeze();
+                        spin_btn.borrow().set_value(new_value);
+                        spin_btn.borrow().thaw();
                     }
                 },
 
@@ -1029,7 +1064,11 @@ fn on_tracking_ended(program_data_rc: &Rc<RefCell<ProgramData>>) {
         }
     }
 
-    program_data_rc.borrow().gui.as_ref().unwrap().mount_widgets.on_target_tracking_ended(reenable_calibration);
+    let pd = program_data_rc.borrow();
+    let gui = pd.gui.as_ref().unwrap();
+    gui.mount_widgets.on_target_tracking_ended(reenable_calibration);
+    gui.stabilization.toggle_button.set_active(false);
+
     println!("Tracking disabled.");
 }
 
@@ -1085,7 +1124,7 @@ fn on_capture_thread_message(
     let mut received_preview_image = false;
 
     loop { match msg {
-        CaptureToMainThreadMsg::PreviewImageReady(img) => {
+        CaptureToMainThreadMsg::PreviewImageReady((img, tracking_pos)) => {
             received_preview_image = true;
 
             let mut program_data = program_data_rc.borrow_mut();
@@ -1122,6 +1161,17 @@ fn on_capture_thread_message(
                 );
             }
 
+            let stabilization_offset = if program_data.gui.as_ref().unwrap().stabilization.toggle_button.is_active() {
+                if let Some(t_pos) = &tracking_pos {
+                    t_pos - program_data.gui.as_ref().unwrap().stabilization.position
+                } else {
+                    // tracking has been disabled, `on_tracking_ended` will be called shortly
+                    Vector2::zero()
+                }
+            } else {
+                Vector2::zero()
+            };
+
             let img_bgra24 = displayed_img.convert_pix_fmt(
                 ga_image::PixelFormat::BGRA8,
                 if program_data.demosaic_preview { Some(ga_image::DemosaicMethod::Simple) } else { None }
@@ -1135,7 +1185,8 @@ fn on_capture_thread_message(
                     img.width() as i32,
                     img.height() as i32,
                     stride
-                ).unwrap()
+                ).unwrap(),
+                stabilization_offset
             );
             program_data.gui.as_ref().unwrap().preview_area.refresh();
 
@@ -1227,7 +1278,7 @@ fn on_capture_thread_message(
             //TODO: show a message box
             println!("Capture error: {:?}", error);
             let _ = program_data_rc.borrow_mut().capture_thread_data.take().unwrap().join_handle.take().unwrap().join();
-            disconnect_camera(&mut program_data_rc.borrow_mut(), false);
+            disconnect_camera(&program_data_rc, false);
         },
 
         CaptureToMainThreadMsg::RecordingFinished => rec_gui::on_recording_finished(&program_data_rc),
@@ -1252,18 +1303,22 @@ fn on_capture_thread_message(
     }
 }
 
-pub fn disconnect_camera(program_data: &mut ProgramData, finish_capture_thread: bool) {
+pub fn disconnect_camera(program_data_rc: &Rc<RefCell<ProgramData>>, finish_capture_thread: bool) {
     if finish_capture_thread {
-        program_data.finish_capture_thread();
+        program_data_rc.borrow_mut().finish_capture_thread();
     }
     {
-        let gui = program_data.gui.as_ref().unwrap();
+        let pd = program_data_rc.borrow();
+        let gui = pd.gui.as_ref().unwrap();
         gui.rec_widgets.on_disconnect();
         gui.action_map.get(actions::TAKE_SNAPSHOT).unwrap().set_enabled(false);
         gui.action_map.get(actions::SET_ROI).unwrap().set_enabled(false);
+        gui.stabilization.toggle_button.set_active(false);
     }
-    program_data.camera = None;
-    if let Some(gui) = program_data.gui.as_ref() {
+
+    let mut pd = program_data_rc.borrow_mut();
+    pd.camera = None;
+    if let Some(gui) = pd.gui.as_ref() {
         gui.status_bar.preview_fps.set_label("");
         gui.status_bar.capture_fps.set_label("");
         gui.status_bar.current_recording_info.set_label("");
@@ -1276,10 +1331,10 @@ pub fn disconnect_camera(program_data: &mut ProgramData, finish_capture_thread: 
 
         gui.action_map.get(actions::DISCONNECT_CAMERA).unwrap().set_enabled(false);
     }
-    camera_gui::remove_camera_controls(program_data);
+    camera_gui::remove_camera_controls(&mut pd);
 
-    program_data.tracking = None;
-    program_data.crop_area = None;
+    pd.tracking = None;
+    pd.crop_area = None;
 }
 
 pub fn on_histogram_thread_message(
