@@ -1107,24 +1107,25 @@ fn on_capture_thread_message(
                 }
             }
 
-            let mut gamma_corrected = std::sync::Arc::clone(&img);
+            let mut displayed_img = std::sync::Arc::clone(&img);
+
             let gamma = program_data.gui.as_ref().unwrap().gamma_correction.gamma;
             if gamma != 1.0 {
                 let mut new_image = (*img).clone();
                 gamma_correct(&mut new_image, gamma, program_data.histogram_area.unwrap_or(img.img_rect()));
-                gamma_corrected = std::sync::Arc::new(new_image);
+                displayed_img = std::sync::Arc::new(new_image);
             }
 
-            let to_bgra24 = |img: &ga_image::Image| { img.convert_pix_fmt(
+            if program_data.stretch_histogram {
+                displayed_img = std::sync::Arc::new(
+                    histogram_utils::stretch_histogram(&*displayed_img, &program_data.histogram_area)
+                );
+            }
+
+            let img_bgra24 = displayed_img.convert_pix_fmt(
                 ga_image::PixelFormat::BGRA8,
                 if program_data.demosaic_preview { Some(ga_image::DemosaicMethod::Simple) } else { None }
-            ) };
-
-            let img_bgra24 = if program_data.stretch_histogram {
-                to_bgra24(&histogram_utils::stretch_histogram(&*gamma_corrected, &program_data.histogram_area))
-            } else {
-                to_bgra24(&*gamma_corrected)
-            };
+            );
 
             let stride = img_bgra24.bytes_per_line() as i32;
             program_data.gui.as_ref().unwrap().preview_area.set_image(
