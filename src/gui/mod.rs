@@ -12,6 +12,7 @@
 
 mod camera_gui;
 mod dec_intervals;
+mod dispersion_dialog;
 mod freezeable;
 mod gamma_dialog;
 mod histogram_utils;
@@ -39,6 +40,7 @@ use crate::resources;
 use crate::workers::capture::{CaptureToMainThreadMsg, MainToCaptureThreadMsg};
 use crate::workers::histogram::{Histogram, HistogramRequest, MainToHistogramThreadMsg};
 use crate::workers::recording::RecordingToMainThreadMsg;
+use dispersion_dialog::DispersionDialog;
 use ga_image;
 use ga_image::point::{Point, Rect};
 use gamma_dialog::create_gamma_dialog;
@@ -155,6 +157,7 @@ pub struct GuiData {
     reticle: Reticle,
     stabilization: Stabilization,
     gamma_correction: GammaCorrection,
+    dispersion_dialog: DispersionDialog,
     mount_widgets: MountWidgets,
     mouse_mode: MouseMode,
     info_overlay: InfoOverlay,
@@ -442,6 +445,7 @@ pub fn init_main_window(app: &gtk::Application, program_data_rc: &Rc<RefCell<Pro
             dialog: create_gamma_dialog(&window, &program_data_rc),
             gamma: 1.0
         },
+        dispersion_dialog: DispersionDialog::new(&window, &program_data_rc),
         mouse_mode: MouseMode::None,
         default_mouse_mode_button,
         histogram_view,
@@ -848,6 +852,12 @@ fn init_preview_menu(
         program_data_rc.borrow().gui.as_ref().unwrap().gamma_correction.dialog.show();
     }));
     menu.append(&gamma);
+
+    let dispersion = gtk::MenuItem::with_label("Atmospheric dispersion indicator...");
+    dispersion.connect_activate(clone!(@weak program_data_rc => @default-panic, move |_| {
+        program_data_rc.borrow().gui.as_ref().unwrap().dispersion_dialog.show();
+    }));
+    menu.append(&dispersion);
 
     menu
 }
