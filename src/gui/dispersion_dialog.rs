@@ -1,4 +1,4 @@
-use cgmath::{Vector2, Zero};
+use cgmath::{EuclideanSpace, Point2, Vector2, Zero};
 use crate::ProgramData;
 use ga_image::{Image, ImageView};
 use gtk::cairo;
@@ -7,6 +7,10 @@ use glib::clone;
 use std::cell::RefCell;
 use std::rc::Rc;
 
+const RED: usize = 0;
+const GREEN: usize = 1;
+const BLUE: usize = 2;
+
 struct State {
     /// Offset of red channel centroid relative to green channel centroid.
     red_offset: Vector2<f64>,
@@ -14,7 +18,13 @@ struct State {
     /// Offset of blue channel centroid relative to green channel centroid.
     blue_offset: Vector2<f64>,
 
+    last_red_offset: Vector2<f64>,
+
+    last_blue_offset: Vector2<f64>,
+
     num_averaged: usize,
+
+    num_to_average: usize,
 
     logical_display_size: f64
 }
@@ -50,15 +60,12 @@ impl DispersionDialog {
 
         let state = Rc::new(RefCell::new(State{
             logical_display_size: 12.0,
-            // red_offset: Vector2::zero(),
-            // blue_offset: Vector2::zero(),
-
-            //TESTING #########
-            red_offset: Vector2{ x: 2.0, y: 3.0 },
-            blue_offset: Vector2{ x: -3.0, y: -5.0 },
-            //END TESTING #####
-
-            num_averaged: 0
+            red_offset: Vector2::zero(),
+            blue_offset: Vector2::zero(),
+            last_red_offset: Vector2::zero(),
+            last_blue_offset: Vector2::zero(),
+            num_averaged: 0,
+            num_to_average: 10
         }));
 
         let drawing_area = init_controls(&dialog, program_data_rc, &state);
@@ -70,8 +77,34 @@ impl DispersionDialog {
 
     pub fn show(&self) { self.dialog.show(); }
 
-    pub fn update(&mut self, image: &ImageView) {
-        //
+    pub fn is_visible(&self) -> bool { self.dialog.is_visible() }
+
+    pub fn update(&self, image: &ImageView) {
+        if !self.dialog.is_visible() { return; }
+
+        let pix_fmt = image.pixel_format();
+        if !(pix_fmt.num_channels() == 3 /*TODO: explicitly check for RGB instead*/ || pix_fmt.is_cfa()) {
+            let mut state = self.state.borrow_mut();
+            state.num_averaged = 0;
+            state.red_offset = Vector2::zero();
+            state.blue_offset = Vector2::zero();
+            return;
+        }
+
+        let rgb_centroids = get_rgb_centroids(image);
+        let mut state = self.state.borrow_mut();
+        state.red_offset += rgb_centroids[RED] - rgb_centroids[GREEN];
+        state.blue_offset += rgb_centroids[BLUE] - rgb_centroids[GREEN];
+        state.num_averaged += 1;
+        if state.num_averaged == state.num_to_average {
+            let n = state.num_to_average as f64;
+            state.last_red_offset = state.red_offset / n;
+            state.last_blue_offset = state.blue_offset / n;
+            state.red_offset = Vector2::zero();
+            state.blue_offset = Vector2::zero();
+            self.drawing_area.queue_draw();
+            state.num_averaged = 0;
+        }
     }
 }
 
@@ -126,12 +159,69 @@ fn draw(ctx: &cairo::Context, widget_size: (i32, i32), state: &Rc<RefCell<State>
     ctx.set_line_width(2.5 / s);
     ctx.set_source_rgb(1.0, 0.0, 0.0);
     ctx.move_to(0.0, 0.0);
-    ctx.line_to(state.red_offset.x, state.red_offset.y);
+    ctx.line_to(state.last_red_offset.x, state.last_red_offset.y);
     ctx.stroke().unwrap();
 
     ctx.set_line_width(2.5 / s);
     ctx.set_source_rgb(0.3, 0.3, 1.0);
     ctx.move_to(0.0, 0.0);
-    ctx.line_to(state.blue_offset.x, state.blue_offset.y);
+    ctx.line_to(state.last_blue_offset.x, state.last_blue_offset.y);
     ctx.stroke().unwrap();
+}
+
+// TODO: move it to ga_image?
+fn get_rgb_centroids(image: &ImageView) -> [Point2<f64>; 3] {
+    let pix_fmt = image.pixel_format();
+    if !(pix_fmt.is_cfa() && pix_fmt.bytes_per_channel() == 1) {
+        return [Point2::origin(), Point2::origin(), Point2::origin()];
+
+        //TODO: implement it
+    }
+
+    // values below are for (R, G, B) channels
+    let mut m00 = [0.0; 3]; // image moment 00, i.e. sum of pixels' brightness
+    let mut m10 = [0.0; 3]; // image moment 10
+    let mut m01 = [0.0; 3]; // image moment 01
+
+    let r_col_ofs = pix_fmt.cfa_pattern().red_col_ofs();
+    let b_col_ofs = (r_col_ofs + 1) % 2;
+    let r_row_ofs = pix_fmt.cfa_pattern().red_row_ofs();
+
+    for y in 0..image.height() {
+        let line = image.line::<u8>(y);
+
+        // non-green channel being calculated for the current row
+        let rb_calc_channel = if y % 2 == r_row_ofs as u32 { RED } else { BLUE };
+
+        let rb_col_ofs = if rb_calc_channel == RED { r_col_ofs } else { b_col_ofs };
+
+        for x in (0..image.width() - 1).step_by(2) {
+            let rb_x = x as usize + rb_col_ofs;
+            let g_x = x as usize + (rb_col_ofs + 1) % 2;
+
+            let rb_value = line[rb_x] as f64;
+            let g_value = line[g_x] as f64;
+
+            m00[rb_calc_channel] += rb_value;
+            m00[GREEN] += g_value;
+
+            m10[rb_calc_channel] += rb_x as f64 * rb_value;
+            m10[GREEN] += rb_x as f64 * g_value;
+
+            m01[rb_calc_channel] += y as f64 * rb_value;
+            m01[GREEN] += y as f64 * g_value;
+        }
+    }
+
+    let mut result = [Point2::origin(); 3];
+
+    for ch in 0..3 {
+        if m00[ch] == 0.0 {
+            result[ch] = Point2{ x: image.width() as f64 / 2.0, y: image.height() as f64 / 2.0 };
+        } else {
+            result[ch] = Point2{ x: m10[ch] / m00[ch], y: m01[ch] / m00[ch] };
+        }
+    }
+
+    result
 }

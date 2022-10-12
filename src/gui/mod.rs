@@ -1156,6 +1156,20 @@ fn on_capture_thread_message(
                 }
             }
 
+            if program_data.gui.as_ref().unwrap().dispersion_dialog.is_visible() {
+                let dispersion_update_area: Option<Rect> = match &program_data.tracking {
+                    Some(tracking) => match tracking.mode {
+                        crate::TrackingMode::Centroid(centroid_area) => Some(centroid_area),
+
+                        _ => None
+                    },
+
+                    _ => None
+                };
+                let img_view = ga_image::ImageView::new(&*img, dispersion_update_area);
+                program_data.gui.as_ref().unwrap().dispersion_dialog.update(&img_view);
+            }
+
             let mut displayed_img = std::sync::Arc::clone(&img);
 
             let gamma = program_data.gui.as_ref().unwrap().gamma_correction.gamma;
