@@ -20,6 +20,7 @@ mod histogram_view;
 mod img_view;
 mod info_overlay;
 mod mount_gui;
+mod psf_dialog;
 mod rec_gui;
 mod reticle_dialog;
 mod roi_dialog;
@@ -52,6 +53,7 @@ use img_view::ImgView;
 use info_overlay::{InfoOverlay, ScreenSelection, draw_info_overlay};
 use mount_gui::MountWidgets;
 use num_traits::cast::{FromPrimitive, AsPrimitive};
+use psf_dialog::PsfDialog;
 use rec_gui::RecWidgets;
 use reticle_dialog::create_reticle_dialog;
 use std::cell::RefCell;
@@ -158,6 +160,7 @@ pub struct GuiData {
     stabilization: Stabilization,
     gamma_correction: GammaCorrection,
     dispersion_dialog: DispersionDialog,
+    psf_dialog: PsfDialog,
     mount_widgets: MountWidgets,
     mouse_mode: MouseMode,
     info_overlay: InfoOverlay,
@@ -446,6 +449,7 @@ pub fn init_main_window(app: &gtk::Application, program_data_rc: &Rc<RefCell<Pro
             gamma: 1.0
         },
         dispersion_dialog: DispersionDialog::new(&window, &program_data_rc),
+        psf_dialog: PsfDialog::new(&window, &program_data_rc),
         mouse_mode: MouseMode::None,
         default_mouse_mode_button,
         histogram_view,
@@ -859,6 +863,12 @@ fn init_preview_menu(
     }));
     menu.append(&dispersion);
 
+    let psf = gtk::MenuItem::with_label("Collimation assistant...");
+    psf.connect_activate(clone!(@weak program_data_rc => @default-panic, move |_| {
+        program_data_rc.borrow().gui.as_ref().unwrap().psf_dialog.show();
+    }));
+    menu.append(&psf);
+
     menu
 }
 
@@ -1156,19 +1166,18 @@ fn on_capture_thread_message(
                 }
             }
 
-            if program_data.gui.as_ref().unwrap().dispersion_dialog.is_visible() {
-                let dispersion_update_area: Option<Rect> = match &program_data.tracking {
-                    Some(tracking) => match tracking.mode {
-                        crate::TrackingMode::Centroid(centroid_area) => Some(centroid_area),
-
-                        _ => None
-                    },
-
+            let helpers_update_area: Option<Rect> = match &program_data.tracking {
+                Some(tracking) => match tracking.mode {
+                    crate::TrackingMode::Centroid(centroid_area) => Some(centroid_area),
                     _ => None
-                };
-                let img_view = ga_image::ImageView::new(&*img, dispersion_update_area);
-                program_data.gui.as_ref().unwrap().dispersion_dialog.update(&img_view);
-            }
+                },
+                _ => None
+            };
+            let dispersion_img_view = ga_image::ImageView::new(&*img, helpers_update_area);
+
+            program_data.gui.as_mut().unwrap().dispersion_dialog.update(&dispersion_img_view);
+
+            program_data.gui.as_mut().unwrap().psf_dialog.update(&*img, helpers_update_area);
 
             let mut displayed_img = std::sync::Arc::clone(&img);
 
