@@ -1,3 +1,15 @@
+//
+// Vidoxide - Image acquisition for amateur astronomy
+// Copyright (c) 2022 Filip Szczerek <ga.software@yahoo.com>
+//
+// This project is licensed under the terms of the MIT license
+// (see the LICENSE file for details).
+//
+
+//!
+//! Atmospheric dispersion dialog.
+//!
+
 use cgmath::{EuclideanSpace, InnerSpace, Point2, Vector2, Zero};
 use crate::ProgramData;
 use gtk::cairo;
@@ -11,28 +23,22 @@ const GREEN: usize = 1;
 const BLUE: usize = 2;
 
 struct State {
-    /// Offset of red channel centroid relative to green channel centroid.
-    red_offset: Vector2<f64>,
-
-    /// Offset of blue channel centroid relative to green channel centroid.
-    blue_offset: Vector2<f64>,
-
-    last_red_offset: Vector2<f64>,
-
-    last_blue_offset: Vector2<f64>,
-
-    num_averaged: usize,
-
-    num_to_average: usize,
-
+    /// Averaged offset of red channel centroid relative to green channel centroid.
+    avg_red_offset: Vector2<f64>,
+    /// Averaged offset of blue channel centroid relative to green channel centroid.
+    avg_blue_offset: Vector2<f64>,
     logical_display_size: f64
 }
 
 pub struct DispersionDialog {
+    red_offset: Vector2<f64>,
+    blue_offset: Vector2<f64>,
+    num_averaged: usize,
+    num_to_average: usize,
     dialog: gtk::Dialog,
     drawing_area: gtk::DrawingArea,
-    red_offset: gtk::Label,
-    blue_offset: gtk::Label,
+    red_offset_label: gtk::Label,
+    blue_offset_label: gtk::Label,
     state: Rc<RefCell<State>>
 }
 
@@ -61,52 +67,60 @@ impl DispersionDialog {
 
         let state = Rc::new(RefCell::new(State{
             logical_display_size: 5.0,
-            red_offset: Vector2::zero(),
-            blue_offset: Vector2::zero(),
-            last_red_offset: Vector2::zero(),
-            last_blue_offset: Vector2::zero(),
-            num_averaged: 0,
-            num_to_average: 10
+            avg_red_offset: Vector2::zero(),
+            avg_blue_offset: Vector2::zero()
         }));
 
-        let (drawing_area, red_offset, blue_offset) = init_controls(&dialog, program_data_rc, &state);
+        let (drawing_area, red_offset_label, blue_offset_label) = init_controls(&dialog, program_data_rc, &state);
         dialog.show_all();
         dialog.hide();
 
-        DispersionDialog{ dialog, drawing_area, red_offset, blue_offset, state }
+        DispersionDialog{
+            num_averaged: 0,
+            num_to_average: 10,
+            red_offset: Vector2::zero(),
+            blue_offset: Vector2::zero(),
+            dialog,
+            drawing_area,
+            red_offset_label,
+            blue_offset_label,
+            state
+        }
     }
 
     pub fn show(&self) { self.dialog.show(); }
 
     pub fn is_visible(&self) -> bool { self.dialog.is_visible() }
 
-    pub fn update(&self, image: &ga_image::ImageView) {
+    pub fn update(&mut self, image: &ga_image::ImageView) {
         if !self.dialog.is_visible() { return; }
 
         let pix_fmt = image.pixel_format();
         if !(pix_fmt.num_channels() == 3 /*TODO: explicitly check for RGB instead*/ || pix_fmt.is_cfa()) {
             let mut state = self.state.borrow_mut();
-            state.num_averaged = 0;
-            state.red_offset = Vector2::zero();
-            state.blue_offset = Vector2::zero();
+            self.num_averaged = 0;
+            self.red_offset = Vector2::zero();
+            self.blue_offset = Vector2::zero();
+            state.avg_red_offset = Vector2::zero();
+            state.avg_blue_offset = Vector2::zero();
             return;
         }
 
         let rgb_centroids = get_rgb_centroids(image);
         let mut state = self.state.borrow_mut();
-        state.red_offset += rgb_centroids[RED] - rgb_centroids[GREEN];
-        state.blue_offset += rgb_centroids[BLUE] - rgb_centroids[GREEN];
-        state.num_averaged += 1;
-        if state.num_averaged == state.num_to_average {
-            let n = state.num_to_average as f64;
-            state.last_red_offset = state.red_offset / n;
-            state.last_blue_offset = state.blue_offset / n;
-            self.red_offset.set_label(&format!("R: {:.1} px", state.last_red_offset.magnitude()));
-            self.blue_offset.set_label(&format!("B: {:.1} px", state.last_blue_offset.magnitude()));
-            state.red_offset = Vector2::zero();
-            state.blue_offset = Vector2::zero();
+        self.red_offset += rgb_centroids[RED] - rgb_centroids[GREEN];
+        self.blue_offset += rgb_centroids[BLUE] - rgb_centroids[GREEN];
+        self.num_averaged += 1;
+        if self.num_averaged == self.num_to_average {
+            let n = self.num_averaged as f64;
+            state.avg_red_offset = self.red_offset / n;
+            state.avg_blue_offset = self.blue_offset / n;
+            self.red_offset_label.set_label(&format!("R: {:.1} px", state.avg_red_offset.magnitude()));
+            self.blue_offset_label.set_label(&format!("B: {:.1} px", state.avg_blue_offset.magnitude()));
+            self.red_offset = Vector2::zero();
+            self.blue_offset = Vector2::zero();
             self.drawing_area.queue_draw();
-            state.num_averaged = 0;
+            self.num_averaged = 0;
         }
     }
 }
@@ -141,11 +155,11 @@ fn init_controls(
     hbox.pack_start(&scale, true, true, PADDING);
     vbox.pack_start(&hbox, false, true, PADDING);
 
-    let red_offset = gtk::Label::new(Some("0.0 px"));
+    let red_offset = gtk::Label::new(Some("R: 0.0 px"));
     red_offset.set_halign(gtk::Align::Start);
     vbox.pack_start(&red_offset, false, false, PADDING);
 
-    let blue_offset = gtk::Label::new(Some("0.0 px"));
+    let blue_offset = gtk::Label::new(Some("B: 0.0 px"));
     blue_offset.set_halign(gtk::Align::Start);
     vbox.pack_start(&blue_offset, false, false, PADDING);
 
@@ -182,13 +196,13 @@ fn draw(ctx: &cairo::Context, widget_size: (i32, i32), state: &Rc<RefCell<State>
     ctx.set_line_width(2.5 / s);
     ctx.set_source_rgb(1.0, 0.0, 0.0);
     ctx.move_to(0.0, 0.0);
-    ctx.line_to(state.last_red_offset.x, state.last_red_offset.y);
+    ctx.line_to(state.avg_red_offset.x, state.avg_red_offset.y);
     ctx.stroke().unwrap();
 
     ctx.set_line_width(2.5 / s);
     ctx.set_source_rgb(0.3, 0.3, 1.0);
     ctx.move_to(0.0, 0.0);
-    ctx.line_to(state.last_blue_offset.x, state.last_blue_offset.y);
+    ctx.line_to(state.avg_blue_offset.x, state.avg_blue_offset.y);
     ctx.stroke().unwrap();
 }
 
