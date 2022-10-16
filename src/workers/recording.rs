@@ -12,7 +12,7 @@
 
 use crate::output::OutputWriter;
 use crossbeam;
-use ga_image::point::Rect;
+use ga_image::Rect;
 use ga_image::{Image, ImageView};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicIsize, Ordering};

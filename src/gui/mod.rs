@@ -43,7 +43,7 @@ use crate::workers::histogram::{Histogram, HistogramRequest, MainToHistogramThre
 use crate::workers::recording::RecordingToMainThreadMsg;
 use dispersion_dialog::DispersionDialog;
 use ga_image;
-use ga_image::point::{Point, Rect};
+use ga_image::Rect;
 use gamma_dialog::create_gamma_dialog;
 use glib::clone;
 use gtk::cairo;

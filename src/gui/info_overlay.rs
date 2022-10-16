@@ -12,7 +12,7 @@
 
 use cgmath::Point2;
 use crate::{MountCalibration, ProgramData, TrackingMode};
-use ga_image::point::Rect;
+use ga_image::Rect;
 use gtk::cairo;
 
 /// Offset (in pixels) of labels from the associated rectangle in the informational overlay.

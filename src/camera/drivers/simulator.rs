@@ -392,10 +392,10 @@ impl FrameCapturer for SimFrameCapturer {
 
         image.resize_and_translate_into(
             dest_image,
-            ga_image::point::Point{ x: 0, y: 0 },
+            [0, 0],
             image.width(),
             image.height(),
-            ga_image::point::Point{ x: self.img_offset.x as i32, y: self.img_offset.y as i32 },
+            [self.img_offset.x as i32, self.img_offset.y as i32],
             true
         );
 

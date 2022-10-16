@@ -10,7 +10,7 @@
 //! Image histogram utilities.
 //!
 
-use ga_image::{Image, ImageView, point::Rect};
+use ga_image::{Image, ImageView, Rect};
 use num_traits::{bounds::Bounded, cast::AsPrimitive};
 use std::ops::{Div, Mul, Sub};
 

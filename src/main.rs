@@ -26,7 +26,7 @@ use camera::drivers;
 use cgmath::{Point2, Vector2};
 use config::Configuration;
 use crossbeam;
-use ga_image::point::Rect;
+use ga_image::Rect;
 use gtk::gio::prelude::*;
 use glib::clone;
 use std::cell::RefCell;
@@ -52,18 +52,6 @@ pub struct RecordingThreadData {
     ///
     /// Increased after each captured frame, but decreased at a lower frequency. May be negative at times.
     pub buffered_kib: Arc<AtomicIsize>
-}
-
-fn to_p2(p: ga_image::point::Point) -> Point2<i32> {
-    Point2{ x: p.x, y: p.y }
-}
-
-fn to_v2(p: ga_image::point::Point) -> Vector2<i32> {
-    Vector2{ x: p.x, y: p.y }
-}
-
-fn to_p(p: Point2<i32>) -> ga_image::point::Point {
-    ga_image::point::Point{ x: p.x, y: p.y }
 }
 
 #[derive(Copy, Clone)]

@@ -10,7 +10,6 @@
 //! Capture thread.
 //!
 
-use crate::{to_p, to_p2};
 use cgmath::{Point2, Vector2};
 use crate::camera::CameraError;
 use crate::camera::FrameCapturer;
@@ -18,7 +17,7 @@ use crate::tracking::ImageTracker;
 use crate::workers::recording;
 use crate::{TrackingData, TrackingMode};
 use ga_image::Image;
-use ga_image::point::{Point, Rect};
+use ga_image::Rect;
 use ga_image;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
@@ -251,7 +250,7 @@ pub fn capture_thread(
 
                 MainToCaptureThreadMsg::EnableRecordingCrop(area) => {
                     let tracking_pos_offset: Option<Vector2<i32>> = match &tracking {
-                        Some(tracking) => Some(to_p2(area.pos()) - tracking.position().unwrap()),
+                        Some(tracking) => Some(Point2::from(area.pos()) - tracking.position().unwrap()),
                         None => None
                     };
 
@@ -285,7 +284,7 @@ fn on_tracking(
 
         if let Some(crop_data) = crop_data {
             match crop_data.tracking_pos_offset {
-                None => crop_data.tracking_pos_offset = Some(to_p2(crop_data.area.pos()) - tracking_pos),
+                None => crop_data.tracking_pos_offset = Some(Point2::from(crop_data.area.pos()) - tracking_pos),
                 Some(offs) => {
                     let mut new_pos = tracking_pos + offs;
                     let width = crop_data.area.width as i32;
@@ -296,7 +295,7 @@ fn on_tracking(
                     if new_pos.x + width > image.width() as i32 { new_pos.x = image.width() as i32 - width; }
                     if new_pos.y + height > image.height() as i32 { new_pos.y = image.height() as i32 - height; }
 
-                    crop_data.area.set_pos(to_p(new_pos));
+                    crop_data.area.set_pos(*new_pos.as_ref());
                 }
             }
         }

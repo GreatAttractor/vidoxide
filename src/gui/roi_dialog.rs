@@ -5,7 +5,7 @@ use gtk::prelude::*;
 const PADDING: u32 = 10;
 
 pub fn show_roi_dialog(parent: &gtk::ApplicationWindow)
--> Option<ga_image::point::Rect> {
+-> Option<ga_image::Rect> {
     let dialog = gtk::Dialog::with_buttons(
         Some("Set ROI"),
         Some(parent),
@@ -48,7 +48,7 @@ pub fn show_roi_dialog(parent: &gtk::ApplicationWindow)
             if x_offset.is_err() || y_offset.is_err() || width.is_err() || height.is_err() {
                 show_message("Invalid value; expected non-negative integers.", "Error", gtk::MessageType::Error);
             } else {
-                return Some(ga_image::point::Rect{
+                return Some(ga_image::Rect{
                     x: x_offset.unwrap() as i32,
                     y: y_offset.unwrap() as i32,
                     width: width.unwrap(),

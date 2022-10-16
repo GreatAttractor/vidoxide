@@ -12,7 +12,6 @@
 
 use crate::gui::{MOUSE_BUTTON_LEFT, MOUSE_BUTTON_RIGHT};
 use cgmath::{Point2, Vector2, Zero};
-use ga_image::point::Point;
 use gtk::{cairo, gdk};
 use glib::clone;
 use gtk::prelude::*;
@@ -249,8 +248,8 @@ impl ImgView {
         }
     }
 
-    pub fn scroll_pos(&self) -> Point {
-        Point{
+    pub fn scroll_pos(&self) -> Point2<i32> {
+        Point2{
             x: self.top_widget.hadjustment().value() as i32,
             y: self.top_widget.vadjustment().value() as i32
         }

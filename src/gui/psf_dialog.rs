@@ -11,7 +11,7 @@
 //!
 
 use cgmath::{EuclideanSpace, Point2};
-use crate::{ProgramData, to_p2, to_p};
+use crate::ProgramData;
 use ga_image::{ImageView, Image, PixelFormat};
 use glib::clone;
 use gtk::cairo;
@@ -78,19 +78,19 @@ impl PsfDialog {
 
     pub fn show(&self) { self.dialog.show(); }
 
-    pub fn update(&mut self, image: &Image, area: Option<ga_image::point::Rect>) {
+    pub fn update(&mut self, image: &Image, area: Option<ga_image::Rect>) {
         if !self.dialog.is_visible() { return; }
 
         let area = match area { Some(r) => r, None => image.img_rect() };
 
         //TODO: use a subpixel centroid, use interpolation when adding images
-        let centroid = to_p2(image.centroid(Some(area)));
+        let centroid = Point2::from(image.centroid(Some(area))).cast::<i32>().unwrap();
 
         let mut converted = Image::new(self.psf_size, self.psf_size, None, PixelFormat::Mono32f, None, true);
         image.convert_pix_fmt_of_subimage_into(
             &mut converted,
-            to_p(to_p2(area.pos()) + (centroid - Point2{ x: self.psf_size as i32 / 2, y: self.psf_size as i32 / 2})),
-            to_p(Point2::origin()),
+            *(Point2::from(area.pos()) + (centroid - Point2{ x: self.psf_size as i32 / 2, y: self.psf_size as i32 / 2})).as_ref(),
+            *Point2::origin().as_ref(),
             self.psf_size,
             self.psf_size,
             None

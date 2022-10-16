@@ -11,8 +11,7 @@
 //!
 
 use cgmath::{EuclideanSpace, Point2, Vector2};
-use crate::{to_p, to_p2, to_v2};
-use ga_image::{Image, ImageView, PixelFormat, point::Rect};
+use ga_image::{Image, ImageView, PixelFormat, Rect};
 
 const ANCHOR_SEARCH_RADIUS: i32 = 20;
 const REF_BLOCK_SIZE: u32 = 64;
@@ -41,15 +40,16 @@ pub struct ImageTracker {
 
 impl ImageTracker {
     pub fn new_with_centroid(area: Rect, image: &Image) -> ImageTracker {
+        let centroid = image.centroid(Some(area));
         ImageTracker{
-            state: State::Centroid(Centroid{ area, offset: to_v2(image.centroid(Some(area))) })
+            state: State::Centroid(Centroid{ area, offset: Vector2::from(centroid).cast::<i32>().unwrap() })
         }
     }
 
     pub fn new_with_anchor(pos: Point2<i32>, image: &Image) -> ImageTracker {
         let ref_block = image.convert_pix_fmt_of_subimage(
             PixelFormat::Mono8,
-            to_p(pos - Vector2{ x: REF_BLOCK_SIZE as i32 / 2, y: REF_BLOCK_SIZE as i32 / 2 }),
+            *(pos - Vector2{ x: REF_BLOCK_SIZE as i32 / 2, y: REF_BLOCK_SIZE as i32 / 2 }).as_ref(),
             REF_BLOCK_SIZE, REF_BLOCK_SIZE,
             None
         );
@@ -65,7 +65,7 @@ impl ImageTracker {
     pub fn position(&self) -> Option<Point2<i32>> {
         match &self.state {
             State::Disabled => None,
-            State::Centroid(centroid) => Some(to_p2(centroid.area.pos()) + centroid.offset),
+            State::Centroid(centroid) => Some(Point2::from(centroid.area.pos()) + centroid.offset),
             State::Anchor(anchor) => Some(anchor.pos)
         }
     }
@@ -109,7 +109,7 @@ impl ImageTracker {
                         if line[x as usize] < (MIN_REL_BRIGHTNESS_FOR_CENTROID * 255.0) as u8 { line[x as usize] = 0; }
                     }
                 }
-                let new_c = frag8.centroid(None);
+                let new_c = Point2::from(frag8.centroid(None)).cast::<i32>().unwrap();
 
                 // TODO: make it configurable
                 // ignore a sudden jump which seems implausibly large; it's likely due to an image artifact

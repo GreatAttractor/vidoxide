@@ -11,7 +11,7 @@
 //!
 
 use ga_image::{Image, ImageView, PixelFormat};
-use ga_image::point::Rect;
+use ga_image::Rect;
 
 #[derive(Debug)]
 pub struct HistogramRequest {
