@@ -193,13 +193,15 @@ fn draw(ctx: &cairo::Context, widget_size: (i32, i32), state: &Rc<RefCell<State>
     let s = widget_size.0 as f64 / state.logical_display_size;
     ctx.scale(s, s);
 
-    ctx.set_line_width(2.5 / s);
+    const LINE_WIDTH: f64 = 5.0;
+
+    ctx.set_line_width(LINE_WIDTH / s);
     ctx.set_source_rgb(1.0, 0.0, 0.0);
     ctx.move_to(0.0, 0.0);
     ctx.line_to(state.avg_red_offset.x, state.avg_red_offset.y);
     ctx.stroke().unwrap();
 
-    ctx.set_line_width(2.5 / s);
+    ctx.set_line_width(LINE_WIDTH / s);
     ctx.set_source_rgb(0.3, 0.3, 1.0);
     ctx.move_to(0.0, 0.0);
     ctx.line_to(state.avg_blue_offset.x, state.avg_blue_offset.y);
