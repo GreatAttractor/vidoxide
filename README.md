@@ -44,6 +44,10 @@ Demonstration video: [link](https://www.youtube.com/watch?v=7s_nibrTrsU)
   - live crop: only a ROI around a selected image feature is recorded
   - preview stabilization (e.g., for focusing in windy conditions)
 
+**Dispersion indicator**: helps to adjust an Atmospheric Dispersion Corrector down to 0.1-pixel accuracy (of R-G, B-G channel offset)
+
+**Collimation helper**: shows a live stack of a star image to aid collimation in less-than-perfect seeing conditions
+
 **Output formats:**
   - TIFF or BMP image sequence
   - SER video
