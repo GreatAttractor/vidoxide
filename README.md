@@ -73,6 +73,8 @@ will build Vidoxide with the IIDC, V4L2, FlyCapture 2, Spinnaker and ASI drivers
 Install the [Rust toolchain](https://www.rust-lang.org/learn/get-started). C & C++ toolchain is also required, as are GTK3 development libraries, and those needed by camera drivers you wish to use.
 
 *Detailed instructions: to be provided.*
+(V4L2 needs (on Fedora): `llvm-devel`, `clang`)
+(on Linux etc. you might need to set `LD_LIBRARY_PATH` to (e.g.) `/opt/spinnaker/lib`)
 
 
 ### 3.2. MS Windows
