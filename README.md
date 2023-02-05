@@ -116,3 +116,7 @@ Increase the USB-FS buffer size, e.g. (run as root):
 ```
 # echo 1000 > /sys/module/usbcore/parameters/usbfs_memory_mb
 ```
+
+#### Cannot build under Linux due to libSpinnaker.so.2 not found
+
+When building, use `LD_LIBRARY_PATH=/opt/spinnaker/lib`.
