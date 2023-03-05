@@ -85,6 +85,102 @@ impl HistogramView {
     }
 }
 
+fn draw_histogram_rgb_values(
+    histogram: &Histogram,
+    log_scale: bool,
+    ctx: &cairo::Context,
+    log_values: &[[f32; 3]; 256],
+    width: i32,
+    height: i32,
+    num_buckets: usize,
+    max_value: usize,
+    brightness: f64
+) {
+    // first, draw the black baground
+
+    ctx.set_operator(cairo::Operator::Over);
+    ctx.set_source_rgb(0.0, 0.0, 0.0);
+
+    for (i, rgb) in histogram.values().iter().enumerate() {
+        let max_bar_height = if log_scale {
+            *log_values[i].iter().max_by(|a, b| a.partial_cmp(&b).unwrap()).unwrap() as f64 * height as f64
+        } else {
+            (*rgb.iter().max().unwrap() as i32 * height) as f64 / max_value as f64
+        };
+
+        ctx.rectangle(
+            (i as i32 * width) as f64 / num_buckets as f64,
+            height as f64 - max_bar_height,
+            width as f64 / num_buckets as f64,
+            max_bar_height
+        );
+    }
+
+    ctx.fill().unwrap();
+
+    // second, draw the color bars additively
+
+    ctx.set_operator(cairo::Operator::Add);
+
+    let bar_colors = [
+        [brightness, 0.0, 0.0],
+        [0.0, brightness, 0.0],
+        [0.0, 0.0, brightness]
+    ];
+
+    for channel in 0..3 {
+        let color = &bar_colors[channel];
+        ctx.set_source_rgba(color[0], color[1], color[2], 1.0);
+
+        for (i, rgb) in histogram.values().iter().enumerate() {
+            let bar_height = if log_scale {
+                log_values[i][channel] as f64 * height as f64
+            } else {
+                (rgb[channel] as i32 * height) as f64 / max_value as f64
+            };
+
+            ctx.rectangle(
+                (i as i32 * width) as f64 / num_buckets as f64,
+                height as f64 - bar_height,
+                width as f64 / num_buckets as f64,
+                bar_height
+            );
+        }
+
+        ctx.fill().unwrap();
+    }
+}
+
+fn draw_histogram_mono_values(
+    histogram: &Histogram,
+    log_scale: bool,
+    ctx: &cairo::Context,
+    log_values: &[[f32; 3]; 256],
+    width: i32,
+    height: i32,
+    num_buckets: usize,
+    max_value: usize,
+    brightness: f64
+
+) {
+    ctx.set_source_rgb(brightness, brightness, brightness);
+    for (i, rgb) in histogram.values().iter().enumerate() {
+        let bar_height = if log_scale {
+            log_values[i][0] as f64 * height as f64
+        } else {
+            (rgb[0] as i32 * height) as f64 / max_value as f64
+        };
+
+        ctx.rectangle(
+            (i as i32 * width) as f64 / num_buckets as f64,
+            height as f64 - bar_height,
+            width as f64 / num_buckets as f64,
+            bar_height
+        );
+    }
+    ctx.fill().unwrap();
+}
+
 fn draw_histogram(histogram: &Histogram, log_scale: bool, d_area: &gtk::DrawingArea, ctx: &cairo::Context) {
     ctx.set_antialias(cairo::Antialias::None);
 
@@ -108,77 +204,13 @@ fn draw_histogram(histogram: &Histogram, log_scale: bool, d_area: &gtk::DrawingA
     let num_buckets = histogram.values().len();
 
     if histogram.is_rgb() {
-
-        // first, draw the black baground
-
-        ctx.set_operator(cairo::Operator::Over);
-        ctx.set_source_rgb(0.0, 0.0, 0.0);
-
-        for (i, rgb) in histogram.values().iter().enumerate() {
-            let max_bar_height = if log_scale {
-                *log_values[i].iter().max_by(|a, b| a.partial_cmp(&b).unwrap()).unwrap() as f64 * height as f64
-            } else {
-                (*rgb.iter().max().unwrap() as i32 * height) as f64 / max_value as f64
-            };
-
-            ctx.rectangle(
-                (i as i32 * width) as f64 / num_buckets as f64,
-                height as f64 - max_bar_height,
-                width as f64 / num_buckets as f64,
-                max_bar_height
-            );
-        }
-
-        ctx.fill().unwrap();
-
-        // second, draw the color bars additively
-
-        ctx.set_operator(cairo::Operator::Add);
-
-        let bar_colors = [
-            [brightness, 0.0, 0.0],
-            [0.0, brightness, 0.0],
-            [0.0, 0.0, brightness]
-        ];
-
-        for channel in 0..3 {
-            let color = &bar_colors[channel];
-            ctx.set_source_rgba(color[0], color[1], color[2], 1.0);
-
-            for (i, rgb) in histogram.values().iter().enumerate() {
-                let bar_height = if log_scale {
-                    log_values[i][channel] as f64 * height as f64
-                } else {
-                    (rgb[channel] as i32 * height) as f64 / max_value as f64
-                };
-
-                ctx.rectangle(
-                    (i as i32 * width) as f64 / num_buckets as f64,
-                    height as f64 - bar_height,
-                    width as f64 / num_buckets as f64,
-                    bar_height
-                );
-            }
-
-            ctx.fill().unwrap();
-        }
+        draw_histogram_rgb_values(
+            histogram, log_scale, ctx, &log_values, width, height, num_buckets, max_value, brightness
+        );
     } else {
-        ctx.set_source_rgb(brightness, brightness, brightness);
-        for (i, rgb) in histogram.values().iter().enumerate() {
-            let bar_height = if log_scale {
-                log_values[i][0] as f64 * height as f64
-            } else {
-                (rgb[0] as i32 * height) as f64 / max_value as f64
-            };
-
-            ctx.rectangle(
-                (i as i32 * width) as f64 / num_buckets as f64,
-                height as f64 - bar_height,
-                width as f64 / num_buckets as f64,
-                bar_height
-            );
-        }
-        ctx.fill().unwrap();
+        draw_histogram_mono_values(
+            histogram, log_scale, ctx, &log_values, width, height, num_buckets, max_value, brightness
+        );
     }
 
     // draw grid and info
