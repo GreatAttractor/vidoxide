@@ -45,6 +45,18 @@ impl From<std::io::Error> for CameraError {
     }
 }
 
+/// Documentation does not say if the provided char arrays (e.g., `v4l2_queryctrl::name`) are always NUL-terminated,
+/// so let us make sure ourselves.
+fn v4l2_char_array_to_string(chars: &[u8]) -> String {
+    let nul_exists = chars.iter().find(|ch| **ch == 0).is_some();
+    if nul_exists {
+        String::from(unsafe { std::ffi::CStr::from_ptr(chars.as_ptr() as *const i8) }.to_str().unwrap())
+    } else {
+        let u8_vec: Vec<u8> = chars.iter().map(|ch| *ch as u8).collect();
+        String::from_utf8(u8_vec).unwrap()
+    }
+}
+
 fn is_fourcc(value: u32, chars: &[u8; 4]) -> bool {
     value as u8 == chars[0] &&
     (value >> 8) as u8 == chars[1] &&
@@ -205,6 +217,41 @@ impl Camera for V4L2Camera {
     fn temperature(&self) -> Option<f64> { None }
 
     fn enumerate_controls(&mut self) -> Result<Vec<CameraControl>, CameraError> {
+        let mut qctrl = unsafe { std::mem::zeroed::<v4l2_sys::v4l2_queryctrl>() };
+        qctrl.id = v4l2_sys::V4L2_CTRL_FLAG_NEXT_CTRL;
+        while 0 == unsafe { ioctl::ioctl(self.fd, v4l2_sys::VIDIOC_QUERYCTRL, &mut qctrl) }
+        {
+            if qctrl.flags & v4l2_sys::V4L2_CTRL_FLAG_DISABLED != 0
+            {
+                qctrl.id |= v4l2_sys::V4L2_CTRL_FLAG_NEXT_CTRL;
+                continue;
+            }
+
+            let mut ctrl = unsafe { std::mem::zeroed::<v4l2_sys::v4l2_ext_control>() };
+            ctrl.id = qctrl.id;
+            //controls.push_back(ctrl);
+
+            // FeatureInfo_t feature;
+            // feature.name = std::string((const char *)qctrl.name);
+
+            println!("V4L2: found control {}", v4l2_char_array_to_string(&qctrl.name));
+
+            // feature.readoutCapable = false;//!(qctrl.flags & V4L2_CTRL_FLAG_WRITE_ONLY);
+
+            // feature.isOnOffCapable = false;
+            // feature.isAbsoluteCapable = false;
+            // feature.isReadOnly = qctrl.flags & V4L2_CTRL_FLAG_READ_ONLY;
+            // feature.isInAutoMode = false;
+            // feature.min = qctrl.minimum;
+            // feature.max = qctrl.maximum;
+            // feature.value = GetControlValue(&controls.back());
+
+            // features.push_back(feature);
+
+            qctrl.id |= v4l2_sys::V4L2_CTRL_FLAG_NEXT_CTRL;
+        }
+
+
         Ok(vec![])
     }
 
