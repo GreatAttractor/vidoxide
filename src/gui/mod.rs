@@ -878,7 +878,7 @@ fn show_about_dialog() {
     show_message(
         &format!(
             "<big><big><b>Vidoxide</b></big></big>\n\n\
-            Copyright © 2020-2022 Filip Szczerek (ga.software@yahoo.com)\n\n\
+            Copyright © 2020-2023 Filip Szczerek (ga.software@yahoo.com)\n\n\
             This project is licensed under the terms of the MIT license (see the LICENSE file for details).\n\n\
             version: {}\n\
             OS: {}",
