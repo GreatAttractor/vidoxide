@@ -1,5 +1,5 @@
 # Vidoxide
-Copyright (C) 2020-2022 Filip Szczerek (ga.software@yahoo.com)
+Copyright (C) 2020-2023 Filip Szczerek (ga.software@yahoo.com)
 
 *This program is licensed under MIT license (see LICENSE.txt for details).*
 
