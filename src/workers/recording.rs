@@ -155,16 +155,24 @@ pub fn recording_thread(
                             end_job!();
                         } else {
                         //END TODO
-                            match job.writer.write(&ImageView::new(&*image, Some(fragment))) {
-                                Err(err) => {
-                                    sender.send(RecordingToMainThreadMsg::Error(err)).unwrap();
-                                    end_job!();
-                                },
 
-                                Ok(()) => {
-                                    let kib_written = image.num_pixel_bytes_without_padding() / 1024;
-                                    total_kib_written += kib_written;
-                                    written_kib_since_update += kib_written;
+                            if !(*image).img_rect().contains_rect(&fragment) {
+                                sender.send(RecordingToMainThreadMsg::Error(
+                                    "attempted to record fragment outside image bounds".into()
+                                )).unwrap();
+                                end_job!();
+                            } else {
+                                match job.writer.write(&ImageView::new(&*image, Some(fragment))) {
+                                    Err(err) => {
+                                        sender.send(RecordingToMainThreadMsg::Error(err)).unwrap();
+                                        end_job!();
+                                    },
+
+                                    Ok(()) => {
+                                        let kib_written = image.num_pixel_bytes_without_padding() / 1024;
+                                        total_kib_written += kib_written;
+                                        written_kib_since_update += kib_written;
+                                    }
                                 }
                             }
                         }
