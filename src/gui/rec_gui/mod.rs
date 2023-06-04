@@ -136,23 +136,22 @@ fn on_start_recording(program_data_rc: &Rc<RefCell<ProgramData>>) {
         return;
     }
 
-    let (rec_sender, rec_receiver) = crossbeam::channel::unbounded();
-
-    if program_data_rc.borrow_mut().capture_thread_data.as_ref().unwrap().sender.send(
-        MainToCaptureThreadMsg::StartRecording((rec_sender, rec_limit))
-    ).is_err() {
-        crate::on_capture_thread_failure(program_data_rc);
-        return;
-    }
-
     let writer: Box<dyn output::OutputWriter> = match output_fmt {
         OutputFormat::AviVideo | OutputFormat::SerVideo => {
-            let file = std::fs::OpenOptions::new().read(false).write(true).create(true).open(&dest_path).unwrap();
-            if output_fmt == OutputFormat::AviVideo {
-                show_message("Recording as AVI not implemented yet.", "Error", gtk::MessageType::Error);
-                return;
-            } else {
-                Box::new(output::ser::SerVideo::new(file))
+            match std::fs::OpenOptions::new().read(false).write(true).create(true).open(&dest_path) {
+                Err(e) => {
+                    show_message(&format!("Error creating file: {}.", e), "Error", gtk::MessageType::Error);
+                    return;
+                },
+
+                Ok(file) => {
+                    if output_fmt == OutputFormat::AviVideo {
+                        show_message("Recording as AVI not implemented yet.", "Error", gtk::MessageType::Error);
+                        return;
+                    } else {
+                        Box::new(output::ser::SerVideo::new(file))
+                    }
+                }
             }
         },
 
@@ -162,6 +161,15 @@ fn on_start_recording(program_data_rc: &Rc<RefCell<ProgramData>>) {
             ))
         }
     };
+
+    let (rec_sender, rec_receiver) = crossbeam::channel::unbounded();
+
+    if program_data_rc.borrow_mut().capture_thread_data.as_ref().unwrap().sender.send(
+        MainToCaptureThreadMsg::StartRecording((rec_sender, rec_limit))
+    ).is_err() {
+        crate::on_capture_thread_failure(program_data_rc);
+        return;
+    }
 
     let new_job = recording::Job::new(rec_receiver, writer);
 
