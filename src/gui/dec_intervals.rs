@@ -63,7 +63,7 @@ impl DecIntervalsWidget {
         let prev_idx = self.combo().active();
 
         for (idx, interval) in self.intervals.iter().enumerate() {
-            if value < interval.0 || value > interval.1 {
+            if idx > 0 && value < interval.0 || idx < self.intervals.len() - 1 &&  value > interval.1 {
                 continue;
             }
 
