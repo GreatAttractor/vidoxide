@@ -55,6 +55,7 @@ pub enum MainToCaptureThreadMsg {
     EnableCentroidTracking(Rect),
     EnableAnchorTracking(Point2<i32>),
     EnableRecordingCrop(Rect),
+    DisableRecordingCrop
 }
 
 struct RecData {
@@ -255,7 +256,9 @@ pub fn capture_thread(
                     };
 
                     crop_data = Some(CropData{ tracking_pos_offset, area });
-                }
+                },
+
+                MainToCaptureThreadMsg::DisableRecordingCrop => crop_data = None
             }
         }
     }

@@ -37,6 +37,7 @@ const PADDING: u32 = 10;
 pub struct RecWidgets {
     btn_record: gtk::Button,
     btn_stop: gtk::Button,
+    btn_nocrop: gtk::Button,
     name_prefix: gtk::Entry,
     dest_dir: gtk::FileChooserButton,
     output_fmt_getter: Box<dyn Fn() -> output::OutputFormat>,
@@ -53,18 +54,21 @@ impl RecWidgets {
     pub fn on_disconnect(&self) {
         self.btn_record.set_sensitive(false);
         self.btn_stop.set_sensitive(false);
+        self.btn_nocrop.set_sensitive(false);
         self.others.set_sensitive(false);
     }
 
     pub fn on_connect(&self) {
         self.btn_record.set_sensitive(true);
         self.btn_stop.set_sensitive(false);
+        self.btn_nocrop.set_sensitive(true); //TODO: only if crop enabled
         self.others.set_sensitive(true);
     }
 
     pub fn on_start_recording(&self) {
         self.btn_record.set_sensitive(false);
         self.btn_stop.set_sensitive(true);
+        self.btn_nocrop.set_sensitive(false);
         self.others.set_sensitive(false);
     }
 
@@ -72,12 +76,14 @@ impl RecWidgets {
         self.sequence_timer.stop();
         self.btn_record.set_sensitive(true);
         self.btn_stop.set_sensitive(false);
+        self.btn_nocrop.set_sensitive(true); //TODO: only if crop enabled
         self.others.set_sensitive(true);
     }
 
     pub fn on_recording_ended(&self) {
         self.btn_record.set_sensitive(true);
         self.btn_stop.set_sensitive(false);
+        self.btn_nocrop.set_sensitive(true); //TODO: only if crop enabled
         self.others.set_sensitive(true);
     }
 
@@ -272,9 +278,20 @@ pub fn create_recording_panel(program_data_rc: &Rc<RefCell<ProgramData>>) -> (gt
     btn_snapshot.set_tooltip_text(Some("Take snapshot"));
     btn_snapshot.set_action_name(Some(&actions::prefixed(actions::TAKE_SNAPSHOT)));
 
+    let btn_nocrop = gtk::Button::with_label("✂");
+    btn_nocrop.set_sensitive(false);
+    btn_nocrop.set_tooltip_text(Some("Disable recording crop"));
+    btn_nocrop.connect_clicked(clone!(@weak program_data_rc => @default-panic, move |_| {
+        let mut pd = program_data_rc.borrow_mut();
+        pd.capture_thread_data.as_ref().unwrap().sender.send(MainToCaptureThreadMsg::DisableRecordingCrop).unwrap();
+        pd.crop_area = None;
+    }));
+
     let btn_box = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     btn_box.pack_start(&btn_record, false, false, PADDING);
     btn_box.pack_start(&btn_stop, false, false, PADDING);
+
+    btn_box.pack_end(&btn_nocrop, false, false, PADDING);
     btn_box.pack_end(&btn_snapshot, false, false, PADDING);
 
     let others = gtk::Box::new(gtk::Orientation::Vertical, 0);
@@ -358,6 +375,7 @@ pub fn create_recording_panel(program_data_rc: &Rc<RefCell<ProgramData>>) -> (gt
     (box_all, RecWidgets{
         btn_record,
         btn_stop,
+        btn_nocrop,
         name_prefix,
         dest_dir,
         others,
