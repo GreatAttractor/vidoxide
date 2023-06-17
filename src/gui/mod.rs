@@ -14,7 +14,7 @@ mod camera_gui;
 mod dec_intervals;
 mod dispersion_dialog;
 mod freezeable;
-mod gamma_dialog;
+mod preview_processing;
 mod histogram_utils;
 mod histogram_view;
 mod img_view;
@@ -44,7 +44,7 @@ use crate::workers::recording::RecordingToMainThreadMsg;
 use dispersion_dialog::DispersionDialog;
 use ga_image;
 use ga_image::Rect;
-use gamma_dialog::create_gamma_dialog;
+use preview_processing::create_preview_processing_dialog;
 use glib::clone;
 use gtk::cairo;
 use gtk::prelude::*;
@@ -137,9 +137,26 @@ pub struct Reticle {
     line_width: f64
 }
 
-pub struct GammaCorrection {
+#[derive(Copy, Clone)]
+pub struct Decibel(f32);
+
+impl Decibel {
+    fn get_gain_factor(&self) -> f32 { 10.0f32.powf(self.0 / 10.0) }
+}
+
+/// Processing is applied to the whole image or only to histogram area, if set.
+#[derive(Clone)]
+pub struct PreviewProcessing {
     dialog: gtk::Dialog,
-    gamma: f32
+    gamma: f32,
+    gain: Decibel,
+    stretch_histogram: bool
+}
+
+impl PreviewProcessing {
+    pub fn is_effective(&self) -> bool {
+        self.gamma != 1.0 || self.gain.0 != 0.0 || self.stretch_histogram
+    }
 }
 
 pub struct Stabilization {
@@ -158,7 +175,7 @@ pub struct GuiData {
     rec_widgets: RecWidgets,
     reticle: Reticle,
     stabilization: Stabilization,
-    gamma_correction: GammaCorrection,
+    preview_processing: PreviewProcessing,
     dispersion_dialog: DispersionDialog,
     psf_dialog: PsfDialog,
     mount_widgets: MountWidgets,
@@ -444,9 +461,11 @@ pub fn init_main_window(app: &gtk::Application, program_data_rc: &Rc<RefCell<Pro
             position: Point2::origin(),
             toggle_button: stabilization_button
         },
-        gamma_correction: GammaCorrection {
-            dialog: create_gamma_dialog(&window, &program_data_rc),
-            gamma: 1.0
+        preview_processing: PreviewProcessing {
+            dialog: create_preview_processing_dialog(&window, &program_data_rc),
+            gamma: 1.0,
+            gain: Decibel(0.0),
+            stretch_histogram: false
         },
         dispersion_dialog: DispersionDialog::new(&window, &program_data_rc),
         psf_dialog: PsfDialog::new(&window, &program_data_rc),
@@ -827,12 +846,6 @@ fn init_preview_menu(
     snapshot.add_accelerator(gtk_signals::ACTIVATE, accel_group, key, modifier, gtk::AccelFlags::VISIBLE);
     menu.append(&snapshot);
 
-    let strech_histogram = gtk::CheckMenuItem::with_label("Stretch histogram");
-    strech_histogram.connect_activate(clone!(@weak program_data_rc => @default-panic, move |_| {
-        program_data_rc.borrow_mut().stretch_histogram ^= true;
-    }));
-    menu.append(&strech_histogram);
-
     let demosaic_raw_color = gtk::CheckMenuItem::with_label("Demosaic raw color");
     demosaic_raw_color.connect_activate(clone!(@weak program_data_rc => @default-panic, move |_| {
         program_data_rc.borrow_mut().demosaic_preview ^= true;
@@ -851,11 +864,11 @@ fn init_preview_menu(
     }));
     menu.append(&reticle_settings);
 
-    let gamma = gtk::MenuItem::with_label("Gamma correction...");
-    gamma.connect_activate(clone!(@weak program_data_rc => @default-panic, move |_| {
-        program_data_rc.borrow().gui.as_ref().unwrap().gamma_correction.dialog.show();
+    let preview_processing = gtk::MenuItem::with_label("Processing...");
+    preview_processing.connect_activate(clone!(@weak program_data_rc => @default-panic, move |_| {
+        program_data_rc.borrow().gui.as_ref().unwrap().preview_processing.dialog.show();
     }));
-    menu.append(&gamma);
+    menu.append(&preview_processing);
 
     let dispersion = gtk::MenuItem::with_label("Atmospheric dispersion indicator...");
     dispersion.connect_activate(clone!(@weak program_data_rc => @default-panic, move |_| {
@@ -1137,6 +1150,49 @@ fn gamma_correct(image: &mut ga_image::Image, gamma: f32, fragment: Rect) {
     }
 }
 
+fn apply_gain(image: &mut ga_image::Image, gain_factor: f32, fragment: Rect) {
+    match image.pixel_format() {
+        ga_image::PixelFormat::Mono8 |
+        ga_image::PixelFormat::RGB8 |
+        ga_image::PixelFormat::BGR8 |
+        ga_image::PixelFormat::BGRA8 |
+        ga_image::PixelFormat::CfaRGGB8 |
+        ga_image::PixelFormat::CfaGRBG8 |
+        ga_image::PixelFormat::CfaGBRG8 |
+        ga_image::PixelFormat::CfaBGGR8 => apply_gain_impl::<u8>(image, 0xFF, gain_factor, fragment),
+
+        ga_image::PixelFormat::Mono16 |
+        ga_image::PixelFormat::RGB16 |
+        ga_image::PixelFormat::RGBA16 |
+        ga_image::PixelFormat::CfaRGGB16 |
+        ga_image::PixelFormat::CfaGRBG16 |
+        ga_image::PixelFormat::CfaGBRG16 |
+        ga_image::PixelFormat::CfaBGGR16 => apply_gain_impl::<u16>(image, 0xFFFF, gain_factor, fragment),
+
+        ga_image::PixelFormat::Mono32f |
+        ga_image::PixelFormat::RGB32f => apply_gain_impl::<f32>(image, 1.0, gain_factor, fragment),
+
+        ga_image::PixelFormat::Mono64f |
+        ga_image::PixelFormat::RGB64f => apply_gain_impl::<f64>(image, 1.0, gain_factor, fragment),
+
+        _ => unimplemented!()
+    }
+}
+
+fn apply_gain_impl<T>(image: &mut ga_image::Image, max_value: T, gain_factor: f32, fragment: Rect)
+where T: Default + FromPrimitive + AsPrimitive<f32>
+{
+    let num_ch = image.pixel_format().num_channels() as i32;
+
+    for y in fragment.y .. fragment.y + fragment.height as i32 {
+        let line = image.line_mut::<T>(y as u32);
+        for x in num_ch * fragment.x .. num_ch * (fragment.x + fragment.width as i32) {
+            let new_value = (AsPrimitive::<f32>::as_(line[x as usize]) * gain_factor).max(0.0);
+            line[x as usize] = FromPrimitive::from_f32(new_value).unwrap_or(max_value);
+        }
+    }
+}
+
 fn on_preview_image_ready(
     program_data_rc: &Rc<RefCell<ProgramData>>,
     img: std::sync::Arc<ga_image::Image>,
@@ -1174,19 +1230,36 @@ fn on_preview_image_ready(
 
     program_data.gui.as_mut().unwrap().psf_dialog.update(&*img, helpers_update_area);
 
+    let preview_processing = program_data.gui.as_ref().unwrap().preview_processing.clone();
+
     let mut displayed_img = std::sync::Arc::clone(&img);
 
-    let gamma = program_data.gui.as_ref().unwrap().gamma_correction.gamma;
-    if gamma != 1.0 {
-        let mut new_image = (*img).clone();
-        gamma_correct(&mut new_image, gamma, program_data.histogram_area.unwrap_or(img.img_rect()));
-        displayed_img = std::sync::Arc::new(new_image);
+    let mut processed_img: Option<ga_image::Image> = if preview_processing.is_effective() {
+        Some((*displayed_img).clone())
+    } else {
+        None
+    };
+
+    if preview_processing.gain.0 != 0.0 {
+        let gf = preview_processing.gain.get_gain_factor();
+        apply_gain(processed_img.as_mut().unwrap(), gf, program_data.histogram_area.unwrap_or(img.img_rect()));
     }
 
-    if program_data.stretch_histogram {
-        displayed_img = std::sync::Arc::new(
-            histogram_utils::stretch_histogram(&*displayed_img, &program_data.histogram_area)
+    if preview_processing.gamma != 1.0 {
+        gamma_correct(
+            processed_img.as_mut().unwrap(),
+            preview_processing.gamma,
+            program_data.histogram_area.unwrap_or(img.img_rect())
         );
+    }
+
+    if preview_processing.stretch_histogram {
+        processed_img =
+            Some(histogram_utils::stretch_histogram(processed_img.as_ref().unwrap(), &program_data.histogram_area));
+    }
+
+    if let Some(processed_img) = processed_img {
+        displayed_img = std::sync::Arc::new(processed_img);
     }
 
     let stabilization_offset = if program_data.gui.as_ref().unwrap().stabilization.toggle_button.is_active() {

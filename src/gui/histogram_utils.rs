@@ -14,6 +14,7 @@ use ga_image::{Image, ImageView, Rect};
 use num_traits::{bounds::Bounded, cast::AsPrimitive};
 use std::ops::{Div, Mul, Sub};
 
+#[must_use]
 pub fn stretch_histogram(image: &Image, area: &Option<Rect>) -> Image {
     let mut result = image.clone();
 

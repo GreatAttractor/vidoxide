@@ -202,8 +202,6 @@ pub struct ProgramData {
     t_last_histogram: Option<std::time::Instant>,
     /// If true, raw color images are demosaiced for preview.
     demosaic_preview: bool,
-    /// If true, whole image (or just `histogram_area`, if set) has its histogram stretched for preview.
-    stretch_histogram: bool,
     preview_fps_limit: Option<i32>,
     last_displayed_preview_image_timestamp: Option<std::time::Instant>,
     last_displayed_preview_image: Option<ga_image::Image>,
@@ -299,7 +297,6 @@ fn main() {
         rec_job_active: false,
         t_last_histogram: None,
         demosaic_preview: false,
-        stretch_histogram: false,
         preview_fps_limit,
         last_displayed_preview_image_timestamp: None,
         last_displayed_preview_image: None,
