@@ -1137,6 +1137,166 @@ fn gamma_correct(image: &mut ga_image::Image, gamma: f32, fragment: Rect) {
     }
 }
 
+fn on_preview_image_ready(
+    program_data_rc: &Rc<RefCell<ProgramData>>,
+    img: std::sync::Arc<ga_image::Image>,
+    tracking_pos: Option<Point2<i32>>
+) {
+    let mut program_data = program_data_rc.borrow_mut();
+
+    let now = std::time::Instant::now();
+    if let Some(fps_limit) = program_data.preview_fps_limit {
+        if let Some(last_preview_ts) = program_data.last_displayed_preview_image_timestamp {
+            if (now - last_preview_ts).as_secs_f64() < 1.0 / fps_limit as f64 {
+                return;
+            }
+        }
+    }
+    program_data.last_displayed_preview_image_timestamp = Some(now);
+
+    if let Some(area) = program_data.histogram_area {
+        if !img.img_rect().contains_rect(&area) {
+            println!("WARNING: histogram calculation area outside image boundaries; disabling.");
+            program_data.histogram_area = None;
+        }
+    }
+
+    let helpers_update_area: Option<Rect> = match &program_data.tracking {
+        Some(tracking) => match tracking.mode {
+            crate::TrackingMode::Centroid(centroid_area) => Some(centroid_area),
+            _ => None
+        },
+        _ => None
+    };
+    let dispersion_img_view = ga_image::ImageView::new(&*img, helpers_update_area);
+
+    program_data.gui.as_mut().unwrap().dispersion_dialog.update(&dispersion_img_view);
+
+    program_data.gui.as_mut().unwrap().psf_dialog.update(&*img, helpers_update_area);
+
+    let mut displayed_img = std::sync::Arc::clone(&img);
+
+    let gamma = program_data.gui.as_ref().unwrap().gamma_correction.gamma;
+    if gamma != 1.0 {
+        let mut new_image = (*img).clone();
+        gamma_correct(&mut new_image, gamma, program_data.histogram_area.unwrap_or(img.img_rect()));
+        displayed_img = std::sync::Arc::new(new_image);
+    }
+
+    if program_data.stretch_histogram {
+        displayed_img = std::sync::Arc::new(
+            histogram_utils::stretch_histogram(&*displayed_img, &program_data.histogram_area)
+        );
+    }
+
+    let stabilization_offset = if program_data.gui.as_ref().unwrap().stabilization.toggle_button.is_active() {
+        if let Some(t_pos) = &tracking_pos {
+            t_pos - program_data.gui.as_ref().unwrap().stabilization.position
+        } else {
+            // tracking has been disabled, `on_tracking_ended` will be called shortly
+            Vector2::zero()
+        }
+    } else {
+        Vector2::zero()
+    };
+
+    let img_bgra24 = displayed_img.convert_pix_fmt(
+        ga_image::PixelFormat::BGRA8,
+        if program_data.demosaic_preview { Some(ga_image::DemosaicMethod::Simple) } else { None }
+    );
+
+    let stride = img_bgra24.bytes_per_line() as i32;
+    program_data.gui.as_ref().unwrap().preview_area.set_image(
+        cairo::ImageSurface::create_for_data(
+            img_bgra24.take_pixel_data(),
+            cairo::Format::Rgb24, // actually means: BGRA
+            img.width() as i32,
+            img.height() as i32,
+            stride
+        ).unwrap(),
+        stabilization_offset
+    );
+    program_data.gui.as_ref().unwrap().preview_area.refresh();
+
+    const HISTOGRAM_UPDATE_INTERVAL: std::time::Duration = std::time::Duration::from_millis(250);
+    if program_data.t_last_histogram.is_none() ||
+       program_data.t_last_histogram.as_ref().unwrap().elapsed() >= HISTOGRAM_UPDATE_INTERVAL {
+
+        program_data.histogram_sender.send(MainToHistogramThreadMsg::CalculateHistogram(HistogramRequest{
+            image: (*img).clone(),
+            fragment: program_data.histogram_area.clone()
+        })).unwrap();
+
+        program_data.t_last_histogram = Some(std::time::Instant::now());
+    }
+
+    program_data.last_displayed_preview_image = Some((*img).clone());
+
+    program_data.preview_fps_counter += 1;
+}
+
+fn on_capture_paused(
+    program_data_rc: &Rc<RefCell<ProgramData>>
+) {
+    let mut show_error: Option<CameraError> = None;
+    let action = program_data_rc.borrow().on_capture_pause_action;
+    match action {
+        Some(action) => match action {
+            OnCapturePauseAction::ControlChange(CameraControlChange{ id, value }) => {
+                let res = match value {
+                    NewControlValue::ListOptionIndex(option_idx) =>
+                        program_data_rc.borrow_mut().camera.as_mut().unwrap().set_list_control(id, option_idx),
+
+                    NewControlValue::Boolean(state) =>
+                        program_data_rc.borrow_mut().camera.as_mut().unwrap().set_boolean_control(id, state),
+
+                    NewControlValue::Numerical(num_val) =>
+                        program_data_rc.borrow_mut().camera.as_mut().unwrap().set_number_control(id, num_val),
+                };
+
+                if let Err(e) = res {
+                    show_message(
+                        &format!("Failed to set camera control:\n{:?}", e),
+                        "Error",
+                        gtk::MessageType::Error
+                    );
+                } else {
+                    camera_gui::schedule_refresh(program_data_rc);
+                }
+            },
+
+            OnCapturePauseAction::SetROI(rect) => {
+                let result = program_data_rc.borrow_mut().camera.as_mut().unwrap().set_roi(
+                    rect.x as u32,
+                    rect.y as u32,
+                    rect.width,
+                    rect.height
+                );
+                match result {
+                    Err(err) => show_error = Some(err),
+                    _ => camera_gui::schedule_refresh(program_data_rc)
+                }
+            },
+
+            OnCapturePauseAction::DisableROI => {
+                program_data_rc.borrow_mut().camera.as_mut().unwrap().unset_roi().unwrap();
+                camera_gui::schedule_refresh(program_data_rc);
+            }
+        },
+        _ => ()
+    }
+
+    if program_data_rc.borrow_mut().capture_thread_data.as_mut().unwrap().sender.send(
+        MainToCaptureThreadMsg::Resume
+    ).is_err() {
+        crate::on_capture_thread_failure(program_data_rc);
+    }
+
+    if let Some(error) = show_error {
+        show_message(&format!("Failed to set ROI:\n{:?}", error), "Error", gtk::MessageType::Error);
+    }
+}
+
 fn on_capture_thread_message(
     msg: CaptureToMainThreadMsg,
     program_data_rc: &Rc<RefCell<ProgramData>>
@@ -1146,98 +1306,7 @@ fn on_capture_thread_message(
     loop { match msg {
         CaptureToMainThreadMsg::PreviewImageReady((img, tracking_pos)) => {
             received_preview_image = true;
-
-            let mut program_data = program_data_rc.borrow_mut();
-
-            let now = std::time::Instant::now();
-            if let Some(fps_limit) = program_data.preview_fps_limit {
-                if let Some(last_preview_ts) = program_data.last_displayed_preview_image_timestamp {
-                    if (now - last_preview_ts).as_secs_f64() < 1.0 / fps_limit as f64 {
-                        break;
-                    }
-                }
-            }
-            program_data.last_displayed_preview_image_timestamp = Some(now);
-
-            if let Some(area) = program_data.histogram_area {
-                if !img.img_rect().contains_rect(&area) {
-                    println!("WARNING: histogram calculation area outside image boundaries; disabling.");
-                    program_data.histogram_area = None;
-                }
-            }
-
-            let helpers_update_area: Option<Rect> = match &program_data.tracking {
-                Some(tracking) => match tracking.mode {
-                    crate::TrackingMode::Centroid(centroid_area) => Some(centroid_area),
-                    _ => None
-                },
-                _ => None
-            };
-            let dispersion_img_view = ga_image::ImageView::new(&*img, helpers_update_area);
-
-            program_data.gui.as_mut().unwrap().dispersion_dialog.update(&dispersion_img_view);
-
-            program_data.gui.as_mut().unwrap().psf_dialog.update(&*img, helpers_update_area);
-
-            let mut displayed_img = std::sync::Arc::clone(&img);
-
-            let gamma = program_data.gui.as_ref().unwrap().gamma_correction.gamma;
-            if gamma != 1.0 {
-                let mut new_image = (*img).clone();
-                gamma_correct(&mut new_image, gamma, program_data.histogram_area.unwrap_or(img.img_rect()));
-                displayed_img = std::sync::Arc::new(new_image);
-            }
-
-            if program_data.stretch_histogram {
-                displayed_img = std::sync::Arc::new(
-                    histogram_utils::stretch_histogram(&*displayed_img, &program_data.histogram_area)
-                );
-            }
-
-            let stabilization_offset = if program_data.gui.as_ref().unwrap().stabilization.toggle_button.is_active() {
-                if let Some(t_pos) = &tracking_pos {
-                    t_pos - program_data.gui.as_ref().unwrap().stabilization.position
-                } else {
-                    // tracking has been disabled, `on_tracking_ended` will be called shortly
-                    Vector2::zero()
-                }
-            } else {
-                Vector2::zero()
-            };
-
-            let img_bgra24 = displayed_img.convert_pix_fmt(
-                ga_image::PixelFormat::BGRA8,
-                if program_data.demosaic_preview { Some(ga_image::DemosaicMethod::Simple) } else { None }
-            );
-
-            let stride = img_bgra24.bytes_per_line() as i32;
-            program_data.gui.as_ref().unwrap().preview_area.set_image(
-                cairo::ImageSurface::create_for_data(
-                    img_bgra24.take_pixel_data(),
-                    cairo::Format::Rgb24, // actually means: BGRA
-                    img.width() as i32,
-                    img.height() as i32,
-                    stride
-                ).unwrap(),
-                stabilization_offset
-            );
-            program_data.gui.as_ref().unwrap().preview_area.refresh();
-
-            const HISTOGRAM_UPDATE_INTERVAL: std::time::Duration = std::time::Duration::from_millis(250);
-            if program_data.t_last_histogram.is_none() ||
-               program_data.t_last_histogram.as_ref().unwrap().elapsed() >= HISTOGRAM_UPDATE_INTERVAL {
-
-                program_data.histogram_sender.send(MainToHistogramThreadMsg::CalculateHistogram(HistogramRequest{
-                    image: (*img).clone(),
-                    fragment: program_data.histogram_area.clone()
-                })).unwrap();
-
-                program_data.t_last_histogram = Some(std::time::Instant::now());
-            }
-
-            program_data.last_displayed_preview_image = Some((*img).clone());
-
-            program_data.preview_fps_counter += 1;
+            on_preview_image_ready(program_data_rc, img, tracking_pos);
         },
 
         CaptureToMainThreadMsg::TrackingUpdate((tracking, crop_area)) => if program_data_rc.borrow().capture_thread_data.is_some() {
@@ -1247,65 +1316,7 @@ fn on_capture_thread_message(
 
         CaptureToMainThreadMsg::TrackingFailed => on_tracking_ended(program_data_rc),
 
-        CaptureToMainThreadMsg::Paused => {
-            let mut show_error: Option<CameraError> = None;
-            let action = program_data_rc.borrow().on_capture_pause_action;
-            match action {
-                Some(action) => match action {
-                    OnCapturePauseAction::ControlChange(CameraControlChange{ id, value }) => {
-                        let res = match value {
-                            NewControlValue::ListOptionIndex(option_idx) =>
-                                program_data_rc.borrow_mut().camera.as_mut().unwrap().set_list_control(id, option_idx),
-
-                            NewControlValue::Boolean(state) =>
-                                program_data_rc.borrow_mut().camera.as_mut().unwrap().set_boolean_control(id, state),
-
-                            NewControlValue::Numerical(num_val) =>
-                                program_data_rc.borrow_mut().camera.as_mut().unwrap().set_number_control(id, num_val),
-                        };
-
-                        if let Err(e) = res {
-                            show_message(
-                                &format!("Failed to set camera control:\n{:?}", e),
-                                "Error",
-                                gtk::MessageType::Error
-                            );
-                        } else {
-                            camera_gui::schedule_refresh(program_data_rc);
-                        }
-                    },
-
-                    OnCapturePauseAction::SetROI(rect) => {
-                        let result = program_data_rc.borrow_mut().camera.as_mut().unwrap().set_roi(
-                            rect.x as u32,
-                            rect.y as u32,
-                            rect.width,
-                            rect.height
-                        );
-                        match result {
-                            Err(err) => show_error = Some(err),
-                            _ => camera_gui::schedule_refresh(program_data_rc)
-                        }
-                    },
-
-                    OnCapturePauseAction::DisableROI => {
-                        program_data_rc.borrow_mut().camera.as_mut().unwrap().unset_roi().unwrap();
-                        camera_gui::schedule_refresh(program_data_rc);
-                    }
-                },
-                _ => ()
-            }
-
-            if program_data_rc.borrow_mut().capture_thread_data.as_mut().unwrap().sender.send(
-                MainToCaptureThreadMsg::Resume
-            ).is_err() {
-                crate::on_capture_thread_failure(program_data_rc);
-            }
-
-            if let Some(error) = show_error {
-                show_message(&format!("Failed to set ROI:\n{:?}", error), "Error", gtk::MessageType::Error);
-            }
-        },
+        CaptureToMainThreadMsg::Paused => on_capture_paused(program_data_rc),
 
         CaptureToMainThreadMsg::CaptureError(error) => {
             //TODO: show a message box
