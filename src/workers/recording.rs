@@ -169,7 +169,9 @@ pub fn recording_thread(
                                     },
 
                                     Ok(()) => {
-                                        let kib_written = image.num_pixel_bytes_without_padding() / 1024;
+                                        let num_img_pixels = (image.width() * image.height()) as usize;
+                                        let num_frag_pixels = (fragment.width * fragment.height) as usize;
+                                        let kib_written = num_frag_pixels * image.num_pixel_bytes_without_padding() / num_img_pixels / 1024;
                                         total_kib_written += kib_written;
                                         written_kib_since_update += kib_written;
                                     }

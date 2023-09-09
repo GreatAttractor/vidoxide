@@ -322,7 +322,13 @@ fn on_recording(
     num_dropped_frames: &mut usize,
     crop_data: &Option<CropData>
 ) -> bool {
-    let frame_kib_amount = image.num_pixel_bytes_without_padding() / 1024;
+    let num_img_pixels = (image.width() * image.height()) as usize;
+    let num_frag_pixels = if let Some(cd) = crop_data.as_ref() {
+        (cd.area.width * cd.area.height) as usize
+    } else {
+        num_img_pixels
+    };
+    let frame_kib_amount = num_frag_pixels * image.num_pixel_bytes_without_padding() / num_img_pixels / 1024;
     if buffered_kib.load(Ordering::Relaxed) <= recording::MAX_BUFFERED_KIB {
         if rec_data.sender.send(recording::CaptureToRecordingThreadMsg::Captured((
             Arc::clone(image),
