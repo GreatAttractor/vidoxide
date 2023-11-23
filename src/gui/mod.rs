@@ -65,6 +65,7 @@ use std::path::Path;
 use std::rc::Rc;
 use std::sync::atomic::Ordering;
 
+#[cfg(feature = "controller")]
 pub use controller::on_controller_event;
 pub use mount_gui::on_mount_error;
 
