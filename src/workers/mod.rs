@@ -11,5 +11,7 @@
 //!
 
 pub mod capture;
+#[cfg(feature = "controller")]
+pub mod controller;
 pub mod histogram;
 pub mod recording;

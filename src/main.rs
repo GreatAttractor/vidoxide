@@ -368,6 +368,9 @@ fn main() {
 
     init_timer(std::time::Duration::from_secs(1), &program_data_rc);
 
+    #[cfg(feature = "controller")]
+    init_controller_thread(&program_data_rc);
+
     application.run_with_args::<String>(&[]); // make GTK ignore command-line arguments
 
     program_data_rc.borrow_mut().finish_capture_thread();
@@ -403,4 +406,18 @@ fn on_capture_thread_failure(program_data_rc: &Rc<RefCell<ProgramData>>) {
         gtk::MessageType::Error
     );
     gui::disconnect_camera(program_data_rc, true);
+}
+
+#[cfg(feature = "controller")]
+fn init_controller_thread(program_data_rc: &Rc<RefCell<ProgramData>>) {
+    let (sender_worker, receiver_main) = glib::MainContext::channel(glib::PRIORITY_DEFAULT);
+
+    receiver_main.attach(None, clone!(@weak program_data_rc => @default-panic, move |msg| {
+        gui::on_controller_event(msg, &program_data_rc);
+        glib::Continue(true)
+    }));
+
+    std::thread::spawn(move || {
+        workers::controller::controller_thread(sender_worker);
+    });
 }

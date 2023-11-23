@@ -11,6 +11,8 @@
 //!
 
 mod camera_gui;
+#[cfg(feature = "controller")]
+mod controller;
 mod dec_intervals;
 mod dispersion_dialog;
 mod freezeable;
@@ -63,6 +65,7 @@ use std::path::Path;
 use std::rc::Rc;
 use std::sync::atomic::Ordering;
 
+pub use controller::on_controller_event;
 pub use mount_gui::on_mount_error;
 
 /// Control padding in pixels.
