@@ -411,7 +411,7 @@ pub fn init_main_window(app: &gtk::Application, program_data_rc: &Rc<RefCell<Pro
     let controller_widgets;
     #[cfg(feature = "controller")]
     {
-        let (panel, widgets) = controller::create_controller_panel(program_data_rc);
+        let (panel, widgets) = controller::create_controller_panel();
         controller_widgets = widgets;
         controls_notebook.append_page(&panel, Some(&gtk::Label::new(Some("Controller"))));
     }
