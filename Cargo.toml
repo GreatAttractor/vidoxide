@@ -5,6 +5,8 @@ authors = ["Filip Szczerek <ga.software@yahoo.com>"]
 edition = "2018"
 
 [features]
+default = ["controller"]
+
 camera_asi = ["libasicamera-sys"]
 camera_flycap2 = ["libflycapture2-sys"]
 camera_iidc = ["libdc1394-sys"]

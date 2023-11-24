@@ -35,6 +35,8 @@ use camera_gui::{
     BooleanControlWidgets
 };
 use cgmath::{EuclideanSpace, Point2, Vector2, Zero};
+#[cfg(feature = "controller")]
+use controller::ControllerWidgets;
 use crate::{CameraControlChange, NewControlValue, OnCapturePauseAction, ProgramData};
 use crate::camera;
 use crate::camera::CameraError;
@@ -183,6 +185,8 @@ pub struct GuiData {
     preview_processing: PreviewProcessing,
     dispersion_dialog: DispersionDialog,
     psf_dialog: PsfDialog,
+    #[cfg(feature = "controller")]
+    controller_widgets: ControllerWidgets,
     mount_widgets: MountWidgets,
     mouse_mode: MouseMode,
     info_overlay: InfoOverlay,
@@ -403,6 +407,15 @@ pub fn init_main_window(app: &gtk::Application, program_data_rc: &Rc<RefCell<Pro
     let mount_widgets = mount_gui::create_mount_box(program_data_rc);
     controls_notebook.append_page(mount_widgets.wbox(), Some(&gtk::Label::new(Some("Mount"))));
 
+    #[cfg(feature = "controller")]
+    let controller_widgets;
+    #[cfg(feature = "controller")]
+    {
+        let (panel, widgets) = controller::create_controller_panel(program_data_rc);
+        controller_widgets = widgets;
+        controls_notebook.append_page(&panel, Some(&gtk::Label::new(Some("Controller"))));
+    }
+
     let controls_notebook_scroller = gtk::ScrolledWindow::new::<gtk::Adjustment, gtk::Adjustment>(None, None);
     controls_notebook_scroller.add(&controls_notebook);
 
@@ -458,6 +471,7 @@ pub fn init_main_window(app: &gtk::Application, program_data_rc: &Rc<RefCell<Pro
         camera_menu_items,
         preview_area,
         rec_widgets,
+        controller_widgets,
         mount_widgets,
         info_overlay: InfoOverlay::new(),
         reticle: Reticle{

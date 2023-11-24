@@ -11,20 +11,20 @@
 //!
 
 #[derive(Debug)]
-pub struct NewStick {
-    id: usize,
-    name: String
+pub struct NewDevice {
+    pub id: usize,
+    pub name: String
 }
 
 #[derive(Debug)]
 pub struct StickEvent {
-    id: usize,
-    event: stick::Event
+    pub id: usize,
+    pub event: stick::Event
 }
 
 #[derive(Debug)]
 pub enum ControllerToMainThreadMsg {
-    NewStick(NewStick),
+    NewDevice(NewDevice),
     StickEvent(StickEvent)
 }
 
@@ -38,7 +38,7 @@ type Exit = usize;
 
 impl State {
     fn on_connect(&mut self, controller: stick::Controller) -> std::task::Poll<Exit> {
-        self.sender.send(ControllerToMainThreadMsg::NewStick(NewStick{
+        self.sender.send(ControllerToMainThreadMsg::NewDevice(NewDevice{
             id: controller.id() as usize,
             name: controller.name().into()
         })).unwrap();
