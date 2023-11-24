@@ -40,7 +40,8 @@ os_info = "3.0"
 pasts = { version = "0.8", optional = true }
 serialport = "4.2.0"
 simplelog = "0.12.1"
-stick = { git = "https://github.com/voysys/stick.git", rev = "6269405a7d6d812b7497715b843a822a4d3f6dcd", optional = true }
+# Needed until https://github.com/ardaku/stick/pull/38 is merged to upstream repo.
+stick = { git = "https://github.com/GreatAttractor/stick.git", rev = "6269405a7d6d812b7497715b843a822a4d3f6dcd", optional = true }
 strum = "0.18.0"
 strum_macros = "0.18.0"
 time = "0.3.30" # why needed explicitly? simplelog's use not enough?
