@@ -210,7 +210,9 @@ pub struct ProgramData {
     snapshot_counter: usize,
     /// Used to refresh/rebuild all controls after user modification.
     camera_controls_refresh_timer: timer::OneShotTimer,
-    mount_simulator_data: MountSimulatorData
+    mount_simulator_data: MountSimulatorData,
+    #[cfg(feature = "controller")]
+    sel_dialog_ctrl_events: Vec<workers::controller::StickEvent>
 }
 
 impl ProgramData {
@@ -330,7 +332,8 @@ fn main() {
         last_displayed_preview_image: None,
         camera_controls_refresh_timer: timer::OneShotTimer::new(),
         snapshot_counter: 1,
-        mount_simulator_data
+        mount_simulator_data,
+        sel_dialog_ctrl_events: vec![]
     }));
 
     if !disabled_drivers.is_empty() {

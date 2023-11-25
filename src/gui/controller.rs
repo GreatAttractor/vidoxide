@@ -27,7 +27,7 @@ impl ControllerDialog {
             Some("Controller settings"),
             Some(parent),
             gtk::DialogFlags::DESTROY_WITH_PARENT,
-            &[("OK", gtk::ResponseType::Close)]
+            &[("Close", gtk::ResponseType::Close)]
         );
 
         dialog.set_default_response(gtk::ResponseType::Close);
@@ -55,7 +55,7 @@ impl ControllerDialog {
     pub fn add_device(&mut self, id: u64, name: &str) {
         self.widgets.device_list.add(&gtk::ListBoxRow::builder()
             .child(&gtk::Label::builder()
-                .label(&format!("[{:016X}] {}", id, name))
+                .label(&format!("{} [{:016X}]", name, id))
                 .halign(gtk::Align::Start)
                 .visible(true)
                 .build()
@@ -89,19 +89,58 @@ pub fn on_controller_event(msg: ControllerToMainThreadMsg, program_data_rc: &Rc<
 }
 
 fn create_controls() -> (gtk::Box, Widgets) {
-    let box_all = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    let box_all = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .margin(PADDING as i32)
+        .build();
 
     box_all.pack_start(
-        &gtk::Label::builder().label("Input devices").halign(gtk::Align::Start).build(),
+        &gtk::Label::builder().label("Input devices:").halign(gtk::Align::Start).build(),
         false, false, PADDING
     );
 
     let device_list = gtk::ListBox::builder()
         .selection_mode(gtk::SelectionMode::None)
         .build();
-    box_all.pack_start(&device_list, true, true, PADDING);
+    box_all.pack_start(&device_list, false, true, PADDING);
 
-    //
+    let action_box = gtk::Box::new(gtk::Orientation::Vertical, PADDING as i32);
+
+    let make_action_box = |text| {
+        let hbox = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+
+        hbox.pack_start(&gtk::Label::builder()
+            .label(text)
+            .halign(gtk::Align::Start)
+            .margin_start(PADDING as i32)
+            .margin_end(PADDING as i32)
+            .build(),
+            true, true, 0
+        );
+
+        hbox.pack_start(&gtk::Button::builder()
+            .label("configure")
+            .halign(gtk::Align::End)
+            .build(),
+            false, false, 0
+        );
+
+        hbox
+    };
+
+    action_box.pack_start(&make_action_box("Mount axis 1 / positive"), false, true, 0);
+    action_box.pack_start(&make_action_box("Mount axis 1 / negative"), false, true, 0);
+    action_box.pack_start(&make_action_box("Mount axis 2 / positive"), false, true, 0);
+    action_box.pack_start(&make_action_box("Mount axis 2 / negative"), false, true, 0);
+    action_box.pack_start(&make_action_box("Focuser / in"), false, true, 0);
+    action_box.pack_start(&make_action_box("Focuser / out"), false, true, 0);
+    action_box.pack_start(&make_action_box("Recording start/stop"), false, true, 0);
+
+    let actions = gtk::Frame::builder()
+        .label("Actions")
+        .child(&action_box)
+        .build();
+    box_all.pack_start(&actions, true, true, PADDING);
 
     (box_all, Widgets{ device_list })
 }
@@ -118,4 +157,8 @@ pub fn init_controller_menu(
     menu.append(&item_settings);
 
     menu
+}
+
+fn show_controller_action_selection_dialog() {
+    //
 }
