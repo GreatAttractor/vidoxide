@@ -39,7 +39,7 @@ impl<T: glib::ObjectExt> Freezeable<T> {
     }
 }
 
-impl <T: glib::ObjectExt> Drop for Freezeable<T> {
+impl<T: glib::ObjectExt> Drop for Freezeable<T> {
     fn drop(&mut self) {
         // disable the signal to avoid unwanted side effects during widget removal (e.g., if a spin button's text box
         // has focus and the widget is removed, the changed signal handler gets called)

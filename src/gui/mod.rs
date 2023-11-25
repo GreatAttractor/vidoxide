@@ -36,7 +36,7 @@ use camera_gui::{
 };
 use cgmath::{EuclideanSpace, Point2, Vector2, Zero};
 #[cfg(feature = "controller")]
-use controller::ControllerWidgets;
+use controller::{ControllerDialog, init_controller_menu};
 use crate::{CameraControlChange, NewControlValue, OnCapturePauseAction, ProgramData};
 use crate::camera;
 use crate::camera::CameraError;
@@ -183,10 +183,10 @@ pub struct GuiData {
     reticle: Reticle,
     stabilization: Stabilization,
     preview_processing: PreviewProcessing,
+    #[cfg(feature = "controller")]
+    controller_dialog: ControllerDialog,
     dispersion_dialog: DispersionDialog,
     psf_dialog: PsfDialog,
-    #[cfg(feature = "controller")]
-    controller_widgets: ControllerWidgets,
     mount_widgets: MountWidgets,
     mouse_mode: MouseMode,
     info_overlay: InfoOverlay,
@@ -407,15 +407,6 @@ pub fn init_main_window(app: &gtk::Application, program_data_rc: &Rc<RefCell<Pro
     let mount_widgets = mount_gui::create_mount_box(program_data_rc);
     controls_notebook.append_page(mount_widgets.wbox(), Some(&gtk::Label::new(Some("Mount"))));
 
-    #[cfg(feature = "controller")]
-    let controller_widgets;
-    #[cfg(feature = "controller")]
-    {
-        let (panel, widgets) = controller::create_controller_panel();
-        controller_widgets = widgets;
-        controls_notebook.append_page(&panel, Some(&gtk::Label::new(Some("Controller"))));
-    }
-
     let controls_notebook_scroller = gtk::ScrolledWindow::new::<gtk::Adjustment, gtk::Adjustment>(None, None);
     controls_notebook_scroller.add(&controls_notebook);
 
@@ -471,7 +462,6 @@ pub fn init_main_window(app: &gtk::Application, program_data_rc: &Rc<RefCell<Pro
         camera_menu_items,
         preview_area,
         rec_widgets,
-        controller_widgets,
         mount_widgets,
         info_overlay: InfoOverlay::new(),
         reticle: Reticle{
@@ -492,6 +482,7 @@ pub fn init_main_window(app: &gtk::Application, program_data_rc: &Rc<RefCell<Pro
             gain: Decibel(0.0),
             stretch_histogram: false
         },
+        controller_dialog: ControllerDialog::new(&window, &program_data_rc),
         dispersion_dialog: DispersionDialog::new(&window, &program_data_rc),
         psf_dialog: PsfDialog::new(&window, &program_data_rc),
         mouse_mode: MouseMode::None,
@@ -857,6 +848,13 @@ fn init_menu(
     let preview_menu_item = gtk::MenuItem::with_label("Preview");
     preview_menu_item.set_submenu(Some(&init_preview_menu(program_data, &accel_group)));
     menu_bar.append(&preview_menu_item);
+
+    #[cfg(feature = "controller")]
+    {
+        let controller_menu_item = gtk::MenuItem::with_label("Controller");
+        controller_menu_item.set_submenu(Some(&init_controller_menu(program_data)));
+        menu_bar.append(&controller_menu_item);
+    }
 
     (menu_bar, camera_menu, camera_menu_items)
 }

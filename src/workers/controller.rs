@@ -12,13 +12,17 @@
 
 #[derive(Debug)]
 pub struct NewDevice {
-    pub id: usize,
+    /// Device-model-specific identifier.
+    pub id: u64,
+    /// Device index (among the currently connected).
+    pub index: usize,
     pub name: String
 }
 
 #[derive(Debug)]
 pub struct StickEvent {
-    pub id: usize,
+    pub id: u64,
+    pub index: usize,
     pub event: stick::Event
 }
 
@@ -39,7 +43,8 @@ type Exit = usize;
 impl State {
     fn on_connect(&mut self, controller: stick::Controller) -> std::task::Poll<Exit> {
         self.sender.send(ControllerToMainThreadMsg::NewDevice(NewDevice{
-            id: controller.id() as usize,
+            id: controller.id(),
+            index: self.controllers.len(),
             name: controller.name().into()
         })).unwrap();
 
@@ -48,8 +53,10 @@ impl State {
         std::task::Poll::Pending
     }
 
-    fn on_stick_event(&mut self, id: usize, event: stick::Event) -> std::task::Poll<Exit> {
-        self.sender.send(ControllerToMainThreadMsg::StickEvent(StickEvent{ id, event })).unwrap();
+    fn on_stick_event(&mut self, index: usize, event: stick::Event) -> std::task::Poll<Exit> {
+        let id = self.controllers[index].id();
+        self.sender.send(ControllerToMainThreadMsg::StickEvent(StickEvent{ id, index, event })).unwrap();
+        if let stick::Event::Disconnect = event { self.controllers.remove(index); }
 
         std::task::Poll::Pending
     }
