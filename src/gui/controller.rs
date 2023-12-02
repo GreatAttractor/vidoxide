@@ -41,7 +41,7 @@ impl ControllerDialog {
             gtk::Inhibit(true)
         });
 
-        let (contents_box, widgets) = create_controls();
+        let (contents_box, widgets) = create_controls(parent, program_data_rc);
         dialog.content_area().pack_start(&contents_box, true, true, PADDING);
 
         dialog.show_all();
@@ -88,7 +88,10 @@ pub fn on_controller_event(msg: ControllerToMainThreadMsg, program_data_rc: &Rc<
     }
 }
 
-fn create_controls() -> (gtk::Box, Widgets) {
+fn create_controls(
+    parent: &gtk::ApplicationWindow,
+    program_data_rc: &Rc<RefCell<ProgramData>>
+) -> (gtk::Box, Widgets) {
     let box_all = gtk::Box::builder()
         .orientation(gtk::Orientation::Vertical)
         .margin(PADDING as i32)
@@ -118,12 +121,14 @@ fn create_controls() -> (gtk::Box, Widgets) {
             true, true, 0
         );
 
-        hbox.pack_start(&gtk::Button::builder()
+        let btn = gtk::Button::builder()
             .label("configure")
             .halign(gtk::Align::End)
-            .build(),
-            false, false, 0
-        );
+            .build();
+        btn.connect_clicked(clone!(@weak parent, @weak program_data_rc => @default-panic, move |_| {
+            show_controller_action_selection_dialog(&parent, &program_data_rc);
+        }));
+        hbox.pack_start(&btn, false, false, 0);
 
         hbox
     };
@@ -159,6 +164,28 @@ pub fn init_controller_menu(
     menu
 }
 
-fn show_controller_action_selection_dialog() {
-    //
+fn show_controller_action_selection_dialog(
+    parent: &gtk::ApplicationWindow,
+    program_data_rc: &Rc<RefCell<ProgramData>>
+) {
+    let dialog = gtk::Dialog::with_buttons(
+        Some("Choose controller action"),
+        Some(parent),
+        gtk::DialogFlags::MODAL,
+        &[("OK", gtk::ResponseType::Ok), ("Cancel", gtk::ResponseType::Cancel)]
+    );
+
+    program_data_rc.borrow_mut().sel_dialog_ctrl_events = Some(vec![]);
+
+    let timer = Rc::new(crate::timer::Timer::new());
+    let handler = clone!(@weak timer => @default-panic, move || {
+        println!("tick");
+    });
+    timer.run(std::time::Duration::from_millis(333), false, handler);
+
+    if let gtk::ResponseType::Ok = dialog.run() {
+        //
+    }
+
+    dialog.close();
 }

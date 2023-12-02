@@ -714,8 +714,9 @@ fn on_camera_boolean_control_change(
 }
 
 pub fn schedule_refresh(program_data_rc: &Rc<RefCell<ProgramData>>) {
-    program_data_rc.borrow().camera_controls_refresh_timer.run_once(
+    program_data_rc.borrow().camera_controls_refresh_timer.run(
         ALL_CONTROLS_REFRESH_DELAY,
+        true,
         clone!(@weak program_data_rc => @default-panic, move || refresh_all_controls(&program_data_rc))
     );
 }

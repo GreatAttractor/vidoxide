@@ -42,8 +42,9 @@ pub fn start_guiding(program_data_rc: &Rc<RefCell<ProgramData>>) {
 
     let mut pd = program_data_rc.borrow_mut();
     pd.mount_data.guiding_pos = Some(pd.tracking.as_ref().unwrap().pos);
-    pd.mount_data.guiding_timer.run_once(
+    pd.mount_data.guiding_timer.run(
         GUIDE_CHECK_INTERVAL,
+        true,
         clone!(@weak program_data_rc => @default-panic, move || guiding_step(&program_data_rc))
     );
 
@@ -98,8 +99,9 @@ pub fn guiding_step(program_data_rc: &Rc<RefCell<ProgramData>>) {
 
             pd.mount_data.guide_slewing = true;
 
-            pd.mount_data.guiding_timer.run_once(
+            pd.mount_data.guiding_timer.run(
                 GUIDE_DIR_UPDATE_INTERVAL,
+                true,
                 clone!(@weak program_data_rc => @default-panic, move || guiding_step(&program_data_rc))
             );
         } else {
@@ -109,8 +111,9 @@ pub fn guiding_step(program_data_rc: &Rc<RefCell<ProgramData>>) {
             pd.mount_data.guide_slewing = false;
             log::info!("back on target");
 
-            pd.mount_data.guiding_timer.run_once(
+            pd.mount_data.guiding_timer.run(
                 GUIDE_CHECK_INTERVAL,
+                true,
                 clone!(@weak program_data_rc => @default-panic, move || guiding_step(&program_data_rc))
             );
         }

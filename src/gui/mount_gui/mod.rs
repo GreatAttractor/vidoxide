@@ -208,8 +208,9 @@ fn on_start_calibration(btn: &gtk::Button, program_data_rc: &Rc<RefCell<ProgramD
         program_data_rc.borrow_mut().mount_data.calibration = None;
         on_mount_error(e);
     } else {
-        program_data_rc.borrow_mut().mount_data.calibration_timer.run_once(
+        program_data_rc.borrow_mut().mount_data.calibration_timer.run(
             CALIBRATION_DURATION,
+            true,
             clone!(@weak program_data_rc => @default-panic, move || { on_calibration_timer(&program_data_rc); }
         ));
         btn.set_sensitive(false);
@@ -261,8 +262,9 @@ fn on_calibration_timer(program_data_rc: &Rc<RefCell<ProgramData>>) {
                     break;
                 } else {
                     pd.mount_data.calibration.as_mut().unwrap().origin = pd.tracking.as_ref().unwrap().pos;
-                    pd.mount_data.calibration_timer.run_once(
+                    pd.mount_data.calibration_timer.run(
                         CALIBRATION_DURATION,
+                        true,
                         clone!(@weak program_data_rc => @default-panic, move || {
                             on_calibration_timer(&program_data_rc);
                         })

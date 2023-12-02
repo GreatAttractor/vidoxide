@@ -32,7 +32,7 @@ use gtk::gio::prelude::*;
 use glib::clone;
 use mount::RadPerSec;
 use std::{cell::RefCell, sync::{atomic::{AtomicBool, AtomicIsize}, Arc}, rc::Rc};
-use timer::OneShotTimer;
+use timer::Timer;
 use workers::capture::MainToCaptureThreadMsg;
 use workers::histogram::MainToHistogramThreadMsg;
 use workers::recording::{MainToRecordingThreadMsg, Job};
@@ -86,10 +86,10 @@ pub struct MountData {
     /// Desired tracking position. If `Some`, guiding is active and the mount will be slewed so that
     /// `ProgramData::tracking.pos` reaches this value.
     guiding_pos: Option<Point2<i32>>,
-    guiding_timer: OneShotTimer,
+    guiding_timer: Timer,
     guide_slewing: bool,
     calibration: Option<MountCalibration>,
-    calibration_timer: OneShotTimer
+    calibration_timer: Timer
 }
 
 impl MountData {
@@ -209,10 +209,10 @@ pub struct ProgramData {
     last_displayed_preview_image: Option<ga_image::Image>,
     snapshot_counter: usize,
     /// Used to refresh/rebuild all controls after user modification.
-    camera_controls_refresh_timer: timer::OneShotTimer,
+    camera_controls_refresh_timer: timer::Timer,
     mount_simulator_data: MountSimulatorData,
     #[cfg(feature = "controller")]
-    sel_dialog_ctrl_events: Vec<workers::controller::StickEvent>
+    sel_dialog_ctrl_events: Option<Vec<workers::controller::StickEvent>>
 }
 
 impl ProgramData {
@@ -316,10 +316,10 @@ fn main() {
             mount: None,
             sky_tracking_on: false,
             guiding_pos: None,
-            guiding_timer: OneShotTimer::new(),
+            guiding_timer: Timer::new(),
             guide_slewing: false,
             calibration: None,
-            calibration_timer: OneShotTimer::new()
+            calibration_timer: Timer::new()
         },
         tracking: None,
         crop_area: None,
@@ -330,10 +330,10 @@ fn main() {
         preview_fps_limit,
         last_displayed_preview_image_timestamp: None,
         last_displayed_preview_image: None,
-        camera_controls_refresh_timer: timer::OneShotTimer::new(),
+        camera_controls_refresh_timer: timer::Timer::new(),
         snapshot_counter: 1,
         mount_simulator_data,
-        sel_dialog_ctrl_events: vec![]
+        sel_dialog_ctrl_events: None
     }));
 
     if !disabled_drivers.is_empty() {

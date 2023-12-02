@@ -16,46 +16,49 @@ use std::rc::Rc;
 
 const INFINITY: std::time::Duration = std::time::Duration::from_secs(9_999_999_999);
 
-pub struct OneShotTimer {
-    sender_main: std::sync::mpsc::Sender<std::time::Instant>,
+pub struct Timer {
+    sender_main: std::sync::mpsc::Sender<Request>,
     handler: Rc<RefCell<Option<Box<dyn Fn() + 'static>>>>
 }
 
-impl OneShotTimer {
-    pub fn new() -> OneShotTimer {
+struct Request {
+    once: bool,
+    delay: std::time::Duration
+}
+
+impl Timer {
+    pub fn new() -> Timer {
         let handler: Rc<RefCell<Option<Box<dyn Fn() + 'static>>>> = Rc::new(RefCell::new(None));
 
         let (sender_timer, receiver_main) = glib::MainContext::channel::<()>(glib::PRIORITY_DEFAULT);
         receiver_main.attach(None, clone!(@weak handler => @default-panic, move |_| {
-            let handler = handler.take().unwrap();
-            handler();
+            let loc_handler = handler.take().unwrap();
+            loc_handler();
+            // restore `handler` only if `None`; otherwise it means the user has already reassigned `handler`
+            // during `loc_handler` execution
+            if handler.borrow().is_none() { *handler.borrow_mut() = Some(loc_handler); }
             return glib::Continue(true);
         }));
 
-        let (sender_main, receiver_timer) = std::sync::mpsc::channel::<std::time::Instant>();
+        let (sender_main, receiver_timer) = std::sync::mpsc::channel::<Request>();
 
         std::thread::spawn(move || {
-            let mut target_time: Option<std::time::Instant> = None;
+            let mut request: Option<Request> = None;
 
             loop {
-                let recv_result = match &target_time {
-                    Some(t) => {
-                        let now = std::time::Instant::now();
-                        if *t > now {
-                            receiver_timer.recv_timeout(*t - now)
-                        } else {
-                            receiver_timer.recv_timeout(INFINITY)
-                        }
-                    },
+                let recv_result = match &request {
+                    Some(req) => receiver_timer.recv_timeout(req.delay),
                     None => receiver_timer.recv_timeout(INFINITY)
                 };
 
                 match recv_result {
-                    Ok(new_target_time) => target_time = Some(new_target_time),
+                    Ok(req) => request = Some(req),
 
                     Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
                         sender_timer.send(()).unwrap();
-                        target_time = None;
+                        if let Some(req) = &request {
+                            if req.once { request = None; }
+                        }
                     },
 
                     _ => break
@@ -63,18 +66,18 @@ impl OneShotTimer {
             }
         });
 
-        OneShotTimer{ sender_main, handler }
+        Timer{ sender_main, handler }
     }
 
-    /// Runs provided `handler` once after `delay`; any previously scheduled runs will be cancelled.
-    pub fn run_once<F: Fn() + 'static>(&self, delay: std::time::Duration, handler: F) {
+    /// Runs provided `handler`; any previously scheduled runs will be cancelled.
+    pub fn run<F: Fn() + 'static>(&self, delay: std::time::Duration, once: bool, handler: F) {
         self.handler.replace(Some(Box::new(handler)));
-        self.sender_main.send(std::time::Instant::now() + delay).unwrap();
+        self.sender_main.send(Request{ once, delay }).unwrap();
     }
 
     pub fn stop(&self) {
         self.handler.replace(None);
-        self.sender_main.send(std::time::Instant::now() + INFINITY).unwrap();
+        self.sender_main.send(Request{ once: true, delay: INFINITY }).unwrap();
     }
 }
 
@@ -93,6 +96,7 @@ mod tests {
         timer_update_twice(&main_loop);
         timer_stop(&main_loop);
         timer_update_from_handler(&main_loop);
+        timer_run_several_times(&main_loop);
     }
 
     fn ms(num_millis: u64) -> std::time::Duration {
@@ -104,19 +108,20 @@ mod tests {
     }
 
     #[must_use]
-    fn loop_for(main_loop: &glib::MainLoop, duration: std::time::Duration) -> OneShotTimer {
-        let timer_quit = OneShotTimer::new();
-        timer_quit.run_once(duration, clone!(@strong main_loop => @default-panic, move || { main_loop.quit(); }));
+    fn loop_for(main_loop: &glib::MainLoop, duration: std::time::Duration) -> Timer {
+        let timer_quit = Timer::new();
+        timer_quit.run(duration, true, clone!(@strong main_loop => @default-panic, move || { main_loop.quit(); }));
         timer_quit
     }
 
     fn timer_no_update(main_loop: &glib::MainLoop) {
-        let timer = OneShotTimer::new();
+        let timer = Timer::new();
         let tstart = std::time::Instant::now();
         let handler_run = Rc::new(RefCell::new(false));
 
-        timer.run_once(
+        timer.run(
             std::time::Duration::from_millis(20),
+            true,
             clone!(@weak handler_run, @strong main_loop => @default-panic, move || {
                 assert!(tstart.elapsed() > ms(19) && tstart.elapsed() < ms(21));
                 handler_run.replace(true);
@@ -130,16 +135,17 @@ mod tests {
     }
 
     fn timer_update_once(main_loop: &glib::MainLoop) {
-        let timer = Rc::new(OneShotTimer::new());
-        let timer_aux = OneShotTimer::new();
+        let timer = Rc::new(Timer::new());
+        let timer_aux = Timer::new();
         let tstart = std::time::Instant::now();
         let handler_run = Rc::new(RefCell::new(false));
 
-        timer.run_once(ms(20), move || not_run_handler());
+        timer.run(ms(20), true, move || not_run_handler());
 
-        timer_aux.run_once(ms(10), clone!(@weak timer, @weak handler_run => @default-panic, move || {
-            timer.run_once(
+        timer_aux.run(ms(10), true, clone!(@weak timer, @weak handler_run => @default-panic, move || {
+            timer.run(
                 ms(20),
+                true,
                 clone!(@weak handler_run => @default-panic, move || {
                     assert!(tstart.elapsed() > ms(29) && tstart.elapsed() < ms(31));
                     handler_run.replace(true);
@@ -154,21 +160,22 @@ mod tests {
     }
 
     fn timer_update_twice(main_loop: &glib::MainLoop) {
-        let timer = Rc::new(OneShotTimer::new());
-        let timer_aux1 = OneShotTimer::new();
-        let timer_aux2 = OneShotTimer::new();
+        let timer = Rc::new(Timer::new());
+        let timer_aux1 = Timer::new();
+        let timer_aux2 = Timer::new();
         let tstart = std::time::Instant::now();
         let handler_run = Rc::new(RefCell::new(false));
 
-        timer.run_once(ms(20), move || not_run_handler());
+        timer.run(ms(20), true, move || not_run_handler());
 
-        timer_aux1.run_once(ms(10), clone!(@weak timer, @weak handler_run => @default-panic, move || {
-            timer.run_once(ms(20), move || not_run_handler());
+        timer_aux1.run(ms(10), true, clone!(@weak timer, @weak handler_run => @default-panic, move || {
+            timer.run(ms(20), true, move || not_run_handler());
         }));
 
-        timer_aux2.run_once(ms(20), clone!(@weak timer, @weak handler_run => @default-panic, move || {
-            timer.run_once(
+        timer_aux2.run(ms(20), true, clone!(@weak timer, @weak handler_run => @default-panic, move || {
+            timer.run(
                 ms(20),
+                true,
                 clone!(@weak handler_run => @default-panic, move || {
                     assert!(tstart.elapsed() > ms(39) && tstart.elapsed() < ms(41));
                     handler_run.replace(true);
@@ -183,11 +190,11 @@ mod tests {
     }
 
     fn timer_stop(main_loop: &glib::MainLoop) {
-        let timer = Rc::new(OneShotTimer::new());
-        timer.run_once(ms(20), move || not_run_handler());
+        let timer = Rc::new(Timer::new());
+        timer.run(ms(20), true, move || not_run_handler());
 
-        let timer_aux = OneShotTimer::new();
-        timer_aux.run_once(ms(10), clone!(@weak timer, @strong main_loop => @default-panic, move || {
+        let timer_aux = Timer::new();
+        timer_aux.run(ms(10), true, clone!(@weak timer, @strong main_loop => @default-panic, move || {
             timer.stop();
         }));
 
@@ -197,11 +204,12 @@ mod tests {
 
     fn timer_update_from_handler(main_loop: &glib::MainLoop) {
         let handler_run = Rc::new(RefCell::new(false));
-        let timer = Rc::new(OneShotTimer::new());
+        let timer = Rc::new(Timer::new());
 
-        timer.run_once(ms(10), clone!(@weak timer, @weak handler_run => @default-panic, move || {
-            timer.run_once(
+        timer.run(ms(10), true, clone!(@weak timer, @weak handler_run => @default-panic, move || {
+            timer.run(
                 ms(10),
+                true,
                 clone!(@weak handler_run => @default-panic, move || { handler_run.replace(true); })
             );
         }));
@@ -210,5 +218,26 @@ mod tests {
         main_loop.run();
 
         assert!(*handler_run.borrow() == true);
+    }
+
+    fn timer_run_several_times(main_loop: &glib::MainLoop) {
+        let handler_run = Rc::new(RefCell::new(Vec::<std::time::Instant>::new()));
+        let timer = Rc::new(Timer::new());
+
+        let t_start = std::time::Instant::now();
+
+        timer.run(ms(10), false, clone!(@weak timer, @weak handler_run => @default-panic, move || {
+            handler_run.borrow_mut().push(std::time::Instant::now());
+        }));
+
+        let _q = loop_for(main_loop, ms(60));
+        main_loop.run();
+
+        let handler_run = handler_run.borrow();
+        assert_eq!(5, handler_run.len());
+        let check_if_around = |exp, act, range| { assert!(act >= exp - range && act <= exp + range); };
+        for i in 0..5 {
+            check_if_around(t_start + (i + 1) * ms(10), handler_run[i as usize], ms(2));
+        }
     }
 }

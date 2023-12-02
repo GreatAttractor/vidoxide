@@ -17,7 +17,7 @@ use crate::gui::actions;
 use crate::output;
 use crate::output::{OutputFormat};
 use crate::ProgramData;
-use crate::timer::OneShotTimer;
+use crate::timer::Timer;
 use crate::workers::capture::MainToCaptureThreadMsg;
 use crate::workers::recording;
 use crate::workers::recording::{Limit, MainToRecordingThreadMsg};
@@ -46,7 +46,7 @@ pub struct RecWidgets {
     sequence_getter: Box<dyn Fn() -> (usize, std::time::Duration)>,
     pub sequence_idx: usize,
     pub sequence_next_start: Option<std::time::Instant>,
-    sequence_timer: OneShotTimer,
+    sequence_timer: Timer,
     others: gtk::Box,
 }
 
@@ -398,7 +398,7 @@ pub fn create_recording_panel(program_data_rc: &Rc<RefCell<ProgramData>>) -> (gt
         sequence_getter: Box::new(move || (btn_rec_count.value() as usize, sequence_interval.duration())),
         sequence_idx: 0,
         sequence_next_start: None,
-        sequence_timer: OneShotTimer::new()
+        sequence_timer: Timer::new()
     })
 }
 
@@ -411,7 +411,7 @@ pub fn on_recording_finished(program_data_rc: &Rc<RefCell<ProgramData>>) {
     if pd_gui.rec_widgets.sequence_idx < sequence_count {
         pd_gui.rec_widgets.sequence_next_start = Some(std::time::Instant::now() + sequence_interval);
 
-        pd_gui.rec_widgets.sequence_timer.run_once(sequence_interval, clone!(@weak program_data_rc
+        pd_gui.rec_widgets.sequence_timer.run(sequence_interval, true, clone!(@weak program_data_rc
             => @default-panic, move || {
                 program_data_rc.borrow_mut().gui.as_mut().unwrap().rec_widgets.sequence_next_start = None;
                 on_start_recording(&program_data_rc);
