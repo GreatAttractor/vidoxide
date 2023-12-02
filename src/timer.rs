@@ -1,6 +1,6 @@
 //
 // Vidoxide - Image acquisition for amateur astronomy
-// Copyright (c) 2020-2022 Filip Szczerek <ga.software@yahoo.com>
+// Copyright (c) 2020-2023 Filip Szczerek <ga.software@yahoo.com>
 //
 // This project is licensed under the terms of the MIT license
 // (see the LICENSE file for details).
@@ -130,15 +130,15 @@ mod tests {
     }
 
     fn timer_update_once(main_loop: &glib::MainLoop) {
-        let timer = Rc::new(RefCell::new(OneShotTimer::new()));
+        let timer = Rc::new(OneShotTimer::new());
         let timer_aux = OneShotTimer::new();
         let tstart = std::time::Instant::now();
         let handler_run = Rc::new(RefCell::new(false));
 
-        timer.borrow_mut().run_once(ms(20), move || not_run_handler());
+        timer.run_once(ms(20), move || not_run_handler());
 
         timer_aux.run_once(ms(10), clone!(@weak timer, @weak handler_run => @default-panic, move || {
-            timer.borrow_mut().run_once(
+            timer.run_once(
                 ms(20),
                 clone!(@weak handler_run => @default-panic, move || {
                     assert!(tstart.elapsed() > ms(29) && tstart.elapsed() < ms(31));
@@ -154,20 +154,20 @@ mod tests {
     }
 
     fn timer_update_twice(main_loop: &glib::MainLoop) {
-        let timer = Rc::new(RefCell::new(OneShotTimer::new()));
+        let timer = Rc::new(OneShotTimer::new());
         let timer_aux1 = OneShotTimer::new();
         let timer_aux2 = OneShotTimer::new();
         let tstart = std::time::Instant::now();
         let handler_run = Rc::new(RefCell::new(false));
 
-        timer.borrow_mut().run_once(ms(20), move || not_run_handler());
+        timer.run_once(ms(20), move || not_run_handler());
 
         timer_aux1.run_once(ms(10), clone!(@weak timer, @weak handler_run => @default-panic, move || {
-            timer.borrow_mut().run_once(ms(20), move || not_run_handler());
+            timer.run_once(ms(20), move || not_run_handler());
         }));
 
         timer_aux2.run_once(ms(20), clone!(@weak timer, @weak handler_run => @default-panic, move || {
-            timer.borrow_mut().run_once(
+            timer.run_once(
                 ms(20),
                 clone!(@weak handler_run => @default-panic, move || {
                     assert!(tstart.elapsed() > ms(39) && tstart.elapsed() < ms(41));
@@ -183,13 +183,12 @@ mod tests {
     }
 
     fn timer_stop(main_loop: &glib::MainLoop) {
-        let timer = Rc::new(RefCell::new(OneShotTimer::new()));
-        timer.borrow_mut().run_once(ms(20), move || not_run_handler());
+        let timer = Rc::new(OneShotTimer::new());
+        timer.run_once(ms(20), move || not_run_handler());
 
         let timer_aux = OneShotTimer::new();
         timer_aux.run_once(ms(10), clone!(@weak timer, @strong main_loop => @default-panic, move || {
-            let t = timer.borrow();
-            t.stop();
+            timer.stop();
         }));
 
         let _q = loop_for(main_loop, ms(50));
@@ -198,10 +197,10 @@ mod tests {
 
     fn timer_update_from_handler(main_loop: &glib::MainLoop) {
         let handler_run = Rc::new(RefCell::new(false));
-        let timer = Rc::new(RefCell::new(OneShotTimer::new()));
+        let timer = Rc::new(OneShotTimer::new());
 
-        timer.borrow_mut().run_once(ms(10), clone!(@weak timer, @weak handler_run => @default-panic, move || {
-            timer.borrow_mut().run_once(
+        timer.run_once(ms(10), clone!(@weak timer, @weak handler_run => @default-panic, move || {
+            timer.run_once(
                 ms(10),
                 clone!(@weak handler_run => @default-panic, move || { handler_run.replace(true); })
             );
