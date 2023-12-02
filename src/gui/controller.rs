@@ -1,5 +1,5 @@
 use crate::ProgramData;
-use crate::workers::controller::ControllerToMainThreadMsg;
+use crate::{workers, workers::controller::ControllerToMainThreadMsg};
 use gtk::glib::clone;
 use gtk::prelude::*;
 use std::cell::RefCell;
@@ -83,6 +83,8 @@ pub fn on_controller_event(msg: ControllerToMainThreadMsg, program_data_rc: &Rc<
         ControllerToMainThreadMsg::StickEvent(event) => {
             if let stick::Event::Disconnect = event.event {
                 gui.controller_dialog.remove_device(event.index);
+            } else if let Some(sel_events) = &mut pd.sel_dialog_ctrl_events {
+                sel_events.push(event);
             }
         },
     }
@@ -175,17 +177,139 @@ fn show_controller_action_selection_dialog(
         &[("OK", gtk::ResponseType::Ok), ("Cancel", gtk::ResponseType::Cancel)]
     );
 
+    dialog.content_area().pack_start(
+        &gtk::Label::new(Some("Press a controller button or perform an axis movement:")),
+        true, true, PADDING
+    );
+    let action_label = gtk::Label::new(None);
+    dialog.content_area().pack_start(&action_label, true, true, PADDING);
+    dialog.show_all();
+
     program_data_rc.borrow_mut().sel_dialog_ctrl_events = Some(vec![]);
 
     let timer = Rc::new(crate::timer::Timer::new());
-    let handler = clone!(@weak timer => @default-panic, move || {
-        println!("tick");
+    let handler = clone!(@weak timer, @weak action_label, @weak program_data_rc => @default-panic, move || {
+        if let Some(s) = choose_ctrl_action_based_on_events(&program_data_rc.borrow().sel_dialog_ctrl_events.as_ref().unwrap()) {
+            action_label.set_text(&s);
+        }
+        program_data_rc.borrow_mut().sel_dialog_ctrl_events.as_mut().unwrap().clear();
     });
-    timer.run(std::time::Duration::from_millis(333), false, handler);
+    timer.run(std::time::Duration::from_millis(500), false, handler);
 
     if let gtk::ResponseType::Ok = dialog.run() {
         //
     }
 
     dialog.close();
+}
+
+// TODO: use an action enum
+fn choose_ctrl_action_based_on_events(events: &[workers::controller::StickEvent]) -> Option<String> {
+    if events.is_empty() { return None; }
+
+// analog controls
+//
+// TriggerL(f64),
+// TriggerR(f64),
+// JoyX(f64),
+// JoyY(f64),
+// JoyZ(f64),
+// CamX(f64),
+// CamY(f64),
+// CamZ(f64),
+// Slew(f64),
+// Throttle(f64),
+// ThrottleL(f64),
+// ThrottleR(f64),
+// Volume(f64),
+// Wheel(f64),
+// Rudder(f64),
+// Gas(f64),
+// Brake(f64),
+// MouseX(f64),
+// MouseY(f64),
+// ScrollX(f64),
+// ScrollY(f64),
+
+    for event in events {
+        match event.event {
+            stick::Event::Exit(_) => return Some(format!("{:?}", event)),
+            stick::Event::ActionA(_) => return Some(format!("{:?}", event)),
+            stick::Event::ActionB(_) => return Some(format!("{:?}", event)),
+            stick::Event::ActionC(_) => return Some(format!("{:?}", event)),
+            stick::Event::ActionH(_) => return Some(format!("{:?}", event)),
+            stick::Event::ActionV(_) => return Some(format!("{:?}", event)),
+            stick::Event::ActionD(_) => return Some(format!("{:?}", event)),
+            stick::Event::MenuL(_) => return Some(format!("{:?}", event)),
+            stick::Event::MenuR(_) => return Some(format!("{:?}", event)),
+            stick::Event::Joy(_) => return Some(format!("{:?}", event)),
+            stick::Event::Cam(_) => return Some(format!("{:?}", event)),
+            stick::Event::BumperL(_) => return Some(format!("{:?}", event)),
+            stick::Event::BumperR(_) => return Some(format!("{:?}", event)),
+            stick::Event::Up(_) => return Some(format!("{:?}", event)),
+            stick::Event::Down(_) => return Some(format!("{:?}", event)),
+            stick::Event::Left(_) => return Some(format!("{:?}", event)),
+            stick::Event::Right(_) => return Some(format!("{:?}", event)),
+            stick::Event::PovUp(_) => return Some(format!("{:?}", event)),
+            stick::Event::PovDown(_) => return Some(format!("{:?}", event)),
+            stick::Event::PovLeft(_) => return Some(format!("{:?}", event)),
+            stick::Event::PovRight(_) => return Some(format!("{:?}", event)),
+            stick::Event::HatUp(_) => return Some(format!("{:?}", event)),
+            stick::Event::HatDown(_) => return Some(format!("{:?}", event)),
+            stick::Event::HatLeft(_) => return Some(format!("{:?}", event)),
+            stick::Event::HatRight(_) => return Some(format!("{:?}", event)),
+            stick::Event::TrimUp(_) => return Some(format!("{:?}", event)),
+            stick::Event::TrimDown(_) => return Some(format!("{:?}", event)),
+            stick::Event::TrimLeft(_) => return Some(format!("{:?}", event)),
+            stick::Event::TrimRight(_) => return Some(format!("{:?}", event)),
+            stick::Event::MicUp(_) => return Some(format!("{:?}", event)),
+            stick::Event::MicDown(_) => return Some(format!("{:?}", event)),
+            stick::Event::MicLeft(_) => return Some(format!("{:?}", event)),
+            stick::Event::MicRight(_) => return Some(format!("{:?}", event)),
+            stick::Event::MicPush(_) => return Some(format!("{:?}", event)),
+            stick::Event::Trigger(_) => return Some(format!("{:?}", event)),
+            stick::Event::Bumper(_) => return Some(format!("{:?}", event)),
+            stick::Event::ActionM(_) => return Some(format!("{:?}", event)),
+            stick::Event::ActionL(_) => return Some(format!("{:?}", event)),
+            stick::Event::ActionR(_) => return Some(format!("{:?}", event)),
+            stick::Event::Pinky(_) => return Some(format!("{:?}", event)),
+            stick::Event::PinkyForward(_) => return Some(format!("{:?}", event)),
+            stick::Event::PinkyBackward(_) => return Some(format!("{:?}", event)),
+            stick::Event::FlapsUp(_) => return Some(format!("{:?}", event)),
+            stick::Event::FlapsDown(_) => return Some(format!("{:?}", event)),
+            stick::Event::BoatForward(_) => return Some(format!("{:?}", event)),
+            stick::Event::BoatBackward(_) => return Some(format!("{:?}", event)),
+            stick::Event::AutopilotPath(_) => return Some(format!("{:?}", event)),
+            stick::Event::AutopilotAlt(_) => return Some(format!("{:?}", event)),
+            stick::Event::EngineMotorL(_) => return Some(format!("{:?}", event)),
+            stick::Event::EngineMotorR(_) => return Some(format!("{:?}", event)),
+            stick::Event::EngineFuelFlowL(_) => return Some(format!("{:?}", event)),
+            stick::Event::EngineFuelFlowR(_) => return Some(format!("{:?}", event)),
+            stick::Event::EngineIgnitionL(_) => return Some(format!("{:?}", event)),
+            stick::Event::EngineIgnitionR(_) => return Some(format!("{:?}", event)),
+            stick::Event::SpeedbrakeBackward(_) => return Some(format!("{:?}", event)),
+            stick::Event::SpeedbrakeForward(_) => return Some(format!("{:?}", event)),
+            stick::Event::ChinaBackward(_) => return Some(format!("{:?}", event)),
+            stick::Event::ChinaForward(_) => return Some(format!("{:?}", event)),
+            stick::Event::Apu(_) => return Some(format!("{:?}", event)),
+            stick::Event::RadarAltimeter(_) => return Some(format!("{:?}", event)),
+            stick::Event::LandingGearSilence(_) => return Some(format!("{:?}", event)),
+            stick::Event::Eac(_) => return Some(format!("{:?}", event)),
+            stick::Event::AutopilotToggle(_) => return Some(format!("{:?}", event)),
+            stick::Event::ThrottleButton(_) => return Some(format!("{:?}", event)),
+            stick::Event::Mouse(_) => return Some(format!("{:?}", event)),
+            stick::Event::Number(i8, bool) => return Some(format!("{:?}", event)),
+            stick::Event::PaddleLeft(_) => return Some(format!("{:?}", event)),
+            stick::Event::PaddleRight(_) => return Some(format!("{:?}", event)),
+            stick::Event::PinkyLeft(_) => return Some(format!("{:?}", event)),
+            stick::Event::PinkyRight(_) => return Some(format!("{:?}", event)),
+            stick::Event::Context(_) => return Some(format!("{:?}", event)),
+            stick::Event::Dpi(_) => return Some(format!("{:?}", event)),
+            stick::Event::Scroll(_) => return Some(format!("{:?}", event)),
+
+            _ => continue
+        }
+    }
+
+    None
 }
