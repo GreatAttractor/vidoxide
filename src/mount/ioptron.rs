@@ -240,7 +240,7 @@ impl Mount for Ioptron {
 
     #[must_use]
     fn slewing_rate_supported(&self, speed: RadPerSec) -> bool {
-        unimplemented!()
+        choose_slewing_speed(speed).is_some()
     }
 
     fn stop(&mut self) -> Result<(), Box<dyn Error>> {
