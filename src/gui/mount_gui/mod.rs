@@ -164,6 +164,7 @@ fn on_start_calibration(btn: &gtk::Button, program_data_rc: &Rc<RefCell<ProgramD
     let slew_speed = program_data_rc.borrow().gui.as_ref().unwrap().mount_widgets.slew_speed() * mount::SIDEREAL_RATE;
     let res = program_data_rc.borrow_mut().mount_data.mount.as_mut().unwrap().slew(mount::Axis::Primary, slew_speed);
     if let Err(e) = &res {
+        program_data_rc.borrow_mut().mount_data.calibration = None;
         on_mount_error(e);
     } else {
         program_data_rc.borrow_mut().mount_data.calibration_timer.run_once(
