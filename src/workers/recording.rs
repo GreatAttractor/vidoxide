@@ -82,12 +82,16 @@ pub fn recording_thread(
     let mut written_kib_since_update = 0;
 
     macro_rules! end_job { () => {
+        log::info!("recording job ends");
         match job.as_mut().unwrap().writer.finalize() {
             Err(err) => sender.send(RecordingToMainThreadMsg::Error(err)).unwrap(),
             _ => ()
         }
 
         job = jobs.pop();
+        if job.is_some() {
+            log::info!("starting new recording job");
+        }
     }}
 
     loop {
@@ -99,7 +103,10 @@ pub fn recording_thread(
         match sel_result.index() {
             RECEIVED_FROM_MAIN_THREAD => match sel_result.recv(&receiver_main).unwrap() {
                 MainToRecordingThreadMsg::CheckJobQueue => if job.is_none() {
-                    if let Some(new_job) = jobs.pop() { job = Some(new_job); }
+                    if let Some(new_job) = jobs.pop() {
+                        job = Some(new_job);
+                        log::info!("starting new recording job");
+                    }
                 },
 
                 MainToRecordingThreadMsg::Finish => break
@@ -207,6 +214,7 @@ pub fn recording_thread(
             let num_jobs = jobs.len() + if job.is_some() { 1 } else { 0 };
             let write_rate = (total_kib_written - last_kib_written) as f64 / 1024.0 / t_elapsed.as_secs_f64();
             let current_buffered = buffered_kib.load(Ordering::Relaxed);
+            log::info!("saving at {:.1} MiB/s; buffered: {} MiB", write_rate, current_buffered / 1024);
             let info = if current_buffered >= 0 as isize {
                 format!(
                     "Recording jobs: {}; saving at {:.1} MiB/s; buffered: {} MiB",
