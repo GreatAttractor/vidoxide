@@ -34,28 +34,28 @@ const PADDING: u32 = 10;
 const CALIBRATION_DURATION: std::time::Duration = std::time::Duration::from_secs(2);
 
 struct SlewingSpeed {
-    sidereal_multiply: f64,
+    sidereal_multiple: f64,
     label: &'static str
 }
 
 const SLEWING_SPEEDS: &'static [SlewingSpeed] = &[
-    SlewingSpeed{ sidereal_multiply: 0.25, label: "0.25x" },
-    SlewingSpeed{ sidereal_multiply: 0.5,  label: "0.5x" },
-    SlewingSpeed{ sidereal_multiply: 1.0,  label: "1x" },
-    SlewingSpeed{ sidereal_multiply: 2.0,  label: "2x" },
-    SlewingSpeed{ sidereal_multiply: 4.0,  label: "4x" },
-    SlewingSpeed{ sidereal_multiply: 8.0,  label: "8x" },
-    SlewingSpeed{ sidereal_multiply: 16.0, label: "16x" },
-    SlewingSpeed{ sidereal_multiply: 32.0, label: "32x" }
+    SlewingSpeed{ sidereal_multiple: 0.25, label: "0.25x" },
+    SlewingSpeed{ sidereal_multiple: 0.5,  label: "0.5x" },
+    SlewingSpeed{ sidereal_multiple: 1.0,  label: "1x" },
+    SlewingSpeed{ sidereal_multiple: 2.0,  label: "2x" },
+    SlewingSpeed{ sidereal_multiple: 4.0,  label: "4x" },
+    SlewingSpeed{ sidereal_multiple: 8.0,  label: "8x" },
+    SlewingSpeed{ sidereal_multiple: 16.0, label: "16x" },
+    SlewingSpeed{ sidereal_multiple: 32.0, label: "32x" }
 ];
 
 const GUIDING_SPEEDS: &'static [SlewingSpeed] = &[
-    SlewingSpeed{ sidereal_multiply: 0.1,  label: "0.1x" },
-    SlewingSpeed{ sidereal_multiply: 0.25, label: "0.25x" },
-    SlewingSpeed{ sidereal_multiply: 0.4,  label: "0.4x" },
-    SlewingSpeed{ sidereal_multiply: 0.5,  label: "0.5x" },
-    SlewingSpeed{ sidereal_multiply: 0.75, label: "0.75x" },
-    SlewingSpeed{ sidereal_multiply: 0.9,  label: "0.9x" }
+    SlewingSpeed{ sidereal_multiple: 0.1,  label: "0.1x" },
+    SlewingSpeed{ sidereal_multiple: 0.25, label: "0.25x" },
+    SlewingSpeed{ sidereal_multiple: 0.4,  label: "0.4x" },
+    SlewingSpeed{ sidereal_multiple: 0.5,  label: "0.5x" },
+    SlewingSpeed{ sidereal_multiple: 0.75, label: "0.75x" },
+    SlewingSpeed{ sidereal_multiple: 0.9,  label: "0.9x" }
 ];
 
 pub struct MountWidgets {
@@ -100,14 +100,14 @@ impl MountWidgets {
         btn_tracking.unblock_signal(signal);
     }
 
-    /// Returns slewing speed (multiply of sidereal rate) selected in combo box.
+    /// Returns slewing speed (multiple of sidereal rate) selected in combo box.
     fn slew_speed(&self) -> f64 {
-        SLEWING_SPEEDS[self.slew_speed.active().unwrap() as usize].sidereal_multiply
+        SLEWING_SPEEDS[self.slew_speed.active().unwrap() as usize].sidereal_multiple
     }
 
-    /// Returns guiding speed (multiply of sidereal rate) selected in combo box.
+    /// Returns guiding speed (multiple of sidereal rate) selected in combo box.
     pub fn guide_speed(&self) -> f64 {
-        GUIDING_SPEEDS[self.guide_speed.active().unwrap() as usize].sidereal_multiply
+        GUIDING_SPEEDS[self.guide_speed.active().unwrap() as usize].sidereal_multiple
     }
 
     pub fn disable_guide(&self) {
