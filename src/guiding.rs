@@ -1,6 +1,6 @@
 //
 // Vidoxide - Image acquisition for amateur astronomy
-// Copyright (c) 2020-2022 Filip Szczerek <ga.software@yahoo.com>
+// Copyright (c) 2020-2023 Filip Szczerek <ga.software@yahoo.com>
 //
 // This project is licensed under the terms of the MIT license
 // (see the LICENSE file for details).
@@ -14,9 +14,9 @@ use cgmath::{InnerSpace, Point2, SquareMatrix, Matrix2, Vector2};
 use crate::ProgramData;
 use crate::gui::show_message;
 use crate::mount;
+use crate::mount::RadPerSec;
 use glib::clone;
-use std::cell::RefCell;
-use std::rc::Rc;
+use std::{cell::RefCell, error::Error, rc::Rc};
 
 //TODO: set it from GUI
 const GUIDE_CHECK_INTERVAL: std::time::Duration = std::time::Duration::from_millis(2000);
@@ -28,7 +28,12 @@ pub fn start_guiding(program_data_rc: &Rc<RefCell<ProgramData>>) {
     } else if program_data_rc.borrow().mount_data.calibration.is_none() {
         show_message("Calibration has not been performed.", "Error", gtk::MessageType::Error);
         true
-    } else { false };
+    } else if !program_data_rc.borrow().mount_data.sky_tracking_on {
+        show_message("Sky tracking is not enabled.", "Error", gtk::MessageType::Error);
+        true
+    } else {
+        false
+    };
 
     if failed {
         program_data_rc.borrow().gui.as_ref().unwrap().mount_widgets().disable_guide();
@@ -41,35 +46,21 @@ pub fn start_guiding(program_data_rc: &Rc<RefCell<ProgramData>>) {
         GUIDE_CHECK_INTERVAL,
         clone!(@weak program_data_rc => @default-panic, move || guiding_step(&program_data_rc))
     );
+
+    log::info!("guiding enabled");
 }
 
-pub fn stop_guiding(program_data_rc: &Rc<RefCell<ProgramData>>) -> Result<(), mount::MountError> {
-    let sd_on;
-
+pub fn stop_guiding(program_data_rc: &Rc<RefCell<ProgramData>>) -> Result<(), Box<dyn Error>> {
     {
         let mut pd = program_data_rc.borrow_mut();
-        sd_on = pd.mount_data.sidereal_tracking_on;
         pd.mount_data.guiding_timer.stop();
         pd.mount_data.guide_slewing = false;
         pd.mount_data.guiding_pos = None;
     }
 
-    let mut error: Option<mount::MountError> = None;
+    log::info!("guiding disabled");
 
-    match program_data_rc.borrow_mut().mount_data.mount.as_mut().unwrap().set_motion(
-        mount::Axis::Primary,
-        if sd_on { 1.0 * mount::SIDEREAL_RATE } else { 0.0 }
-    ) {
-        Err(e) => error = Some(e),
-        _ => ()
-    }
-
-    match program_data_rc.borrow_mut().mount_data.mount.as_mut().unwrap().stop_motion(mount::Axis::Secondary) {
-        Err(e) => error = Some(e),
-        _ => ()
-    }
-
-    if error.is_some() { Err(error.unwrap()) } else { Ok(()) }
+    program_data_rc.borrow_mut().mount_data.mount.as_mut().unwrap().guide(RadPerSec(0.0), RadPerSec(0.0))
 }
 
 pub fn guiding_step(program_data_rc: &Rc<RefCell<ProgramData>>) {
@@ -78,13 +69,13 @@ pub fn guiding_step(program_data_rc: &Rc<RefCell<ProgramData>>) {
 
     const GUIDE_DIR_UPDATE_INTERVAL: std::time::Duration = std::time::Duration::from_millis(1000);
 
-    let mut error: Option<mount::MountError> = None;
+    let mut error = Ok(());
 
     loop { // `loop` is only for an easy early exit from this block
         let mut pd = program_data_rc.borrow_mut();
 
         let dpos = *pd.mount_data.guiding_pos.as_ref().unwrap() - pd.tracking.as_ref().unwrap().pos;
-        let st_on = pd.mount_data.sidereal_tracking_on;
+        let st_on = pd.mount_data.sky_tracking_on;
 
         if dpos.x.abs() > GUIDE_POS_MARGIN || dpos.y.abs() > GUIDE_POS_MARGIN {
             let guide_dir_axis_space = guiding_direction(
@@ -94,21 +85,16 @@ pub fn guiding_step(program_data_rc: &Rc<RefCell<ProgramData>>) {
 
             let speed = pd.gui.as_ref().unwrap().mount_widgets().guide_speed() * mount::SIDEREAL_RATE;
 
-            if let Err(e) = pd.mount_data.mount.as_mut().unwrap().set_motion(
-                mount::Axis::Primary,
-                speed * guide_dir_axis_space.x + if st_on { 1.0 * mount::SIDEREAL_RATE } else { 0.0 }
-            ) {
-                error = Some(e);
-                break;
-            }
+            let x_speed = speed * guide_dir_axis_space.x;
+            let y_speed = speed * guide_dir_axis_space.y;
 
-            if let Err(e) = pd.mount_data.mount.as_mut().unwrap().set_motion(
-                mount::Axis::Secondary,
-                speed * guide_dir_axis_space.y
-            ) {
-                error = Some(e);
-                break;
-            }
+            log::info!(
+                "off target by [{}, {}] pix; sending guide cmd [{:.2}, {:.2}] · sidereal",
+                dpos.x, dpos.y, x_speed.0 / mount::SIDEREAL_RATE.0, y_speed.0 / mount::SIDEREAL_RATE.0
+            );
+            error = pd.mount_data.mount.as_mut().unwrap().guide(x_speed, y_speed);
+
+            if error.is_err() { break; }
 
             pd.mount_data.guide_slewing = true;
 
@@ -117,18 +103,11 @@ pub fn guiding_step(program_data_rc: &Rc<RefCell<ProgramData>>) {
                 clone!(@weak program_data_rc => @default-panic, move || guiding_step(&program_data_rc))
             );
         } else {
-            if let Err(e) = pd.mount_data.mount.as_mut().unwrap().set_motion(
-                mount::Axis::Primary,
-                if st_on { mount::SIDEREAL_RATE } else { 0.0 }
-            ) {
-                error = Some(e);
-                break;
-            }
-            if let Err(e) = pd.mount_data.mount.as_mut().unwrap().stop_motion(mount::Axis::Secondary) {
-                error = Some(e);
-                break;
-            }
+            error = pd.mount_data.mount.as_mut().unwrap().guide(RadPerSec(0.0), RadPerSec(0.0));
+            if error.is_err() { break; }
+
             pd.mount_data.guide_slewing = false;
+            log::info!("back on target");
 
             pd.mount_data.guiding_timer.run_once(
                 GUIDE_CHECK_INTERVAL,
@@ -139,7 +118,7 @@ pub fn guiding_step(program_data_rc: &Rc<RefCell<ProgramData>>) {
         break;
     }
 
-    if let Some(e) = error {
+    if let Err(e) = error {
         // mount already failed, so ignore further mount errors from this call, if any
         let _ = stop_guiding(program_data_rc);
         program_data_rc.borrow().gui.as_ref().unwrap().mount_widgets().disable_guide();

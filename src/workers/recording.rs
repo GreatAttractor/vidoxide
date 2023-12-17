@@ -1,6 +1,6 @@
 //
 // Vidoxide - Image acquisition for amateur astronomy
-// Copyright (c) 2020-2022 Filip Szczerek <ga.software@yahoo.com>
+// Copyright (c) 2020-2023 Filip Szczerek <ga.software@yahoo.com>
 //
 // This project is licensed under the terms of the MIT license
 // (see the LICENSE file for details).
@@ -108,7 +108,7 @@ pub fn recording_thread(
             RECEIVED_FROM_CAPTURE_THREAD => match sel_result.recv(&job.as_ref().unwrap().receiver) {
                 Ok(msg) => match msg {
                     CaptureToRecordingThreadMsg::Captured((image, mut fragment, _timestamp)) => {
-                        let mut job = job.as_mut().unwrap();
+                        let job = job.as_mut().unwrap();
 
                         let mut diag_error = None; //TODO: remove once diagnosed
 

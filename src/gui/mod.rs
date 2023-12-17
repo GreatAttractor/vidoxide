@@ -1,6 +1,6 @@
 //
 // Vidoxide - Image acquisition for amateur astronomy
-// Copyright (c) 2020-2022 Filip Szczerek <ga.software@yahoo.com>
+// Copyright (c) 2020-2023 Filip Szczerek <ga.software@yahoo.com>
 //
 // This project is licensed under the terms of the MIT license
 // (see the LICENSE file for details).
@@ -37,6 +37,7 @@ use crate::{CameraControlChange, NewControlValue, OnCapturePauseAction, ProgramD
 use crate::camera;
 use crate::camera::CameraError;
 use crate::mount;
+use crate::mount::RadPerSec;
 use crate::resources;
 use crate::workers::capture::{CaptureToMainThreadMsg, MainToCaptureThreadMsg};
 use crate::workers::histogram::{Histogram, HistogramRequest, MainToHistogramThreadMsg};
@@ -273,8 +274,11 @@ fn on_preview_area_button_up(pos: Point2<i32>, program_data_rc: &Rc<RefCell<Prog
             if let Some(sel_rect) = sel_rect {
                 match program_data.gui.as_ref().unwrap().mouse_mode {
                     MouseMode::SelectCentroidArea =>
+                    {
                         send_to_cap_thread_res =
-                            data.sender.send(MainToCaptureThreadMsg::EnableCentroidTracking(sel_rect)),
+                            data.sender.send(MainToCaptureThreadMsg::EnableCentroidTracking(sel_rect));
+                        log::info!("enabled target tracking via centroid");
+                    },
 
                     MouseMode::SelectCropArea => {
                         if !program_data.rec_job_active {
@@ -301,8 +305,11 @@ fn on_preview_area_button_up(pos: Point2<i32>, program_data_rc: &Rc<RefCell<Prog
                 }
             } else {
                 match program_data.gui.as_ref().unwrap().mouse_mode {
-                    MouseMode::PlaceTrackingAnchor =>
-                        send_to_cap_thread_res = data.sender.send(MainToCaptureThreadMsg::EnableAnchorTracking(pos)),
+                    MouseMode::PlaceTrackingAnchor => {
+                        send_to_cap_thread_res = data.sender.send(MainToCaptureThreadMsg::EnableAnchorTracking(pos));
+                        log::info!("enabled target tracking via anchor");
+                    },
+
                     _ => ()
                 }
             }
@@ -658,9 +665,11 @@ fn create_toolbar(
         if btn.is_active() {
             let mut pd = program_data_rc.borrow_mut();
             let tracking_pos = pd.tracking.as_ref().unwrap().pos;
-            let mut gui = pd.gui.as_mut().unwrap();
+            let gui = pd.gui.as_mut().unwrap();
             gui.stabilization.position = tracking_pos;
         }
+
+        log::info!("preview image stabilization {}", if btn.is_active() { "enabled" } else { "disabled" });
     }));
     toolbar.insert(&btn_toggle_stabilization, -1);
 
@@ -886,8 +895,6 @@ fn init_preview_menu(
 }
 
 fn show_about_dialog() {
-    const VERSION_STRING: &'static str = include_str!(concat!(env!("OUT_DIR"), "/version"));
-
     show_message(
         &format!(
             "<big><big><b>Vidoxide</b></big></big>\n\n\
@@ -895,7 +902,7 @@ fn show_about_dialog() {
             This project is licensed under the terms of the MIT license (see the LICENSE file for details).\n\n\
             version: {}\n\
             OS: {}",
-            VERSION_STRING,
+            crate::VERSION_STRING,
             os_info::get()
         ),
         "About Vidoxide",
@@ -1075,7 +1082,7 @@ fn on_tracking_ended(program_data_rc: &Rc<RefCell<ProgramData>>) {
         pd.tracking = None;
     }
 
-    let sd_on = program_data_rc.borrow().mount_data.sidereal_tracking_on;
+    let sd_on = program_data_rc.borrow().mount_data.sky_tracking_on;
     let has_mount = program_data_rc.borrow().mount_data.mount.is_some();
 
     if has_mount {
@@ -1083,17 +1090,24 @@ fn on_tracking_ended(program_data_rc: &Rc<RefCell<ProgramData>>) {
 
         //TODO: stop only if a guiding or calibration slew is in progress, not one started by user via an arrow button
 
-        let r = program_data_rc.borrow_mut().mount_data.mount.as_mut().unwrap().stop_motion(mount::Axis::Secondary);
-        if let Err(e) = &r {
+        let mut error;
+        loop { // no actual loop, just for early exit
+            let mut pd = program_data_rc.borrow_mut();
+            let mount = pd.mount_data.mount.as_mut().unwrap();
+
+            error = mount.guide(RadPerSec(0.0), RadPerSec(0.0));
+            if error.is_err() { break; }
+
+            error = mount.slew(mount::Axis::Primary, RadPerSec(0.0));
+            if error.is_err() { break; }
+
+            error = mount.slew(mount::Axis::Secondary, RadPerSec(0.0));
+
+            break;
+        }
+
+        if let Err(e) = &error {
             mount_gui::on_mount_error(e);
-        } else {
-            let r = program_data_rc.borrow_mut().mount_data.mount.as_mut().unwrap().set_motion(
-                mount::Axis::Primary,
-                if sd_on { 1.0 * mount::SIDEREAL_RATE } else { 0.0 }
-            );
-            if let Err(e) = &r {
-                mount_gui::on_mount_error(e);
-            }
         }
     }
 
@@ -1102,7 +1116,7 @@ fn on_tracking_ended(program_data_rc: &Rc<RefCell<ProgramData>>) {
     gui.mount_widgets.on_target_tracking_ended(reenable_calibration);
     gui.stabilization.toggle_button.set_active(false);
 
-    println!("Tracking disabled.");
+    log::info!("target tracking disabled");
 }
 
 fn apply_gamma_correction<T>(image: &mut ga_image::Image, max_value: T, gamma: f32, fragment: Rect)

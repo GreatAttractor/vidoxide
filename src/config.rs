@@ -1,6 +1,6 @@
 //
 // Vidoxide - Image acquisition for amateur astronomy
-// Copyright (c) 2020-2022 Filip Szczerek <ga.software@yahoo.com>
+// Copyright (c) 2020-2023 Filip Szczerek <ga.software@yahoo.com>
 //
 // This project is licensed under the terms of the MIT license
 // (see the LICENSE file for details).
@@ -37,6 +37,7 @@ mod keys {
     pub const TOOLBAR_ICON_SIZE: &str = "ToolbarIconSize";
 
     // group MOUNT
+    pub const IOPTRON_LAST_DEVICE: &str = "iOptronLastDevice";
     pub const SW_LAST_DEVICE: &str = "SkyWatcherLastDevice";
     pub const ASCOM_LAST_DRIVER: &str = "AscomLastDriver";
     pub const SIM_SKY_ROTATION_DIR_IN_IMG_SPACE: &str = "SimulatorSkyRotationDirInImgSpace";
@@ -121,6 +122,14 @@ impl Configuration {
 
     pub fn set_skywatcher_last_device(&self, value: &str) {
         self.key_file.set_string(groups::MOUNT, keys::SW_LAST_DEVICE, value);
+    }
+
+    pub fn ioptron_last_device(&self) -> Option<String> {
+        self.key_file.string(groups::MOUNT, keys::IOPTRON_LAST_DEVICE).ok().map(|s| s.to_string())
+    }
+
+    pub fn set_ioptron_last_device(&self, value: &str) {
+        self.key_file.set_string(groups::MOUNT, keys::IOPTRON_LAST_DEVICE, value);
     }
 
     pub fn mount_simulator_sky_rotation_dir_in_img_space(&self) -> Option<Vector2<i32>> {

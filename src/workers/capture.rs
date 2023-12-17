@@ -1,6 +1,6 @@
 //
 // Vidoxide - Image acquisition for amateur astronomy
-// Copyright (c) 2020-2022 Filip Szczerek <ga.software@yahoo.com>
+// Copyright (c) 2020-2023 Filip Szczerek <ga.software@yahoo.com>
 //
 // This project is licensed under the terms of the MIT license
 // (see the LICENSE file for details).
@@ -113,6 +113,11 @@ pub fn capture_thread(
 
     let mut fps_counter: i32 = 0;
 
+    // for indoor testing; if `Some`, captured images will drift with the given (signed) speed in X and Y
+    const DRIFT_PIX_PER_S: Option<[f64; 2]> = None;
+
+    let t_start = std::time::Instant::now();
+
     loop {
         let recording_finished = match rec_data {
             Some(ref data) => {
@@ -170,6 +175,16 @@ pub fn capture_thread(
                     }
                 },
                 Ok(()) => {
+                    if let Some([dx, dy]) = DRIFT_PIX_PER_S {
+                        let img = &mut capture_buf[current_buf_idx];
+                        let dt = t_start.elapsed();
+                        *img = Arc::new(img.fragment_copy(
+                            &[(dt.as_secs_f64() * dx) as i32, (dt.as_secs_f64() * dy) as i32],
+                            img.width(), img.height(),
+                            true
+                        ));
+                    }
+
                     if let Some(ref mut tracker) = tracking {
                         if on_tracking(tracker, &capture_buf[current_buf_idx], &sender, &mut crop_data).is_err() {
                             tracking = None;

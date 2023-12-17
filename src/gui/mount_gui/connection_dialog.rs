@@ -1,6 +1,6 @@
 //
 // Vidoxide - Image acquisition for amateur astronomy
-// Copyright (c) 2020-2022 Filip Szczerek <ga.software@yahoo.com>
+// Copyright (c) 2020-2023 Filip Szczerek <ga.software@yahoo.com>
 //
 // This project is licensed under the terms of the MIT license
 // (see the LICENSE file for details).
@@ -13,8 +13,7 @@
 use crate::gui::DialogDestroyer;
 #[cfg(feature = "mount_ascom")]
 use crate::gui::mount_gui::ascom;
-use crate::gui::mount_gui::simulator;
-use crate::gui::mount_gui::skywatcher;
+use crate::gui::mount_gui::{ioptron, simulator, skywatcher};
 use crate::mount::MountConnection;
 use crate::ProgramData;
 use gtk::prelude::*;
@@ -58,6 +57,9 @@ pub fn show_mount_connect_dialog(parent: &gtk::ApplicationWindow, program_data_r
 
             MountConnection::SkyWatcherSerial(_) =>
                 creators.push(skywatcher::SWConnectionCreator::new(&configuration!())),
+
+            MountConnection::IoptronSerial(_) =>
+                creators.push(ioptron::IoptronConnectionCreator::new(&configuration!())),
         }
     }
 

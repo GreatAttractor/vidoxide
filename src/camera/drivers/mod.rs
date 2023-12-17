@@ -1,6 +1,6 @@
 //
 // Vidoxide - Image acquisition for amateur astronomy
-// Copyright (c) 2020-2022 Filip Szczerek <ga.software@yahoo.com>
+// Copyright (c) 2020-2023 Filip Szczerek <ga.software@yahoo.com>
 //
 // This project is licensed under the terms of the MIT license
 // (see the LICENSE file for details).
@@ -34,32 +34,38 @@ pub fn init_drivers<'a>(
 
     #[cfg(feature = "camera_iidc")]
     if !disabled_drivers.contains(&"camera_iidc") {
+        log::info!("initializing IIDC camera driver");
         drivers.push(Rc::new(RefCell::new(Box::new(iidc::IIDCDriver::new().unwrap()))));
     }
 
     #[cfg(feature = "camera_v4l2")]
     if !disabled_drivers.contains(&"camera_v4l2") {
+        log::info!("initializing V4L2 camera driver");
         drivers.push(Rc::new(RefCell::new(Box::new(v4l2::V4L2Driver::new().unwrap()))));
     }
 
     #[cfg(feature = "camera_flycap2")]
     if !disabled_drivers.contains(&"camera_flycap2") {
+        log::info!("initializing FlyCapture2 camera driver");
         drivers.push(Rc::new(RefCell::new(Box::new(flycapture2::FlyCapture2Driver::new().unwrap()))));
     }
 
     #[cfg(feature = "camera_spinnaker")]
     if !disabled_drivers.contains(&"camera_spinnaker") {
+        log::info!("initializing Spinnaker camera driver");
         drivers.push(Rc::new(RefCell::new(Box::new(spinnaker::SpinnakerDriver::new().unwrap()))));
     }
 
     #[cfg(feature = "camera_asi")]
     if !disabled_drivers.contains(&"camera_asi") {
+        log::info!("initializing ZWO ASI camera driver");
         drivers.push(Rc::new(RefCell::new(Box::new(asi::ASIDriver::new().unwrap()))));
     }
 
     // add more drivers here
 
     if !disabled_drivers.contains(&"simulator") {
+        log::info!("initializing camera simulator driver");
         drivers.push(Rc::new(RefCell::new(Box::new(simulator::SimDriver::new(simulator_video_file).unwrap()))));
     }
 

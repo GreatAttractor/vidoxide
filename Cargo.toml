@@ -19,11 +19,12 @@ cgmath = "0.18.0"
 chrono = "0.4.12"
 com = { version = "0.3.0", optional = true }
 crossbeam = "0.8.2"
-dirs = "2.0.2"
+dirs = "5.0.1"
 enum_dispatch = "0.3.7"
 ga_image = { path = "ext/ga_image" }
 glib = "0.14.2"
 gtk = "0.14.0"
+log = "0.4.20"
 ioctl-rs = { version = "0.2.0", optional = true }
 libasicamera-sys = { path = "../libasicamera-sys", optional = true }
 libdc1394-sys = { version = "0.2.2", optional = true }
@@ -33,8 +34,10 @@ mmap = { version = "0.1.1", optional = true }
 num-traits = "0.2.12"
 os_info = "3.0"
 serialport = "4.2.0"
+simplelog = "0.12.1"
 strum = "0.18.0"
 strum_macros = "0.18.0"
+time = "0.3.30" # why needed explicitly? simplelog's use not enough?
 uuid = { version = "0.8", optional = true }
 v4l2-sys = { version = "1.1.0", optional = true }
 

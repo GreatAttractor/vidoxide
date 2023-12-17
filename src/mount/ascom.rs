@@ -1,6 +1,6 @@
 //
 // Vidoxide - Image acquisition for amateur astronomy
-// Copyright (c) 2021 Filip Szczerek <ga.software@yahoo.com>
+// Copyright (c) 2023 Filip Szczerek <ga.software@yahoo.com>
 //
 // This project is licensed under the terms of the MIT license
 // (see the LICENSE file for details).
@@ -268,8 +268,8 @@ fn ascom_axis_from(axis: Axis) -> TelescopeAxes {
 }
 
 impl Mount for Ascom {
-    fn get_info(&self) -> Result<String, MountError> {
-        Ok(format!("ASCOM – {}", self.driver))
+    fn get_info(&self) -> String {
+        format!("ASCOM – {}", self.driver)
     }
 
     fn set_motion(&mut self, axis: Axis, speed: f64) -> Result<(), MountError> {
@@ -290,9 +290,5 @@ impl Mount for Ascom {
         ) });
 
         Ok(())
-    }
-
-    fn get_motion_speed(&self, axis: Axis) -> Result<f64, MountError> {
-        unimplemented!();
     }
 }

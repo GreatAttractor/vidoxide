@@ -1,6 +1,6 @@
 //
 // Vidoxide - Image acquisition for amateur astronomy
-// Copyright (c) 2021 Filip Szczerek <ga.software@yahoo.com>
+// Copyright (c) 2021-2023 Filip Szczerek <ga.software@yahoo.com>
 //
 // This project is licensed under the terms of the MIT license
 // (see the LICENSE file for details).
@@ -1042,6 +1042,10 @@ impl FrameCapturer for SpinnakerFrameCapturer {
             dest_image.height() != f_height ||
             dest_image.pixel_format() != f_pix_fmt {
 
+            // there may be some padding at the end of `frame_pixels` which we do not need
+            let num_bytes_to_use = f_height as usize * f_stride as usize * f_pix_fmt.bytes_per_pixel();
+            let frame_pixels = &frame_pixels[..num_bytes_to_use];
+
             *dest_image = Image::new_from_pixels(
                 f_width,
                 f_height,
@@ -1051,7 +1055,9 @@ impl FrameCapturer for SpinnakerFrameCapturer {
                 frame_pixels.to_vec()
             );
         } else {
-            dest_image.raw_pixels_mut().copy_from_slice(frame_pixels);
+            // there may be some padding at the end of `frame_pixels` which we do not need
+            let num_bytes_to_use = f_height as usize * f_stride as usize * f_pix_fmt.bytes_per_pixel();
+            dest_image.raw_pixels_mut().copy_from_slice(&frame_pixels[..num_bytes_to_use]);
         }
 
         // TODO - check endianess for >8 bpp pixel formats

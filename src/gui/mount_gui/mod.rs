@@ -1,6 +1,6 @@
 //
 // Vidoxide - Image acquisition for amateur astronomy
-// Copyright (c) 2020-2022 Filip Szczerek <ga.software@yahoo.com>
+// Copyright (c) 2020-2023 Filip Szczerek <ga.software@yahoo.com>
 //
 // This project is licensed under the terms of the MIT license
 // (see the LICENSE file for details).
@@ -12,6 +12,7 @@
 
 #[cfg(feature = "mount_ascom")]
 mod ascom;
+mod ioptron;
 mod simulator;
 mod skywatcher;
 pub mod connection_dialog;
@@ -20,10 +21,10 @@ use cgmath::{Point2, Vector2, InnerSpace};
 use crate::{MountCalibration, ProgramData};
 use crate::guiding;
 use crate::mount;
+use crate::mount::RadPerSec;
 use glib::{clone};
 use gtk::prelude::*;
-use std::cell::RefCell;
-use std::rc::Rc;
+use std::{cell::RefCell, error::Error, rc::Rc};
 use super::show_message;
 
 /// Control padding in pixels.
@@ -49,21 +50,19 @@ const SLEWING_SPEEDS: &'static [SlewingSpeed] = &[
 ];
 
 const GUIDING_SPEEDS: &'static [SlewingSpeed] = &[
+    SlewingSpeed{ sidereal_multiply: 0.1,  label: "0.1x" },
     SlewingSpeed{ sidereal_multiply: 0.25, label: "0.25x" },
     SlewingSpeed{ sidereal_multiply: 0.4,  label: "0.4x" },
     SlewingSpeed{ sidereal_multiply: 0.5,  label: "0.5x" },
-    SlewingSpeed{ sidereal_multiply: 0.8,  label: "0.8x" },
-    SlewingSpeed{ sidereal_multiply: 1.0,  label: "1x" },
-    SlewingSpeed{ sidereal_multiply: 2.0,  label: "2x" },
-    SlewingSpeed{ sidereal_multiply: 4.0,  label: "4x" },
-    SlewingSpeed{ sidereal_multiply: 32.0,  label: "32x" } //TESTING ######
+    SlewingSpeed{ sidereal_multiply: 0.75, label: "0.75x" },
+    SlewingSpeed{ sidereal_multiply: 0.9,  label: "0.9x" }
 ];
 
 pub struct MountWidgets {
     wbox: gtk::Box,
     status: gtk::Label,
     /// Button and its "activate" signal.
-    sidereal_tracking: (gtk::ToggleButton, glib::SignalHandlerId),
+    sky_tracking: (gtk::ToggleButton, glib::SignalHandlerId),
     /// Button and its "activate" signal.
     guide: (gtk::ToggleButton, glib::SignalHandlerId),
     calibrate: gtk::Button,
@@ -91,14 +90,14 @@ impl MountWidgets {
     {
         self.wbox.set_sensitive(false);
         self.status.set_text("disconnected");
-        self.disable_sidereal_tracking_btn();
+        self.disable_sky_tracking_btn();
     }
 
-    fn disable_sidereal_tracking_btn(&self) {
-        let (btn_sidereal, signal) = &self.sidereal_tracking;
-        btn_sidereal.block_signal(signal);
-        btn_sidereal.set_active(false);
-        btn_sidereal.unblock_signal(signal);
+    fn disable_sky_tracking_btn(&self) {
+        let (btn_tracking, signal) = &self.sky_tracking;
+        btn_tracking.block_signal(signal);
+        btn_tracking.set_active(false);
+        btn_tracking.unblock_signal(signal);
     }
 
     /// Returns slewing speed (multiply of sidereal rate) selected in combo box.
@@ -120,14 +119,8 @@ impl MountWidgets {
 }
 
 fn on_stop(program_data_rc: &Rc<RefCell<ProgramData>>) {
-    let r = program_data_rc.borrow_mut().mount_data.mount.as_mut().unwrap().stop_motion(mount::Axis::Primary);
-    if let Err(e) = &r {
-        on_mount_error(e);
-        return;
-    }
-
-    let r = program_data_rc.borrow_mut().mount_data.mount.as_mut().unwrap().stop_motion(mount::Axis::Secondary);
-    if let Err(e) = &r {
+    let res = program_data_rc.borrow_mut().mount_data.mount.as_mut().unwrap().stop();
+    if let Err(e) = &res {
         on_mount_error(e);
         return;
     }
@@ -145,9 +138,10 @@ fn on_stop(program_data_rc: &Rc<RefCell<ProgramData>>) {
         pd.gui.as_ref().unwrap().mount_widgets.calibrate.set_sensitive(true);
     }
 
-    if pd.mount_data.sidereal_tracking_on {
-        pd.mount_data.sidereal_tracking_on = false;
-        pd.gui.as_ref().unwrap().mount_widgets.disable_sidereal_tracking_btn();
+    if pd.mount_data.sky_tracking_on {
+        pd.mount_data.sky_tracking_on = false;
+        pd.gui.as_ref().unwrap().mount_widgets.disable_sky_tracking_btn();
+        log::info!("sky tracking disabled");
     }
 }
 
@@ -168,8 +162,8 @@ fn on_start_calibration(btn: &gtk::Button, program_data_rc: &Rc<RefCell<ProgramD
     }
 
     let slew_speed = program_data_rc.borrow().gui.as_ref().unwrap().mount_widgets.slew_speed() * mount::SIDEREAL_RATE;
-    let r = program_data_rc.borrow_mut().mount_data.mount.as_mut().unwrap().set_motion(mount::Axis::Primary, slew_speed);
-    if let Err(e) = &r {
+    let res = program_data_rc.borrow_mut().mount_data.mount.as_mut().unwrap().slew(mount::Axis::Primary, slew_speed);
+    if let Err(e) = &res {
         on_mount_error(e);
     } else {
         program_data_rc.borrow_mut().mount_data.calibration_timer.run_once(
@@ -189,16 +183,13 @@ fn on_calibration_timer(program_data_rc: &Rc<RefCell<ProgramData>>) {
         let mut pd = program_data_rc.borrow_mut();
         let tracking_pos = pd.tracking.as_ref().unwrap().pos;
 
-        let sd_on = pd.mount_data.sidereal_tracking_on;
+        let sd_on = pd.mount_data.sky_tracking_on;
         if pd.mount_data.calibration.as_ref().unwrap().primary_dir.is_none() {
-            let r = pd.mount_data.mount.as_mut().unwrap().set_motion(
-                mount::Axis::Primary,
-                if sd_on { 1.0 * mount::SIDEREAL_RATE } else { 0.0 }
-            );
-            if let Err(e) = &r { must_show_error.replace(Some(mount_error_msg(e))); break; }
+            let res = pd.mount_data.mount.as_mut().unwrap().slew(mount::Axis::Primary, RadPerSec(0.0));
+            if let Err(e) = &res { must_show_error.replace(Some(mount_error_msg(e))); break; }
         } else {
-            let r = pd.mount_data.mount.as_mut().unwrap().stop_motion(mount::Axis::Secondary);
-            if let Err(e) = &r { must_show_error.replace(Some(mount_error_msg(e))); break; }
+            let res = pd.mount_data.mount.as_mut().unwrap().slew(mount::Axis::Secondary, RadPerSec(0.0));
+            if let Err(e) = &res { must_show_error.replace(Some(mount_error_msg(e))); break; }
         }
 
         let dir_getter = || -> Option<Vector2<f64>> {
@@ -221,8 +212,8 @@ fn on_calibration_timer(program_data_rc: &Rc<RefCell<ProgramData>>) {
                 pd.mount_data.calibration.as_mut().unwrap().primary_dir = Some(dir);
 
                 let slew_speed = pd.gui.as_ref().unwrap().mount_widgets.slew_speed() * mount::SIDEREAL_RATE;
-                let r = pd.mount_data.mount.as_mut().unwrap().set_motion(mount::Axis::Secondary, slew_speed);
-                if let Err(e) = &r {
+                let res = pd.mount_data.mount.as_mut().unwrap().slew(mount::Axis::Secondary, slew_speed);
+                if let Err(e) = &res {
                     must_show_error.replace(Some(mount_error_msg(e)));
                     break;
                 } else {
@@ -277,7 +268,7 @@ pub fn create_mount_box(program_data_rc: &Rc<RefCell<ProgramData>>) -> MountWidg
     upper_box.pack_start(&gtk::Label::new(Some("Slewing speed:")), false, false, PADDING);
     let slew_speed = gtk::ComboBoxText::new();
     for speed in SLEWING_SPEEDS {
-        slew_speed.append_text(&speed.label);
+        slew_speed.append_text(&speed.label); // TODO: disable rates unsupported by mount
     }
     slew_speed.set_active(Some(2));
     upper_box.pack_start(&slew_speed, false, false, PADDING);
@@ -295,16 +286,16 @@ pub fn create_mount_box(program_data_rc: &Rc<RefCell<ProgramData>>) -> MountWidg
     btn_stop.connect_clicked(clone!(@weak program_data_rc => @default-panic, move |_| on_stop(&program_data_rc)));
     upper_box.pack_end(&btn_stop, false, false, PADDING);
 
-    let btn_sidereal_tracking = gtk::ToggleButtonBuilder::new()
+    let btn_sky_tracking = gtk::ToggleButtonBuilder::new()
         .label("🌐 ⟳")
-        .tooltip_text("Enable sidereal tracking")
+        .tooltip_text("Enable sky tracking")
         .build();
 
-    let signal_sidereal_tracking = btn_sidereal_tracking.connect_toggled(clone!(@weak program_data_rc => @default-panic, move |btn| {
-        on_toggle_sidereal_tracking(btn, &program_data_rc);
+    let signal_sky_tracking = btn_sky_tracking.connect_toggled(clone!(@weak program_data_rc => @default-panic, move |btn| {
+        on_toggle_sky_tracking(btn, &program_data_rc);
     }));
 
-    upper_box.pack_end(&btn_sidereal_tracking, false, false, PADDING);
+    upper_box.pack_end(&btn_sky_tracking, false, false, PADDING);
 
     contents.pack_start(&upper_box, false, false, PADDING);
 
@@ -355,7 +346,7 @@ pub fn create_mount_box(program_data_rc: &Rc<RefCell<ProgramData>>) -> MountWidg
     MountWidgets{
         wbox: contents,
         status: status_label,
-        sidereal_tracking: (btn_sidereal_tracking, signal_sidereal_tracking),
+        sky_tracking: (btn_sky_tracking, signal_sky_tracking),
         guide: (btn_guide, signal_guide),
         calibrate: btn_calibrate,
         slew_speed,
@@ -363,60 +354,56 @@ pub fn create_mount_box(program_data_rc: &Rc<RefCell<ProgramData>>) -> MountWidg
     }
 }
 
-fn mount_error_msg(e: &mount::MountError) -> String {
-    format!("Error communicating with mount: {:?}.", e)
+fn mount_error_msg(e: &Box<dyn Error>) -> String {
+    format!("Error communicating with mount: {}.", e)
 }
 
 /// Shows mount error message.
 ///
 /// Active borrows of `program_data` *must not be held* when calling this function.
 ///
-pub fn on_mount_error(e: &mount::MountError) {
+pub fn on_mount_error(e: &Box<dyn Error>) {
     show_message(&mount_error_msg(e), "Error", gtk::MessageType::Error);
 }
 
-fn on_toggle_sidereal_tracking(btn: &gtk::ToggleButton, program_data_rc: &Rc<RefCell<ProgramData>>) {
-    if btn.is_active() {
-        // TODO: abort calibration; or do not allow toggling ST during calibration
-        let r = program_data_rc.borrow_mut().mount_data.mount.as_mut().unwrap().set_motion(
-            mount::Axis::Primary, mount::SIDEREAL_RATE
-        );
-        if let Err(e) = &r {
-            btn.set_active(false);
-            on_mount_error(e);
-            return;
-        }
-    } else {
-        let r = program_data_rc.borrow_mut().mount_data.mount.as_mut().unwrap().stop_motion(mount::Axis::Primary);
-        if let Err(e) = &r {
-            btn.set_active(true);
-            on_mount_error(e);
-            return;
-        }
+fn on_toggle_sky_tracking(btn: &gtk::ToggleButton, program_data_rc: &Rc<RefCell<ProgramData>>) {
+    // TODO: if ST was enabled, abort calibration; or do not allow toggling ST during calibration
+
+    let enable_tracking = btn.is_active();
+    let res = program_data_rc.borrow_mut().mount_data.mount.as_mut().unwrap().set_tracking(enable_tracking);
+    if let Err(e) = &res {
+        btn.set_active(!enable_tracking);
+        on_mount_error(e);
     }
 
-    program_data_rc.borrow_mut().mount_data.sidereal_tracking_on = btn.is_active();
+    if !btn.is_active() {
+        let _ = guiding::stop_guiding(program_data_rc);
+        program_data_rc.borrow().gui.as_ref().unwrap().mount_widgets().disable_guide();
+    }
+
+    program_data_rc.borrow_mut().mount_data.sky_tracking_on = btn.is_active();
+    log::info!("sky tracking {}", if btn.is_active() { "enabled" } else { "disabled" });
 }
 
 /// Returns slewing buttons: (Primary-, Secondary+, Secondary-, Primary+).
 fn create_direction_buttons(program_data_rc: &Rc<RefCell<ProgramData>>)
 -> (gtk::Button, gtk::Button, gtk::Button, gtk::Button) {
 
+    let zero = RadPerSec(0.0);
+
     let dir_primary_neg = gtk::Button::with_label("← Axis 1");
     dir_primary_neg.set_tooltip_text(Some("Primary axis negative slew"));
     dir_primary_neg.connect_button_press_event(clone!(@weak program_data_rc => @default-panic, move |_, _| {
-        let base = if program_data_rc.borrow().mount_data.sidereal_tracking_on { mount::SIDEREAL_RATE } else { 0.0 };
         let speed = program_data_rc.borrow().gui.as_ref().unwrap().mount_widgets.slew_speed();
-        let r = program_data_rc.borrow_mut().mount_data.mount.as_mut().unwrap().set_motion(
-            mount::Axis::Primary, -speed * mount::SIDEREAL_RATE + base
+        let res = program_data_rc.borrow_mut().mount_data.mount.as_mut().unwrap().slew(
+            mount::Axis::Primary, -speed * mount::SIDEREAL_RATE
         );
-        if let Err(e) = &r { on_mount_error(e) }
-        gtk::Inhibit(r.is_err())
+        if let Err(e) = &res { on_mount_error(e) }
+        gtk::Inhibit(res.is_err())
     }));
     dir_primary_neg.connect_button_release_event(clone!(@weak program_data_rc => @default-panic, move |_, _| {
-        let base = if program_data_rc.borrow().mount_data.sidereal_tracking_on { mount::SIDEREAL_RATE } else { 0.0 };
-        let r = program_data_rc.borrow_mut().mount_data.mount.as_mut().unwrap().set_motion(mount::Axis::Primary, base);
-        if let Err(e) = &r { on_mount_error(e) }
+        let res = program_data_rc.borrow_mut().mount_data.mount.as_mut().unwrap().slew(mount::Axis::Primary, zero);
+        if let Err(e) = &res { on_mount_error(e) }
         gtk::Inhibit(false)
     }));
 
@@ -424,15 +411,15 @@ fn create_direction_buttons(program_data_rc: &Rc<RefCell<ProgramData>>)
     dir_secondary_pos.set_tooltip_text(Some("Secondary axis positive slew"));
     dir_secondary_pos.connect_button_press_event(clone!(@weak program_data_rc => @default-panic, move |_, _| {
         let speed = program_data_rc.borrow().gui.as_ref().unwrap().mount_widgets.slew_speed();
-        let r = program_data_rc.borrow_mut().mount_data.mount.as_mut().unwrap().set_motion(
+        let res = program_data_rc.borrow_mut().mount_data.mount.as_mut().unwrap().slew(
             mount::Axis::Secondary, speed * mount::SIDEREAL_RATE
         );
-        if let Err(e) = &r { on_mount_error(e) }
-        gtk::Inhibit(r.is_err())
+        if let Err(e) = &res { on_mount_error(e) }
+        gtk::Inhibit(res.is_err())
     }));
     dir_secondary_pos.connect_button_release_event(clone!(@weak program_data_rc => @default-panic, move |_, _| {
-        let r = program_data_rc.borrow_mut().mount_data.mount.as_mut().unwrap().stop_motion(mount::Axis::Secondary);
-        if let Err(e) = &r { on_mount_error(e) }
+        let res = program_data_rc.borrow_mut().mount_data.mount.as_mut().unwrap().slew(mount::Axis::Secondary, zero);
+        if let Err(e) = &res { on_mount_error(e) }
         gtk::Inhibit(false)
     }));
 
@@ -440,33 +427,31 @@ fn create_direction_buttons(program_data_rc: &Rc<RefCell<ProgramData>>)
     dir_secondary_neg.set_tooltip_text(Some("Secondary axis negative slew"));
     dir_secondary_neg.connect_button_press_event(clone!(@weak program_data_rc => @default-panic, move |_, _| {
         let speed = program_data_rc.borrow().gui.as_ref().unwrap().mount_widgets.slew_speed();
-        let r = program_data_rc.borrow_mut().mount_data.mount.as_mut().unwrap().set_motion(
+        let res = program_data_rc.borrow_mut().mount_data.mount.as_mut().unwrap().slew(
             mount::Axis::Secondary, -speed * mount::SIDEREAL_RATE
         );
-        if let Err(e) = &r { on_mount_error(e) }
-        gtk::Inhibit(r.is_err())
+        if let Err(e) = &res { on_mount_error(e) }
+        gtk::Inhibit(res.is_err())
     }));
     dir_secondary_neg.connect_button_release_event(clone!(@weak program_data_rc => @default-panic, move |_, _| {
-        let r = program_data_rc.borrow_mut().mount_data.mount.as_mut().unwrap().stop_motion(mount::Axis::Secondary);
-        if let Err(e) = &r { on_mount_error(e) }
+        let res = program_data_rc.borrow_mut().mount_data.mount.as_mut().unwrap().slew(mount::Axis::Secondary, zero);
+        if let Err(e) = &res { on_mount_error(e) }
         gtk::Inhibit(false)
     }));
 
     let dir_primary_pos = gtk::Button::with_label("→ Axis 1");
     dir_primary_pos.set_tooltip_text(Some("Primary axis positive slew"));
     dir_primary_pos.connect_button_press_event(clone!(@weak program_data_rc => @default-panic, move |_, _| {
-        let base = if program_data_rc.borrow().mount_data.sidereal_tracking_on { mount::SIDEREAL_RATE } else { 0.0 };
         let speed = program_data_rc.borrow().gui.as_ref().unwrap().mount_widgets.slew_speed();
-        let r = program_data_rc.borrow_mut().mount_data.mount.as_mut().unwrap().set_motion(
-            mount::Axis::Primary, speed * mount::SIDEREAL_RATE + base
+        let res = program_data_rc.borrow_mut().mount_data.mount.as_mut().unwrap().slew(
+            mount::Axis::Primary, speed * mount::SIDEREAL_RATE
         );
-        if let Err(e) = &r { on_mount_error(e) }
-        gtk::Inhibit(r.is_err())
+        if let Err(e) = &res { on_mount_error(e) }
+        gtk::Inhibit(res.is_err())
     }));
     dir_primary_pos.connect_button_release_event(clone!(@weak program_data_rc => @default-panic, move |_, _| {
-        let base = if program_data_rc.borrow().mount_data.sidereal_tracking_on { mount::SIDEREAL_RATE } else { 0.0 };
-        let r = program_data_rc.borrow_mut().mount_data.mount.as_mut().unwrap().set_motion(mount::Axis::Primary, base);
-        if let Err(e) = &r { on_mount_error(e) }
+        let res = program_data_rc.borrow_mut().mount_data.mount.as_mut().unwrap().slew(mount::Axis::Primary, zero);
+        if let Err(e) = &res { on_mount_error(e) }
         gtk::Inhibit(false)
     }));
 
@@ -481,10 +466,12 @@ pub fn init_mount_menu(program_data_rc: &Rc<RefCell<ProgramData>>, app_window: &
         program_data_rc.borrow().gui.as_ref().unwrap().mount_widgets.on_disconnect();
         {
             let mut pd = program_data_rc.borrow_mut();
+            let mount_info = pd.mount_data.mount.as_ref().unwrap().get_info();
             pd.mount_data.mount = None;
-            pd.mount_data.sidereal_tracking_on = false;
+            pd.mount_data.sky_tracking_on = false;
             pd.mount_data.calibration = None;
             pd.gui.as_ref().unwrap().mount_widgets.on_disconnect();
+            log::info!("disconnected from {}", mount_info);
         }
         menu_item.set_sensitive(false);
     }));
@@ -505,10 +492,11 @@ pub fn init_mount_menu(program_data_rc: &Rc<RefCell<ProgramData>>, app_window: &
                             gtk::MessageType::Error
                         ),
                         Ok(mut mount) => {
-                            let tracking_enabled = program_data_rc.borrow().tracking.is_some();
+                            log::info!("connected to {}", mount.get_info());
+                            let target_tracking_enabled = program_data_rc.borrow().tracking.is_some();
                             program_data_rc.borrow().gui.as_ref().unwrap().mount_widgets.on_connect(
-                                &mount.get_info().unwrap(),
-                                tracking_enabled
+                                &mount.get_info(),
+                                target_tracking_enabled
                             );
                             mount.set_mount_simulator_data(program_data_rc.borrow().mount_simulator_data.clone());
                             program_data_rc.borrow_mut().mount_data.mount = Some(mount);

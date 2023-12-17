@@ -1,6 +1,6 @@
 //
 // Vidoxide - Image acquisition for amateur astronomy
-// Copyright (c) 2020-2022 Filip Szczerek <ga.software@yahoo.com>
+// Copyright (c) 2020-2023 Filip Szczerek <ga.software@yahoo.com>
 //
 // This project is licensed under the terms of the MIT license
 // (see the LICENSE file for details).
@@ -13,28 +13,14 @@
 //! NOTE: this code has been only tested with a 2014 HEQ5 mount.
 //!
 
-use std::f64::consts::PI;
-use crate::mount::{Axis, Mount, MountError, SIDEREAL_RATE};
+use std::{error::Error, f64::consts::PI};
+use crate::mount::{Axis, Mount, RadPerSec, SIDEREAL_RATE};
 
 const AXIS_STOP_MOTION_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
-const MAX_SPEED: f64 = 800.0 * SIDEREAL_RATE;
+const MAX_SPEED: RadPerSec = RadPerSec(800.0 * SIDEREAL_RATE.0);
 
-const LOW_SPEED_THRESHOLD: f64 = 128.0 * SIDEREAL_RATE;
-
-
-impl std::convert::From<SWError> for MountError {
-    fn from(e: SWError) -> MountError {
-        MountError::SkyWatcherError(e)
-    }
-}
-
-#[derive(Debug)]
-pub enum SWError {
-    InvalidResponse,
-    SerialPort(serialport::Error),
-    IO(std::io::Error)
-}
+const LOW_SPEED_THRESHOLD: RadPerSec = RadPerSec(128.0 * SIDEREAL_RATE.0);
 
 impl Axis {
     fn as_char(&self) -> char {
@@ -115,7 +101,8 @@ pub struct SkyWatcher {
     serial_port: Box<dyn serialport::SerialPort>,
     rad_rate_to_int: [f64; 2],
     hi_speed_ratio: [u32; 2],
-    current_slewing_speed: [f64; 2]
+    current_slewing_speed: [RadPerSec; 2],
+    tracking: bool
 }
 
 impl SkyWatcher {
@@ -127,14 +114,14 @@ impl SkyWatcher {
     ///     e.g., "COM3" on Windows or "/dev/ttyUSB0" on Linux.
     ///
     #[must_use]
-    pub fn new(device: &str) -> Result<SkyWatcher, SWError> {
+    pub fn new(device: &str) -> Result<SkyWatcher, Box<dyn Error>> {
         let mut serial_port = serialport::new(device, 9600)
             .data_bits(serialport::DataBits::Eight)
             .flow_control(serialport::FlowControl::None)
             .parity(serialport::Parity::None)
             .stop_bits(serialport::StopBits::One)
             .timeout(std::time::Duration::from_millis(50))
-            .open().map_err(|e| SWError::SerialPort(e))?;
+            .open()?;
 
         let mut rad_to_step = [0.0; 2];
 
@@ -169,25 +156,26 @@ impl SkyWatcher {
 
         Ok(SkyWatcher{
             device: device.to_string(),
+            tracking: false,
             serial_port,
             rad_rate_to_int,
             hi_speed_ratio,
-            current_slewing_speed: [0.0; 2]
+            current_slewing_speed: [RadPerSec(0.0); 2]
         })
     }
 
     #[must_use]
-    fn is_stopped(&mut self, axis: Axis) -> Result<bool, SWError> {
+    fn is_stopped(&mut self, axis: Axis) -> Result<bool, Box<dyn Error>> {
         let response = send_cmd_and_get_reply(&mut self.serial_port, axis, Opcode::GetAxisStatus, "")?;
         if response.len() < 3 {
-            Err(SWError::InvalidResponse)
+            Err("invalid response".into())
         } else {
             Ok(response[2] & 0x01 == 0)
         }
     }
 
     #[must_use]
-    fn update_step_period(&mut self, axis: Axis, mut speed: f64) -> Result<(), SWError> {
+    fn update_step_period(&mut self, axis: Axis, mut speed: RadPerSec) -> Result<(), Box<dyn Error>> {
         if speed > MAX_SPEED {
             speed = MAX_SPEED
         } else if speed < -MAX_SPEED {
@@ -199,7 +187,7 @@ impl SkyWatcher {
         }
 
         let factor = self.rad_rate_to_int[axis.as_index()];
-        let speed_int = std::cmp::max(6, (factor / speed.abs()) as u32);
+        let speed_int = std::cmp::max(6, (factor / speed.abs().0) as u32);
 
         send_cmd_and_get_reply(
             &mut self.serial_port, axis, Opcode::SetStepPeriod, &u32_to_skywatcher_hex_str(speed_int)
@@ -208,14 +196,7 @@ impl SkyWatcher {
         Ok(())
     }
 
-}
-
-impl Mount for SkyWatcher {
-    fn get_info(&self) -> Result<String, MountError> {
-        Ok(format!("Sky-Watcher on {}", self.device))
-    }
-
-    fn set_motion(&mut self, axis: Axis, speed: f64) -> Result<(), MountError> {
+    fn set_motion(&mut self, axis: Axis, speed: RadPerSec) -> Result<(), Box<dyn Error>> {
         if speed.abs() < 0.001 * SIDEREAL_RATE {
             return self.stop_motion(axis);
         }
@@ -227,12 +208,12 @@ impl Mount for SkyWatcher {
             self.stop_motion(axis)?;
         }
 
-        if speed * self.current_slewing_speed[axis.as_index()] > 0.0 {
+        if speed.0 * self.current_slewing_speed[axis.as_index()].0 > 0.0 {
             // already slewing in the same direction
             self.update_step_period(axis, speed)?;
             self.current_slewing_speed[axis.as_index()] = speed;
         } else {
-            let dir_positive = speed >= 0.0;
+            let dir_positive = speed >= RadPerSec(0.0);
             let hi_speed = speed.abs() > LOW_SPEED_THRESHOLD;
 
             self.stop_motion(axis)?;
@@ -258,7 +239,7 @@ impl Mount for SkyWatcher {
         Ok(())
     }
 
-    fn stop_motion(&mut self, axis: Axis) -> Result<(), MountError> {
+    fn stop_motion(&mut self, axis: Axis) -> Result<(), Box<dyn Error>> {
         send_cmd_and_get_reply(&mut self.serial_port, axis, Opcode::StopMotion, "")?;
 
         let tstart = std::time::Instant::now();
@@ -266,13 +247,47 @@ impl Mount for SkyWatcher {
             std::thread::sleep(std::time::Duration::from_millis(100));
         }
 
-        self.current_slewing_speed[axis.as_index()] = 0.0;
+        self.current_slewing_speed[axis.as_index()] = RadPerSec(0.0);
+
+        Ok(())
+    }
+}
+
+impl Mount for SkyWatcher {
+    fn get_info(&self) -> String {
+        format!("Sky-Watcher on {}", self.device)
+    }
+
+    fn set_tracking(&mut self, enabled: bool) -> Result<(), Box<dyn Error>> {
+        self.tracking = enabled;
+        self.set_motion(Axis::Primary, if enabled { SIDEREAL_RATE } else { RadPerSec(0.0) })
+    }
+
+    fn guide(&mut self, axis1_speed: RadPerSec, axis2_speed: RadPerSec) -> Result<(), Box<dyn Error>> {
+        if !self.tracking { return Err("cannot guide when tracking disabled".into()); }
+
+        self.set_motion(Axis::Primary, axis1_speed + if self.tracking { SIDEREAL_RATE } else { RadPerSec(0.0) })?;
+        self.set_motion(Axis::Secondary, axis2_speed)?;
 
         Ok(())
     }
 
-    fn get_motion_speed(&self, axis: Axis) -> Result<f64, MountError> {
-        Ok(self.current_slewing_speed[axis.as_index()])
+    fn slew(&mut self, axis: Axis, speed: RadPerSec) -> Result<(), Box<dyn Error>> {
+        match axis {
+            Axis::Primary => self.set_motion(axis, speed + if self.tracking { SIDEREAL_RATE } else { RadPerSec(0.0) })?,
+            Axis::Secondary => self.set_motion(axis, speed)?
+        }
+
+        Ok(())
+    }
+
+    fn slewing_rate_supported(&self, speed: RadPerSec) -> bool {
+        speed <= MAX_SPEED
+    }
+
+    fn stop(&mut self) -> Result<(), Box<dyn Error>> {
+        self.stop_motion(Axis::Primary)?;
+        self.stop_motion(Axis::Secondary)
     }
 }
 
@@ -283,15 +298,15 @@ impl Drop for SkyWatcher {
     }
 }
 
-fn skywatcher_hex_str_to_u32(s: &[u8]) -> Result<u32, SWError> {
+fn skywatcher_hex_str_to_u32(s: &[u8]) -> Result<u32, Box<dyn Error>> {
     if s.len() == 0 || (s.len() & 1 == 1) {
-        return Err(SWError::InvalidResponse);
+        return Err("invalid response".into())
     }
 
     let mut result: u32 = 0;
     for i in (0..=s.len() - 2).step_by(2) {
-        let two_hex_digits = std::str::from_utf8(&s[i..i + 2]).map_err(|_| SWError::InvalidResponse)?;
-        result += u32::from_str_radix(&two_hex_digits, 16).map_err(|_| SWError::InvalidResponse)? << (i / 2 * 8);
+        let two_hex_digits = std::str::from_utf8(&s[i..i + 2])?;
+        result += u32::from_str_radix(&two_hex_digits, 16)? << (i / 2 * 8);
     }
 
     Ok (result)
@@ -306,7 +321,7 @@ fn extract_hex_number(mount_response: &[u8]) -> Vec<u8> {
 }
 
 fn send_cmd_and_get_reply(serial_port: &mut Box<dyn serialport::SerialPort>, axis: Axis, opcode: Opcode, params: &str)
--> Result<Vec<u8>, SWError> {
+-> Result<Vec<u8>, Box<dyn Error>> {
     let command_str = format!(
         "{}{}{}{}{}",
         command::START_CHAR_OUT as char,
@@ -316,21 +331,21 @@ fn send_cmd_and_get_reply(serial_port: &mut Box<dyn serialport::SerialPort>, axi
         command::END_CHAR as char
     ).into_bytes();
 
-    serial_port.write_all(&command_str).map_err(|e| SWError::IO(e))?;
+    serial_port.write_all(&command_str)?;
 
     let mut buf = vec![];
     let mut reply_received = false;
     while !reply_received {
         buf.push(0);
         let blen = buf.len();
-        serial_port.read_exact(&mut buf[blen - 1..blen]).map_err(|e| SWError::IO(e))?;
+        serial_port.read_exact(&mut buf[blen - 1..blen])?;
         if buf[blen - 1] == command::END_CHAR as u8 {
             reply_received = true;
         }
     }
 
     if buf[0] != command::START_CHAR_IN as u8 {
-        Err(SWError::InvalidResponse)
+        Err("invalid response".into())
     } else {
         Ok(buf)
     }

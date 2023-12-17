@@ -1,6 +1,6 @@
 //
 // Vidoxide - Image acquisition for amateur astronomy
-// Copyright (c) 2020-2022 Filip Szczerek <ga.software@yahoo.com>
+// Copyright (c) 2020-2023 Filip Szczerek <ga.software@yahoo.com>
 //
 // This project is licensed under the terms of the MIT license
 // (see the LICENSE file for details).
@@ -10,6 +10,7 @@
 //! Entry point and main data structures of the `vidoxide` executable.
 //!
 
+mod args;
 mod camera;
 mod config;
 mod gui;
@@ -29,14 +30,13 @@ use crossbeam;
 use ga_image::Rect;
 use gtk::gio::prelude::*;
 use glib::clone;
-use std::cell::RefCell;
-use std::rc::Rc;
-use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
-use std::sync::{Arc};
+use std::{cell::RefCell, sync::{atomic::{AtomicBool, AtomicIsize}, Arc}, rc::Rc};
 use timer::OneShotTimer;
 use workers::capture::MainToCaptureThreadMsg;
 use workers::histogram::MainToHistogramThreadMsg;
 use workers::recording::{MainToRecordingThreadMsg, Job};
+
+pub const VERSION_STRING: &'static str = include_str!(concat!(env!("OUT_DIR"), "/version"));
 
 pub struct CaptureThreadData {
     pub join_handle: Option<std::thread::JoinHandle<()>>,
@@ -80,7 +80,7 @@ pub struct MountCalibration {
 
 pub struct MountData {
     mount: Option<Box<dyn mount::Mount>>,
-    sidereal_tracking_on: bool,
+    sky_tracking_on: bool,
     /// Desired tracking position. If `Some`, guiding is active and the mount will be slewed so that
     /// `ProgramData::tracking.pos` reaches this value.
     guiding_pos: Option<Point2<i32>>,
@@ -231,10 +231,32 @@ impl ProgramData {
 }
 
 fn main() {
+    let args = args::parse_command_line(std::env::args());
+
+    if args.logging {
+        let tz_offset = chrono::Local::now().offset().clone();
+        let logfile = dirs::data_dir().unwrap_or(std::path::Path::new("").to_path_buf())
+            .join(format!("vidoxide_{}.log", chrono::Local::now().format("%Y-%m-%d_%H%M%S")));
+        println!("Logging to: {}", logfile.to_string_lossy());
+        simplelog::WriteLogger::init(
+            simplelog::LevelFilter::Debug,
+            simplelog::ConfigBuilder::new()
+                .set_target_level(simplelog::LevelFilter::Error)
+                .set_time_offset(time::UtcOffset::from_whole_seconds(tz_offset.local_minus_utc()).unwrap())
+                .set_time_format_custom(simplelog::format_description!(
+                    "[year]-[month]-[day] [hour]:[minute]:[second].[subsecond digits:6]"
+                ))
+                .build(),
+            std::fs::File::create(logfile).unwrap()
+        ).unwrap();
+    }
+
     if gtk::init().is_err() {
         println!("Failed to initialize GTK.");
         return;
     }
+
+    log::info!("Vidoxide ver. {} on {} started", VERSION_STRING, os_info::get());
 
     let main_context = glib::MainContext::default();
     let _guard = main_context.acquire().unwrap();
@@ -250,7 +272,11 @@ fn main() {
 
     let config = Configuration::new();
     let disabled_drivers_str = config.disabled_drivers();
-    let disabled_drivers: Vec<&str> = disabled_drivers_str.split(',').collect();
+    let disabled_drivers: Vec<&str> = if disabled_drivers_str.is_empty() {
+        vec![]
+    } else {
+        disabled_drivers_str.split(',').collect()
+    };
 
     let simulator_video_file = config.simulator_video_file();
 
@@ -284,7 +310,7 @@ fn main() {
         gui: None,
         mount_data: MountData{
             mount: None,
-            sidereal_tracking_on: false,
+            sky_tracking_on: false,
             guiding_pos: None,
             guiding_timer: OneShotTimer::new(),
             guide_slewing: false,
@@ -340,7 +366,7 @@ fn main() {
 
     init_timer(std::time::Duration::from_secs(1), &program_data_rc);
 
-    application.run();
+    application.run_with_args::<String>(&[]); // make GTK ignore command-line arguments
 
     program_data_rc.borrow_mut().finish_capture_thread();
     program_data_rc.borrow_mut().finish_recording_thread();
