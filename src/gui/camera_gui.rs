@@ -234,6 +234,8 @@ fn on_select_camera(
 
     init_camera_control_widgets(program_data_rc);
 
+    log::info!("connected to {}", camera_info.name());
+
     Ok(())
 }
 

@@ -1466,6 +1466,8 @@ pub fn disconnect_camera(program_data_rc: &Rc<RefCell<ProgramData>>, finish_capt
 
     pd.tracking = None;
     pd.crop_area = None;
+
+    log::info!("disconnected from camera");
 }
 
 pub fn on_histogram_thread_message(

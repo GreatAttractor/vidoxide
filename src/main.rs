@@ -239,7 +239,7 @@ fn main() {
             .join(format!("vidoxide_{}.log", chrono::Local::now().format("%Y-%m-%d_%H%M%S")));
         println!("Logging to: {}", logfile.to_string_lossy());
         simplelog::WriteLogger::init(
-            simplelog::LevelFilter::Debug,
+            simplelog::LevelFilter::Info,
             simplelog::ConfigBuilder::new()
                 .set_target_level(simplelog::LevelFilter::Error)
                 .set_time_offset(time::UtcOffset::from_whole_seconds(tz_offset.local_minus_utc()).unwrap())
