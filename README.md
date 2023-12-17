@@ -37,6 +37,7 @@ Demonstration video: [link](https://www.youtube.com/watch?v=7s_nibrTrsU)
 
 **Supported telescope mounts:**
   - Sky-Watcher direct serial connection (tested with a 2014 HEQ5), multiplatform
+  - iOptron direct serial connection, multiplatform
   - ASCOM (tested with ASCOM/EQMod and a 2014 HEQ5), MS Windows only
 
 **Image feature tracking:**
