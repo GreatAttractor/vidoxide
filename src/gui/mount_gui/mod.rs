@@ -316,7 +316,7 @@ pub fn create_mount_box(program_data_rc: &Rc<RefCell<ProgramData>>) -> MountWidg
     for speed in GUIDING_SPEEDS {
         guide_speed.append_text(&speed.label);
     }
-    guide_speed.set_active(Some(1));
+    guide_speed.set_active(Some(3));
     lower_box.pack_start(&guide_speed, false, false, PADDING);
 
     let btn_guide = gtk::ToggleButtonBuilder::new()
