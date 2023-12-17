@@ -155,8 +155,6 @@ impl Mount for Ioptron {
         let a1_s = (axis1_speed.0.abs() / SIDEREAL_RATE.0).max(MIN_SIDEREAL_MULT);
         let a2_s = (axis2_speed.0.abs() / SIDEREAL_RATE.0).max(MIN_SIDEREAL_MULT);
 
-        println!("using a1_s = {}, a2_s = {}", a1_s, a2_s);
-
         if axis1_speed.is_zero() {
             send_cmd_and_get_reply(&mut self.serial_port, ":ZS00000#".into(), ResponseType::None, true).map(|_| ())?;
             send_cmd_and_get_reply(&mut self.serial_port, ":ZQ00000#".into(), ResponseType::None, true).map(|_| ())?;
