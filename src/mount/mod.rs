@@ -93,6 +93,23 @@ impl std::ops::DivAssign<f64> for RadPerSec {
 
 pub const SIDEREAL_RATE: RadPerSec = RadPerSec(2.0 * std::f64::consts::PI / SECONDS_PER_DAY);
 
+pub enum SlewSpeed {
+    Specific(RadPerSec),
+    Max(bool) // `true` means positive direction, `false` - negative
+}
+
+impl SlewSpeed {
+    pub fn zero() -> SlewSpeed { SlewSpeed::Specific(RadPerSec(0.0)) }
+    pub fn is_zero(&self) -> bool {
+        match self { SlewSpeed::Specific(s) => s.0 == 0.0, _ => false }
+    }
+    pub fn positive(&self) -> bool {
+        match self {
+            SlewSpeed::Specific(s) => s.0 > 0.0,
+            SlewSpeed::Max(positive) => *positive
+        }
+    }
+}
 
 pub trait Mount {
     #[must_use]
@@ -106,10 +123,10 @@ pub trait Mount {
 
     #[must_use]
     /// Specify zero speed to stop slewing (in any case, tracking is not affected).
-    fn slew(&mut self, axis: Axis, speed: RadPerSec) -> Result<(), Box<dyn Error>>;
+    fn slew(&mut self, axis: Axis, speed: SlewSpeed) -> Result<(), Box<dyn Error>>;
 
     #[must_use]
-    fn slewing_rate_supported(&self, speed: RadPerSec) -> bool;
+    fn slewing_speed_supported(&self, speed: RadPerSec) -> bool;
 
     fn stop(&mut self) -> Result<(), Box<dyn Error>>;
 

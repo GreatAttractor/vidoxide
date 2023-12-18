@@ -14,7 +14,7 @@
 //!
 
 use std::{error::Error, f64::consts::PI};
-use crate::mount::{Axis, Mount, RadPerSec, SIDEREAL_RATE};
+use crate::mount::{Axis, Mount, SlewSpeed, RadPerSec, SIDEREAL_RATE};
 
 const AXIS_STOP_MOTION_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
@@ -272,7 +272,12 @@ impl Mount for SkyWatcher {
         Ok(())
     }
 
-    fn slew(&mut self, axis: Axis, speed: RadPerSec) -> Result<(), Box<dyn Error>> {
+    fn slew(&mut self, axis: Axis, speed: SlewSpeed) -> Result<(), Box<dyn Error>> {
+        let speed = match speed {
+            SlewSpeed::Specific(s) => s,
+            SlewSpeed::Max(positive) => if positive { MAX_SPEED } else { -MAX_SPEED }
+        };
+
         match axis {
             Axis::Primary => self.set_motion(axis, speed + if self.tracking { SIDEREAL_RATE } else { RadPerSec(0.0) })?,
             Axis::Secondary => self.set_motion(axis, speed)?
@@ -281,7 +286,7 @@ impl Mount for SkyWatcher {
         Ok(())
     }
 
-    fn slewing_rate_supported(&self, speed: RadPerSec) -> bool {
+    fn slewing_speed_supported(&self, speed: RadPerSec) -> bool {
         speed <= MAX_SPEED
     }
 

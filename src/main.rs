@@ -30,6 +30,7 @@ use crossbeam;
 use ga_image::Rect;
 use gtk::gio::prelude::*;
 use glib::clone;
+use mount::RadPerSec;
 use std::{cell::RefCell, sync::{atomic::{AtomicBool, AtomicIsize}, Arc}, rc::Rc};
 use timer::OneShotTimer;
 use workers::capture::MainToCaptureThreadMsg;
@@ -75,7 +76,8 @@ pub struct MountCalibration {
     /// Image-space unit vector corresponding to positive slew around secondary axis.
     secondary_dir: Option<Vector2<f64>>,
     /// Image-space-to-mount-axes-space slewing dir transformation matrix.
-    img_to_mount_axes: Option<cgmath::Matrix2<f64>>
+    img_to_mount_axes: Option<cgmath::Matrix2<f64>>,
+    calibration_slew_speed: RadPerSec
 }
 
 pub struct MountData {

@@ -12,7 +12,7 @@
 //! Based on "iOptron® Mount RS-232 Command Language" (v. 3.10 2021-01-04).
 //!
 
-use crate::mount::{Axis, Mount, RadPerSec, SIDEREAL_RATE};
+use crate::mount::{Axis, Mount, SlewSpeed, RadPerSec, SIDEREAL_RATE};
 use std::error::Error;
 
 // TODO: if guiding is active, does stop tracking cancels guiding as well?
@@ -43,22 +43,32 @@ struct SupportedSlewingSpeed {
 }
 
 /// Multiplies of sidereal rate.
-const SUPPORTED_SLEWING_SPEEDS: [SupportedSlewingSpeed; 5] = [
-    SupportedSlewingSpeed{ id: '1', speed: RadPerSec( 1.0 * SIDEREAL_RATE.0)},
-    SupportedSlewingSpeed{ id: '2', speed: RadPerSec( 2.0 * SIDEREAL_RATE.0)},
-    SupportedSlewingSpeed{ id: '3', speed: RadPerSec( 8.0 * SIDEREAL_RATE.0)},
-    SupportedSlewingSpeed{ id: '4', speed: RadPerSec(16.0 * SIDEREAL_RATE.0)},
-    SupportedSlewingSpeed{ id: '5', speed: RadPerSec(64.0 * SIDEREAL_RATE.0)},
+const SUPPORTED_SLEWING_SPEEDS: [SupportedSlewingSpeed; 9] = [
+    SupportedSlewingSpeed{ id: '1', speed: RadPerSec(  1.0 * SIDEREAL_RATE.0)},
+    SupportedSlewingSpeed{ id: '2', speed: RadPerSec(  2.0 * SIDEREAL_RATE.0)},
+    SupportedSlewingSpeed{ id: '3', speed: RadPerSec(  8.0 * SIDEREAL_RATE.0)},
+    SupportedSlewingSpeed{ id: '4', speed: RadPerSec( 16.0 * SIDEREAL_RATE.0)},
+    SupportedSlewingSpeed{ id: '5', speed: RadPerSec( 64.0 * SIDEREAL_RATE.0)},
+    SupportedSlewingSpeed{ id: '6', speed: RadPerSec(128.0 * SIDEREAL_RATE.0)},
+    SupportedSlewingSpeed{ id: '7', speed: RadPerSec(256.0 * SIDEREAL_RATE.0)},
+    SupportedSlewingSpeed{ id: '8', speed: RadPerSec(512.0 * SIDEREAL_RATE.0)},
+    SupportedSlewingSpeed{ id: '9', speed: RadPerSec(  0.0 * SIDEREAL_RATE.0)}, // max possible speed
 ];
 
-fn choose_slewing_speed(requested: RadPerSec) -> Option<&'static SupportedSlewingSpeed> {
-    let is_close = |req: f64, actual: f64| { let rel = req.abs()/actual; rel >= 0.99 && rel <= 1.01 };
+fn choose_slewing_speed(requested: &SlewSpeed) -> Option<&'static SupportedSlewingSpeed> {
+    match requested {
+        SlewSpeed::Max(_) => SUPPORTED_SLEWING_SPEEDS.last(),
 
-    for sss in &SUPPORTED_SLEWING_SPEEDS {
-        if is_close(requested.0, sss.speed.0) { return Some(sss); }
+        SlewSpeed::Specific(s) => {
+            let is_close = |req: f64, actual: f64| { let rel = req.abs() / actual; rel >= 0.99 && rel <= 1.01 };
+
+            for sss in SUPPORTED_SLEWING_SPEEDS.iter().take(SUPPORTED_SLEWING_SPEEDS.len() - 1) {
+                if is_close(s.0, sss.speed.0) { return Some(sss); }
+            }
+
+            None
+        }
     }
-
-    None
 }
 
 impl Ioptron {
@@ -126,12 +136,10 @@ impl Drop for Ioptron {
 }
 
 impl Mount for Ioptron {
-    #[must_use]
     fn get_info(&self) -> String {
         format!("iOptron {} on {}", self.model, self.device)
     }
 
-    #[must_use]
     fn set_tracking(&mut self, enabled: bool) -> Result<(), Box<dyn Error>> {
         match send_cmd_and_get_reply(
             &mut self.serial_port,
@@ -144,7 +152,6 @@ impl Mount for Ioptron {
         }
     }
 
-    #[must_use]
     fn guide(&mut self, axis1_speed: RadPerSec, axis2_speed: RadPerSec) -> Result<(), Box<dyn Error>> {
         if !(axis1_speed.is_zero() && axis2_speed.is_zero()) && !self.tracking {
             return Err("cannot guide when tracking is disabled".into());
@@ -195,9 +202,8 @@ impl Mount for Ioptron {
         Ok(())
     }
 
-    #[must_use]
     /// Specify zero speed to stop slewing (in any case, tracking is not affected).
-    fn slew(&mut self, axis: Axis, speed: RadPerSec) -> Result<(), Box<dyn Error>> {
+    fn slew(&mut self, axis: Axis, speed: SlewSpeed) -> Result<(), Box<dyn Error>> {
         if speed.is_zero() {
             return send_cmd_and_get_reply(
                 &mut self.serial_port,
@@ -207,7 +213,7 @@ impl Mount for Ioptron {
             ).map(|_| ());
         }
 
-        match choose_slewing_speed(speed) {
+        match choose_slewing_speed(&speed) {
             Some(s) => {
                 send_cmd_and_get_reply(
                     &mut self.serial_port,
@@ -221,8 +227,8 @@ impl Mount for Ioptron {
                     format!(
                         ":m{}#",
                         match axis {
-                            Axis::Primary => if speed.0 >= 0.0 { "e" } else { "w" },
-                            Axis::Secondary => if speed.0 >= 0.0 { "n" } else { "s" }
+                            Axis::Primary => if speed.positive() { "e" } else { "w" },
+                            Axis::Secondary => if speed.positive() { "n" } else { "s" }
                         }
                     ),
                     ResponseType::None,
@@ -236,9 +242,8 @@ impl Mount for Ioptron {
         }
     }
 
-    #[must_use]
-    fn slewing_rate_supported(&self, speed: RadPerSec) -> bool {
-        choose_slewing_speed(speed).is_some()
+    fn slewing_speed_supported(&self, speed: RadPerSec) -> bool {
+        choose_slewing_speed(&SlewSpeed::Specific(speed)).is_some()
     }
 
     fn stop(&mut self) -> Result<(), Box<dyn Error>> {

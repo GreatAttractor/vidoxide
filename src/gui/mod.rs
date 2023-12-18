@@ -1098,10 +1098,10 @@ fn on_tracking_ended(program_data_rc: &Rc<RefCell<ProgramData>>) {
             error = mount.guide(RadPerSec(0.0), RadPerSec(0.0));
             if error.is_err() { break; }
 
-            error = mount.slew(mount::Axis::Primary, RadPerSec(0.0));
+            error = mount.slew(mount::Axis::Primary, mount::SlewSpeed::zero());
             if error.is_err() { break; }
 
-            error = mount.slew(mount::Axis::Secondary, RadPerSec(0.0));
+            error = mount.slew(mount::Axis::Secondary, mount::SlewSpeed::zero());
 
             break;
         }

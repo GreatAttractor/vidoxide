@@ -10,7 +10,7 @@
 //! Mount simulator.
 //!
 
-use crate::mount::{Axis, Mount, RadPerSec, SIDEREAL_RATE};
+use crate::mount::{Axis, Mount, SlewSpeed, RadPerSec, SIDEREAL_RATE};
 use std::error::Error;
 use std::sync::atomic::Ordering;
 
@@ -69,7 +69,11 @@ impl Mount for Simulator {
         Ok(())
     }
 
-    fn slew(&mut self, axis: Axis, speed: RadPerSec) -> Result<(), Box<dyn Error>> {
+    fn slew(&mut self, axis: Axis, speed: SlewSpeed) -> Result<(), Box<dyn Error>> {
+        let speed = match speed {
+            SlewSpeed::Specific(s) => s,
+            SlewSpeed::Max(dir) => (if dir { 512.0 } else { -512.0 }) * SIDEREAL_RATE
+        };
         match axis {
             Axis::Primary => self.motion(axis, speed + if self.tracking { SIDEREAL_RATE } else { RadPerSec(0.0) }),
             Axis::Secondary => self.motion(axis, speed)
@@ -78,7 +82,7 @@ impl Mount for Simulator {
         Ok(())
     }
 
-    fn slewing_rate_supported(&self, _: RadPerSec) -> bool {
+    fn slewing_speed_supported(&self, _: RadPerSec) -> bool {
         true
     }
 
