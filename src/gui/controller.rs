@@ -77,11 +77,13 @@ pub fn on_controller_event(msg: ControllerToMainThreadMsg, program_data_rc: &Rc<
 
     match msg {
         ControllerToMainThreadMsg::NewDevice(new_device) => {
+            log::info!("new controller: {} [{:016X}]", new_device.name, new_device.id);
             gui.controller_dialog.add_device(new_device.id, &new_device.name);
         },
 
         ControllerToMainThreadMsg::StickEvent(event) => {
             if let stick::Event::Disconnect = event.event {
+                log::info!("controller [{:016X}] removed", event.id);
                 gui.controller_dialog.remove_device(event.index);
             } else if let Some(sel_events) = &mut pd.sel_dialog_ctrl_events {
                 sel_events.push(event);
