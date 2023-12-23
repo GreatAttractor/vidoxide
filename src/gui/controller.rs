@@ -1,16 +1,18 @@
 use crate::ProgramData;
-use crate::{workers, workers::controller::ControllerToMainThreadMsg};
+use crate::{gui::checked_listbox::CheckedListBox, workers, workers::controller::ControllerToMainThreadMsg};
 use gtk::glib::clone;
 use gtk::prelude::*;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
+use super::checked_listbox::CheckedListBoxWeak;
+
 /// Control padding in pixels.
 const PADDING: u32 = 10;
 
 struct Widgets {
-    device_list: gtk::ListBox
+    device_list: CheckedListBox
 }
 
 pub struct ControllerDialog {
@@ -53,19 +55,11 @@ impl ControllerDialog {
     pub fn show(&self) { self.dialog.show(); }
 
     pub fn add_device(&mut self, id: u64, name: &str) {
-        self.widgets.device_list.add(&gtk::ListBoxRow::builder()
-            .child(&gtk::Label::builder()
-                .label(&format!("{} [{:016X}]", name, id))
-                .halign(gtk::Align::Start)
-                .visible(true)
-                .build()
-            )
-            .visible(true)
-            .build());
+        self.widgets.device_list.add_item(id, true, &format!("{} [{:016X}]", name, id));
     }
 
-    pub fn remove_device(&mut self, index: usize) {
-        self.widgets.device_list.remove(&self.widgets.device_list.row_at_index(index as i32).unwrap());
+    pub fn remove_device(&mut self, id: u64) {
+        self.widgets.device_list.remove_item(id);
     }
 }
 
@@ -84,7 +78,7 @@ pub fn on_controller_event(msg: ControllerToMainThreadMsg, program_data_rc: &Rc<
         ControllerToMainThreadMsg::StickEvent(event) => {
             if let stick::Event::Disconnect = event.event {
                 log::info!("controller [{:016X}] removed", event.id);
-                gui.controller_dialog.remove_device(event.index);
+                gui.controller_dialog.remove_device(event.id);
             } else if let Some(sel_events) = &mut pd.sel_dialog_ctrl_events {
                 sel_events.push(event);
             }
@@ -106,10 +100,8 @@ fn create_controls(
         false, false, PADDING
     );
 
-    let device_list = gtk::ListBox::builder()
-        .selection_mode(gtk::SelectionMode::None)
-        .build();
-    box_all.pack_start(&device_list, false, true, PADDING);
+    let device_list = CheckedListBox::new();
+    box_all.pack_start(&device_list.widget(), false, true, PADDING);
 
     let action_box = gtk::Box::new(gtk::Orientation::Vertical, PADDING as i32);
 

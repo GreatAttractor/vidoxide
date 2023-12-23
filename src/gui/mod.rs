@@ -11,6 +11,7 @@
 //!
 
 mod camera_gui;
+mod checked_listbox;
 #[cfg(feature = "controller")]
 mod controller;
 mod dec_intervals;
