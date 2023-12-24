@@ -1,10 +1,15 @@
-use crate::ProgramData;
-use crate::{gui::checked_listbox::CheckedListBox, workers, workers::controller::ControllerToMainThreadMsg};
+use crate::{
+    controller::{SourceAction, TargetAction, choose_ctrl_action_based_on_events},
+    gui::checked_listbox::CheckedListBox,
+    workers,
+    workers::controller::ControllerToMainThreadMsg, ProgramData
+};
 use gtk::glib::clone;
 use gtk::prelude::*;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
+use strum::IntoEnumIterator;
 
 use super::checked_listbox::CheckedListBoxWeak;
 
@@ -63,29 +68,6 @@ impl ControllerDialog {
     }
 }
 
-pub fn on_controller_event(msg: ControllerToMainThreadMsg, program_data_rc: &Rc<RefCell<ProgramData>>) {
-    let mut pd = program_data_rc.borrow_mut();
-    let gui = pd.gui.as_mut().unwrap();
-
-    println!("received {:?}", msg);
-
-    match msg {
-        ControllerToMainThreadMsg::NewDevice(new_device) => {
-            log::info!("new controller: {} [{:016X}]", new_device.name, new_device.id);
-            gui.controller_dialog.add_device(new_device.id, &new_device.name);
-        },
-
-        ControllerToMainThreadMsg::StickEvent(event) => {
-            if let stick::Event::Disconnect = event.event {
-                log::info!("controller [{:016X}] removed", event.id);
-                gui.controller_dialog.remove_device(event.id);
-            } else if let Some(sel_events) = &mut pd.sel_dialog_ctrl_events {
-                sel_events.push(event);
-            }
-        },
-    }
-}
-
 fn create_controls(
     parent: &gtk::ApplicationWindow,
     program_data_rc: &Rc<RefCell<ProgramData>>
@@ -103,43 +85,69 @@ fn create_controls(
     let device_list = CheckedListBox::new();
     box_all.pack_start(&device_list.widget(), false, true, PADDING);
 
-    let action_box = gtk::Box::new(gtk::Orientation::Vertical, PADDING as i32);
+    let action_grid = gtk::GridBuilder::new()
+        .build();
 
-    let make_action_box = |text| {
-        let hbox = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    action_grid.insert_column(0);
+    action_grid.insert_column(1);
+    action_grid.insert_column(2);
 
-        hbox.pack_start(&gtk::Label::builder()
-            .label(text)
+    let add_action_controls = |action_idx: usize, target_action: TargetAction| {
+        action_grid.attach(
+            &gtk::Label::builder()
+                .label(&target_action.to_string())
+                .halign(gtk::Align::Start)
+                .margin_start(PADDING as i32)
+                .margin_end(PADDING as i32)
+                .expand(true)
+                .build(),
+            0, action_idx as i32,
+            1, 1
+        );
+
+        let chosen_action_label = gtk::Label::builder()
             .halign(gtk::Align::Start)
+            .expand(true)
             .margin_start(PADDING as i32)
             .margin_end(PADDING as i32)
-            .build(),
-            true, true, 0
+            .build();
+        action_grid.attach(
+            &chosen_action_label,
+            1, action_idx as i32,
+            1, 1
         );
 
         let btn = gtk::Button::builder()
             .label("configure")
             .halign(gtk::Align::End)
             .build();
-        btn.connect_clicked(clone!(@weak parent, @weak program_data_rc => @default-panic, move |_| {
-            show_controller_action_selection_dialog(&parent, &program_data_rc);
-        }));
-        hbox.pack_start(&btn, false, false, 0);
-
-        hbox
+        btn.connect_clicked(clone!(
+            @weak parent,
+            @weak chosen_action_label,
+            @weak program_data_rc
+            => @default-panic, move |_| {
+                // TODO allow unsetting an action
+                if let Some(src_action) = show_controller_action_selection_dialog(&parent, &program_data_rc) {
+                    program_data_rc.borrow_mut().ctrl_actions.insert(target_action, Some(src_action.clone()));
+                    chosen_action_label.set_label(&format!("[{}] {}", src_action.ctrl_name, src_action.event.0));
+                    log::info!("new action assignment: {:?} -> {}", src_action, target_action);
+                }
+            }
+        ));
+        action_grid.attach(
+            &btn,
+            2, action_idx as i32,
+            1, 1
+        );
     };
 
-    action_box.pack_start(&make_action_box("Mount axis 1 / positive"), false, true, 0);
-    action_box.pack_start(&make_action_box("Mount axis 1 / negative"), false, true, 0);
-    action_box.pack_start(&make_action_box("Mount axis 2 / positive"), false, true, 0);
-    action_box.pack_start(&make_action_box("Mount axis 2 / negative"), false, true, 0);
-    action_box.pack_start(&make_action_box("Focuser / in"), false, true, 0);
-    action_box.pack_start(&make_action_box("Focuser / out"), false, true, 0);
-    action_box.pack_start(&make_action_box("Recording start/stop"), false, true, 0);
+    for (idx, target_action) in TargetAction::iter().enumerate() {
+        add_action_controls(idx, target_action);
+    }
 
     let actions = gtk::Frame::builder()
         .label("Actions")
-        .child(&action_box)
+        .child(&action_grid)
         .build();
     box_all.pack_start(&actions, true, true, PADDING);
 
@@ -163,7 +171,7 @@ pub fn init_controller_menu(
 fn show_controller_action_selection_dialog(
     parent: &gtk::ApplicationWindow,
     program_data_rc: &Rc<RefCell<ProgramData>>
-) {
+) -> Option<SourceAction> {
     let dialog = gtk::Dialog::with_buttons(
         Some("Choose controller action"),
         Some(parent),
@@ -182,128 +190,33 @@ fn show_controller_action_selection_dialog(
     program_data_rc.borrow_mut().sel_dialog_ctrl_events = Some(vec![]);
 
     let timer = Rc::new(crate::timer::Timer::new());
-    let handler = clone!(@weak timer, @weak action_label, @weak program_data_rc => @default-panic, move || {
-        if let Some(s) = choose_ctrl_action_based_on_events(&program_data_rc.borrow().sel_dialog_ctrl_events.as_ref().unwrap()) {
-            action_label.set_text(&s);
+    let selected_src_action: Rc<RefCell<Option<SourceAction>>> = Rc::new(RefCell::new(None));
+    let handler = clone!(
+        @weak selected_src_action,
+        @weak timer,
+        @weak action_label,
+        @weak program_data_rc
+        => @default-panic, move || {
+            let mut pd = program_data_rc.borrow_mut();
+            if let Some(action) = choose_ctrl_action_based_on_events(
+                &pd.sel_dialog_ctrl_events.as_ref().unwrap(),
+                &pd.ctrl_names
+            ) {
+                action_label.set_text(action.event.0);
+                *selected_src_action.borrow_mut() = Some(action);
+            }
+            pd.sel_dialog_ctrl_events.as_mut().unwrap().clear();
         }
-        program_data_rc.borrow_mut().sel_dialog_ctrl_events.as_mut().unwrap().clear();
-    });
+    );
     timer.run(std::time::Duration::from_millis(500), false, handler);
 
-    if let gtk::ResponseType::Ok = dialog.run() {
-        //
-    }
+    let result = if let gtk::ResponseType::Ok = dialog.run() {
+        selected_src_action.borrow_mut().take()
+    } else {
+        None
+    };
 
     dialog.close();
-}
 
-// TODO: use an action enum
-fn choose_ctrl_action_based_on_events(events: &[workers::controller::StickEvent]) -> Option<String> {
-    if events.is_empty() { return None; }
-
-// analog controls
-//
-// TriggerL(f64),
-// TriggerR(f64),
-// JoyX(f64),
-// JoyY(f64),
-// JoyZ(f64),
-// CamX(f64),
-// CamY(f64),
-// CamZ(f64),
-// Slew(f64),
-// Throttle(f64),
-// ThrottleL(f64),
-// ThrottleR(f64),
-// Volume(f64),
-// Wheel(f64),
-// Rudder(f64),
-// Gas(f64),
-// Brake(f64),
-// MouseX(f64),
-// MouseY(f64),
-// ScrollX(f64),
-// ScrollY(f64),
-
-    for event in events {
-        match event.event {
-            stick::Event::Exit(_) => return Some(format!("{:?}", event)),
-            stick::Event::ActionA(_) => return Some(format!("{:?}", event)),
-            stick::Event::ActionB(_) => return Some(format!("{:?}", event)),
-            stick::Event::ActionC(_) => return Some(format!("{:?}", event)),
-            stick::Event::ActionH(_) => return Some(format!("{:?}", event)),
-            stick::Event::ActionV(_) => return Some(format!("{:?}", event)),
-            stick::Event::ActionD(_) => return Some(format!("{:?}", event)),
-            stick::Event::MenuL(_) => return Some(format!("{:?}", event)),
-            stick::Event::MenuR(_) => return Some(format!("{:?}", event)),
-            stick::Event::Joy(_) => return Some(format!("{:?}", event)),
-            stick::Event::Cam(_) => return Some(format!("{:?}", event)),
-            stick::Event::BumperL(_) => return Some(format!("{:?}", event)),
-            stick::Event::BumperR(_) => return Some(format!("{:?}", event)),
-            stick::Event::Up(_) => return Some(format!("{:?}", event)),
-            stick::Event::Down(_) => return Some(format!("{:?}", event)),
-            stick::Event::Left(_) => return Some(format!("{:?}", event)),
-            stick::Event::Right(_) => return Some(format!("{:?}", event)),
-            stick::Event::PovUp(_) => return Some(format!("{:?}", event)),
-            stick::Event::PovDown(_) => return Some(format!("{:?}", event)),
-            stick::Event::PovLeft(_) => return Some(format!("{:?}", event)),
-            stick::Event::PovRight(_) => return Some(format!("{:?}", event)),
-            stick::Event::HatUp(_) => return Some(format!("{:?}", event)),
-            stick::Event::HatDown(_) => return Some(format!("{:?}", event)),
-            stick::Event::HatLeft(_) => return Some(format!("{:?}", event)),
-            stick::Event::HatRight(_) => return Some(format!("{:?}", event)),
-            stick::Event::TrimUp(_) => return Some(format!("{:?}", event)),
-            stick::Event::TrimDown(_) => return Some(format!("{:?}", event)),
-            stick::Event::TrimLeft(_) => return Some(format!("{:?}", event)),
-            stick::Event::TrimRight(_) => return Some(format!("{:?}", event)),
-            stick::Event::MicUp(_) => return Some(format!("{:?}", event)),
-            stick::Event::MicDown(_) => return Some(format!("{:?}", event)),
-            stick::Event::MicLeft(_) => return Some(format!("{:?}", event)),
-            stick::Event::MicRight(_) => return Some(format!("{:?}", event)),
-            stick::Event::MicPush(_) => return Some(format!("{:?}", event)),
-            stick::Event::Trigger(_) => return Some(format!("{:?}", event)),
-            stick::Event::Bumper(_) => return Some(format!("{:?}", event)),
-            stick::Event::ActionM(_) => return Some(format!("{:?}", event)),
-            stick::Event::ActionL(_) => return Some(format!("{:?}", event)),
-            stick::Event::ActionR(_) => return Some(format!("{:?}", event)),
-            stick::Event::Pinky(_) => return Some(format!("{:?}", event)),
-            stick::Event::PinkyForward(_) => return Some(format!("{:?}", event)),
-            stick::Event::PinkyBackward(_) => return Some(format!("{:?}", event)),
-            stick::Event::FlapsUp(_) => return Some(format!("{:?}", event)),
-            stick::Event::FlapsDown(_) => return Some(format!("{:?}", event)),
-            stick::Event::BoatForward(_) => return Some(format!("{:?}", event)),
-            stick::Event::BoatBackward(_) => return Some(format!("{:?}", event)),
-            stick::Event::AutopilotPath(_) => return Some(format!("{:?}", event)),
-            stick::Event::AutopilotAlt(_) => return Some(format!("{:?}", event)),
-            stick::Event::EngineMotorL(_) => return Some(format!("{:?}", event)),
-            stick::Event::EngineMotorR(_) => return Some(format!("{:?}", event)),
-            stick::Event::EngineFuelFlowL(_) => return Some(format!("{:?}", event)),
-            stick::Event::EngineFuelFlowR(_) => return Some(format!("{:?}", event)),
-            stick::Event::EngineIgnitionL(_) => return Some(format!("{:?}", event)),
-            stick::Event::EngineIgnitionR(_) => return Some(format!("{:?}", event)),
-            stick::Event::SpeedbrakeBackward(_) => return Some(format!("{:?}", event)),
-            stick::Event::SpeedbrakeForward(_) => return Some(format!("{:?}", event)),
-            stick::Event::ChinaBackward(_) => return Some(format!("{:?}", event)),
-            stick::Event::ChinaForward(_) => return Some(format!("{:?}", event)),
-            stick::Event::Apu(_) => return Some(format!("{:?}", event)),
-            stick::Event::RadarAltimeter(_) => return Some(format!("{:?}", event)),
-            stick::Event::LandingGearSilence(_) => return Some(format!("{:?}", event)),
-            stick::Event::Eac(_) => return Some(format!("{:?}", event)),
-            stick::Event::AutopilotToggle(_) => return Some(format!("{:?}", event)),
-            stick::Event::ThrottleButton(_) => return Some(format!("{:?}", event)),
-            stick::Event::Mouse(_) => return Some(format!("{:?}", event)),
-            stick::Event::Number(i8, bool) => return Some(format!("{:?}", event)),
-            stick::Event::PaddleLeft(_) => return Some(format!("{:?}", event)),
-            stick::Event::PaddleRight(_) => return Some(format!("{:?}", event)),
-            stick::Event::PinkyLeft(_) => return Some(format!("{:?}", event)),
-            stick::Event::PinkyRight(_) => return Some(format!("{:?}", event)),
-            stick::Event::Context(_) => return Some(format!("{:?}", event)),
-            stick::Event::Dpi(_) => return Some(format!("{:?}", event)),
-            stick::Event::Scroll(_) => return Some(format!("{:?}", event)),
-
-            _ => continue
-        }
-    }
-
-    None
+    result
 }

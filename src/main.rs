@@ -13,6 +13,8 @@
 mod args;
 mod camera;
 mod config;
+#[cfg(feature = "controller")]
+mod controller;
 mod gui;
 mod guiding;
 mod input;
@@ -26,12 +28,14 @@ mod workers;
 use camera::drivers;
 use cgmath::{Point2, Vector2};
 use config::Configuration;
+#[cfg(feature = "controller")]
+use controller::{TargetAction, SourceAction};
 use crossbeam;
 use ga_image::Rect;
 use gtk::gio::prelude::*;
 use glib::clone;
 use mount::RadPerSec;
-use std::{cell::RefCell, sync::{atomic::{AtomicBool, AtomicIsize}, Arc}, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, sync::{atomic::{AtomicBool, AtomicIsize}, Arc}, rc::Rc};
 use timer::Timer;
 use workers::capture::MainToCaptureThreadMsg;
 use workers::histogram::MainToHistogramThreadMsg;
@@ -212,7 +216,11 @@ pub struct ProgramData {
     camera_controls_refresh_timer: timer::Timer,
     mount_simulator_data: MountSimulatorData,
     #[cfg(feature = "controller")]
-    sel_dialog_ctrl_events: Option<Vec<workers::controller::StickEvent>>
+    sel_dialog_ctrl_events: Option<Vec<workers::controller::StickEvent>>,
+    #[cfg(feature = "controller")]
+    ctrl_actions: HashMap<TargetAction, Option<SourceAction>>,
+    #[cfg(feature = "controller")]
+    ctrl_names: HashMap<u64, String>
 }
 
 impl ProgramData {
@@ -333,7 +341,12 @@ fn main() {
         camera_controls_refresh_timer: timer::Timer::new(),
         snapshot_counter: 1,
         mount_simulator_data,
-        sel_dialog_ctrl_events: None
+        #[cfg(feature = "controller")]
+        sel_dialog_ctrl_events: None,
+        #[cfg(feature = "controller")]
+        ctrl_actions: HashMap::new(), //TODO: read from configuration
+        #[cfg(feature = "controller")]
+        ctrl_names: HashMap::new()
     }));
 
     if !disabled_drivers.is_empty() {

@@ -69,7 +69,7 @@ use std::rc::Rc;
 use std::sync::atomic::Ordering;
 
 #[cfg(feature = "controller")]
-pub use controller::on_controller_event;
+pub use crate::controller::on_controller_event;
 pub use mount_gui::on_mount_error;
 
 /// Control padding in pixels.
@@ -200,6 +200,12 @@ pub struct GuiData {
 
 impl GuiData {
     pub fn mount_widgets(&self) -> &MountWidgets { &self.mount_widgets }
+
+    #[cfg(feature = "controller")]
+    pub fn controller_dialog(&self) -> &ControllerDialog { &self.controller_dialog }
+
+    #[cfg(feature = "controller")]
+    pub fn controller_dialog_mut(&mut self) -> &mut ControllerDialog { &mut self.controller_dialog }
 }
 
 struct DialogDestroyer {
@@ -483,6 +489,7 @@ pub fn init_main_window(app: &gtk::Application, program_data_rc: &Rc<RefCell<Pro
             gain: Decibel(0.0),
             stretch_histogram: false
         },
+        #[cfg(feature = "controller")]
         controller_dialog: ControllerDialog::new(&window, &program_data_rc),
         dispersion_dialog: DispersionDialog::new(&window, &program_data_rc),
         psf_dialog: PsfDialog::new(&window, &program_data_rc),
