@@ -238,13 +238,14 @@ impl Configuration {
         Some(Vector2{ x: numbers[0], y: numbers[1] })
     }
 
-    pub fn recording_dest_path(&self) -> Option<String> {
-        self.key_file.string(groups::MAIN, keys::RECORDING_DEST_PATH).ok().map(|s| s.to_string())
-    }
+    // TODO: encode a `Path` somehow
+    // pub fn recording_dest_path(&self) -> Option<String> {
+    //     self.key_file.string(groups::MAIN, keys::RECORDING_DEST_PATH).ok().map(|s| s.to_string())
+    // }
 
-    pub fn set_recording_dest_path(&self, value: &str) {
-        self.key_file.set_string(groups::MAIN, keys::RECORDING_DEST_PATH, value);
-    }
+    // pub fn set_recording_dest_path(&self, value: &str) {
+    //     self.key_file.set_string(groups::MAIN, keys::RECORDING_DEST_PATH, value);
+    // }
 
     pub fn toolbar_icon_size(&self) -> Option<i32> {
         self.key_file.integer(groups::UI, keys::TOOLBAR_ICON_SIZE).ok()

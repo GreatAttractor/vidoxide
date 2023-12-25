@@ -1,6 +1,6 @@
 //
 // Vidoxide - Image acquisition for amateur astronomy
-// Copyright (c) 2020-2022 Filip Szczerek <ga.software@yahoo.com>
+// Copyright (c) 2020-2023 Filip Szczerek <ga.software@yahoo.com>
 //
 // This project is licensed under the terms of the MIT license
 // (see the LICENSE file for details).
@@ -12,20 +12,20 @@
 
 use crate::output::OutputWriter;
 use ga_image::{FileType, ImageView};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug)]
 pub struct FileSequence {
-    output_dir: String,
+    output_dir: PathBuf,
     file_name_prefix: String,
     counter: usize,
     file_type: FileType
 }
 
 impl FileSequence {
-    pub fn new(output_dir: &str, file_name_prefix: &str, file_type: FileType) -> FileSequence {
+    pub fn new(output_dir: &Path, file_name_prefix: &str, file_type: FileType) -> FileSequence {
         FileSequence{
-            output_dir: output_dir.to_string(),
+            output_dir: output_dir.into(),
             file_name_prefix: file_name_prefix.to_string(),
             counter: 0,
             file_type

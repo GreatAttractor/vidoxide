@@ -800,7 +800,7 @@ fn on_main_window_delete(
     config.set_main_window_maximized(wnd.is_maximized());
     config.set_main_window_paned_pos(main_wnd_contents.position());
     config.set_camera_controls_paned_pos(cam_controls_and_histogram.position());
-    config.set_recording_dest_path(&program_data_rc.borrow().gui.as_ref().unwrap().rec_widgets.dest_dir());
+    //TODO: encode a `Path` somehow;  config.set_recording_dest_path(&program_data_rc.borrow().gui.as_ref().unwrap().rec_widgets.dest_dir());
 }
 
 /// WARNING: this recursively enters the main event loop until the message dialog closes; therefore active borrows
