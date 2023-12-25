@@ -106,7 +106,7 @@ impl RecWidgets {
 }
 
 fn on_start_recording(program_data_rc: &Rc<RefCell<ProgramData>>) {
-    let dest_path;
+    let mut dest_path;
     let rec_limit;
     let output_fmt;
     let name_prefix;
@@ -138,8 +138,10 @@ fn on_start_recording(program_data_rc: &Rc<RefCell<ProgramData>>) {
     } // end of mutable borrow of `program_data_rc` (we must end it before showing a modal dialog by `show_message`)
 
     if Path::new(&dest_path).exists() && !output_fmt.is_image_sequence() {
-        show_message(&format!("File already exists:\n{}", dest_path), "Error", gtk::MessageType::Error);
-        return;
+        let suffix = format!("_{}", chrono::Local::now().format("%Y-%m-%d_%H%M%S"));
+        let new_path = append_to_fstem(&dest_path, &suffix);
+        log::warn!("file \"{}\" already exists, adding suffix \"{}\"", dest_path.to_string_lossy(), suffix);
+        dest_path = new_path;
     }
 
     let writer: Box<dyn output::OutputWriter> = match output_fmt {
