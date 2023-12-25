@@ -15,7 +15,7 @@ camera_spinnaker = ["libspinnaker-sys"]
 
 mount_ascom = ["com", "uuid", "winapi"]
 
-controller = ["stick", "pasts"]
+controller = ["stick", "pasts", "scan_fmt"]
 
 [dependencies]
 atomic_float = "0.1.0"
@@ -38,6 +38,7 @@ mmap = { version = "0.1.1", optional = true }
 num-traits = "0.2.12"
 os_info = "3.0"
 pasts = { version = "0.8", optional = true }
+scan_fmt = { version = "0.2.6", optional = true }
 serialport = "4.2.0"
 simplelog = "0.12.1"
 # Needed until https://github.com/ardaku/stick/pull/38 is merged to upstream repo.

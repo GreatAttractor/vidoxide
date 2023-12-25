@@ -105,7 +105,13 @@ fn create_controls(
             1, 1
         );
 
+        let format_src_action = |a: &SourceAction| format!("[{}] {}", a.ctrl_name, a.event.as_str());
+
         let chosen_action_label = gtk::Label::builder()
+            .label(&program_data_rc.borrow().ctrl_actions.get(target_action)
+                .as_ref()
+                .map_or("".to_string(), |a| format_src_action(&a))
+            )
             .halign(gtk::Align::Start)
             .expand(true)
             .margin_start(PADDING as i32)
@@ -128,10 +134,13 @@ fn create_controls(
             => @default-panic, move |_| {
                 // TODO allow unsetting an action
                 if let Some(src_action) = show_controller_action_selection_dialog(&parent, &program_data_rc) {
-                    program_data_rc.borrow_mut().ctrl_actions.insert(target_action, Some(src_action.clone()));
-                    chosen_action_label.set_label(&format!("[{}] {}", src_action.ctrl_name, src_action.event.0));
+                    program_data_rc.borrow_mut().ctrl_actions.set(target_action, Some(src_action.clone()));
+                    chosen_action_label.set_label(&format_src_action(&src_action));
                     log::info!("new action assignment: {:?} -> {}", src_action, target_action);
                 }
+
+                let pd = program_data_rc.borrow();
+                pd.config.save_controller_actions(&pd.ctrl_actions);
             }
         ));
         action_grid.attach(
@@ -202,7 +211,7 @@ fn show_controller_action_selection_dialog(
                 &pd.sel_dialog_ctrl_events.as_ref().unwrap(),
                 &pd.ctrl_names
             ) {
-                action_label.set_text(action.event.0);
+                action_label.set_text(action.event.as_str());
                 *selected_src_action.borrow_mut() = Some(action);
             }
             pd.sel_dialog_ctrl_events.as_mut().unwrap().clear();

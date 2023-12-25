@@ -218,7 +218,7 @@ pub struct ProgramData {
     #[cfg(feature = "controller")]
     sel_dialog_ctrl_events: Option<Vec<workers::controller::StickEvent>>,
     #[cfg(feature = "controller")]
-    ctrl_actions: HashMap<TargetAction, Option<SourceAction>>,
+    ctrl_actions: controller::ActionAssignments,
     #[cfg(feature = "controller")]
     ctrl_names: HashMap<u64, String>
 }
@@ -300,6 +300,9 @@ fn main() {
         config.mount_simulator_sky_rotation_speed_pix_per_sec().unwrap_or(10)
     );
 
+    #[cfg(feature = "controller")]
+    let ctrl_actions = config.controller_actions();
+
     let program_data_rc = Rc::new(RefCell::new(ProgramData{
         config,
         camera: None,
@@ -344,7 +347,7 @@ fn main() {
         #[cfg(feature = "controller")]
         sel_dialog_ctrl_events: None,
         #[cfg(feature = "controller")]
-        ctrl_actions: HashMap::new(), //TODO: read from configuration
+        ctrl_actions,
         #[cfg(feature = "controller")]
         ctrl_names: HashMap::new()
     }));
