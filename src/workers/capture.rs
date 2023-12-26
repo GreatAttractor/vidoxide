@@ -175,6 +175,31 @@ pub fn capture_thread(
                     }
                 },
                 Ok(()) => {
+                    // TESTING #################
+                    loop {
+                        let img = &mut capture_buf[current_buf_idx];
+                        if !img.pixel_format().is_cfa() { break; }
+                        let red_row_ofs = img.pixel_format().cfa_pattern().red_row_ofs();
+                        let red_col_ofs = img.pixel_format().cfa_pattern().red_col_ofs();
+                        if img.pixel_format().is_cfa() {
+                            let mut new_img = Image::new(img.width(), img.height(), None, img.pixel_format(), None, false);
+                            for y in 0..img.height() {
+                                if y % 2 == red_row_ofs as u32 {
+                                    let src_line = img.line::<u8>(y);
+                                    let dest_line = new_img.line_mut::<u8>(y);
+                                    for x in 0..img.width() {
+                                        if x % 2 == red_col_ofs as u32 {
+                                            dest_line[x as usize] = src_line[x as usize] / 2;
+                                        }
+                                    }
+                                }
+                            }
+                            *img = Arc::new(new_img);
+                        }
+                        break;
+                    }
+                    // END TESTING #############
+
                     if let Some([dx, dy]) = DRIFT_PIX_PER_S {
                         let img = &mut capture_buf[current_buf_idx];
                         let dt = t_start.elapsed();
