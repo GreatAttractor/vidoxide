@@ -160,13 +160,23 @@ fn on_start_recording(program_data_rc: &Rc<RefCell<ProgramData>>) {
         OutputFormat::AviVideo | OutputFormat::SerVideo => {
             match std::fs::OpenOptions::new().read(false).write(true).create(true).open(&dest_path) {
                 Err(e) => {
-                    show_message(&format!("Error creating file: {}.", e), "Error", gtk::MessageType::Error);
+                    show_message(
+                        &format!("Error creating file: {}.", e),
+                        "Error",
+                        gtk::MessageType::Error,
+                        program_data_rc
+                    );
                     return;
                 },
 
                 Ok(file) => {
                     if output_fmt == OutputFormat::AviVideo {
-                        show_message("Recording as AVI not implemented yet.", "Error", gtk::MessageType::Error);
+                        show_message(
+                            "Recording as AVI not implemented yet.",
+                            "Error",
+                            gtk::MessageType::Error,
+                            program_data_rc
+                        );
                         return;
                     } else {
                         Box::new(output::ser::SerVideo::new(file))

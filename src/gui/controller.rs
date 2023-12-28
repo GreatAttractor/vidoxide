@@ -1,3 +1,15 @@
+//
+// Vidoxide - Image acquisition for amateur astronomy
+// Copyright (c) 2023 Filip Szczerek <ga.software@yahoo.com>
+//
+// This project is licensed under the terms of the MIT license
+// (see the LICENSE file for details).
+//
+
+//!
+//! Controller GUI.
+//!
+
 use crate::{
     controller::{SourceAction, TargetAction, choose_ctrl_action_based_on_events},
     gui::checked_listbox::CheckedListBox,
@@ -224,6 +236,8 @@ fn show_controller_action_selection_dialog(
     } else {
         None
     };
+
+    program_data_rc.borrow_mut().sel_dialog_ctrl_events = None;
 
     dialog.close();
 

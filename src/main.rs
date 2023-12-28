@@ -422,7 +422,8 @@ fn on_capture_thread_failure(program_data_rc: &Rc<RefCell<ProgramData>>) {
     gui::show_message(
         "Capture thread ended with error. Try reconnecting to the camera.",
         "Error",
-        gtk::MessageType::Error
+        gtk::MessageType::Error,
+        program_data_rc
     );
     gui::disconnect_camera(program_data_rc, true);
 }

@@ -147,7 +147,7 @@ impl MountWidgets {
 fn on_stop(program_data_rc: &Rc<RefCell<ProgramData>>) {
     let res = program_data_rc.borrow_mut().mount_data.mount.as_mut().unwrap().stop();
     if let Err(e) = &res {
-        on_mount_error(e);
+        on_mount_error(e, program_data_rc);
         return;
     }
 
@@ -173,7 +173,7 @@ fn on_stop(program_data_rc: &Rc<RefCell<ProgramData>>) {
 
 fn on_start_calibration(btn: &gtk::Button, program_data_rc: &Rc<RefCell<ProgramData>>) {
     if program_data_rc.borrow().tracking.is_none() {
-        show_message("Target tracking is not enabled.", "Error", gtk::MessageType::Error);
+        show_message("Target tracking is not enabled.", "Error", gtk::MessageType::Error, program_data_rc);
         return;
     }
 
@@ -182,7 +182,9 @@ fn on_start_calibration(btn: &gtk::Button, program_data_rc: &Rc<RefCell<ProgramD
         SiderealMultiple::Multiple(s) => s > 16.0,
         SiderealMultiple::Max => true
     } {
-        show_message("Selected slewing speed is too high for calibration.", "Error", gtk::MessageType::Error);
+        show_message(
+            "Selected slewing speed is too high for calibration.", "Error", gtk::MessageType::Error, program_data_rc
+        );
         return;
     }
 
@@ -206,7 +208,7 @@ fn on_start_calibration(btn: &gtk::Button, program_data_rc: &Rc<RefCell<ProgramD
     );
     if let Err(e) = &res {
         program_data_rc.borrow_mut().mount_data.calibration = None;
-        on_mount_error(e);
+        on_mount_error(e, program_data_rc);
     } else {
         program_data_rc.borrow_mut().mount_data.calibration_timer.run(
             CALIBRATION_DURATION,
@@ -295,12 +297,12 @@ fn on_calibration_timer(program_data_rc: &Rc<RefCell<ProgramData>>) {
 
     if let Some(msg) = must_show_error.take() {
         program_data_rc.borrow_mut().mount_data.calibration = None;
-        show_message(&msg, "Error", gtk::MessageType::Error);
+        show_message(&msg, "Error", gtk::MessageType::Error, program_data_rc);
         program_data_rc.borrow().gui.as_ref().unwrap().mount_widgets.calibrate.set_sensitive(true);
     } else {
         let calibration_finished = program_data_rc.borrow().mount_data.calibration.as_ref().unwrap().secondary_dir.is_some();
         if calibration_finished {
-            show_message("Calibration completed.", "Information", gtk::MessageType::Info);
+            show_message("Calibration completed.", "Information", gtk::MessageType::Info, program_data_rc);
             program_data_rc.borrow().gui.as_ref().unwrap().mount_widgets.calibrate.set_sensitive(true);
         }
     }
@@ -386,7 +388,7 @@ pub fn create_mount_box(program_data_rc: &Rc<RefCell<ProgramData>>) -> MountWidg
             guiding::start_guiding(&program_data_rc);
         } else {
             if let Err(e) = guiding::stop_guiding(&program_data_rc) {
-                on_mount_error(&e);
+                on_mount_error(&e, &program_data_rc);
             }
         }
     }));
@@ -421,8 +423,8 @@ fn mount_error_msg(e: &Box<dyn Error>) -> String {
 ///
 /// Active borrows of `program_data` *must not be held* when calling this function.
 ///
-pub fn on_mount_error(e: &Box<dyn Error>) {
-    show_message(&mount_error_msg(e), "Error", gtk::MessageType::Error);
+pub fn on_mount_error(e: &Box<dyn Error>, program_data_rc: &Rc<RefCell<ProgramData>>) {
+    show_message(&mount_error_msg(e), "Error", gtk::MessageType::Error, program_data_rc);
 }
 
 fn on_toggle_sky_tracking(btn: &gtk::ToggleButton, program_data_rc: &Rc<RefCell<ProgramData>>) {
@@ -432,7 +434,7 @@ fn on_toggle_sky_tracking(btn: &gtk::ToggleButton, program_data_rc: &Rc<RefCell<
     let res = program_data_rc.borrow_mut().mount_data.mount.as_mut().unwrap().set_tracking(enable_tracking);
     if let Err(e) = &res {
         btn.set_active(!enable_tracking);
-        on_mount_error(e);
+        on_mount_error(e, program_data_rc);
     }
 
     if !btn.is_active() {
@@ -447,105 +449,46 @@ fn on_toggle_sky_tracking(btn: &gtk::ToggleButton, program_data_rc: &Rc<RefCell<
 /// Returns slewing buttons: (Primary-, Secondary+, Secondary-, Primary+).
 fn create_direction_buttons(program_data_rc: &Rc<RefCell<ProgramData>>)
 -> (gtk::Button, gtk::Button, gtk::Button, gtk::Button) {
-
-    let zero = RadPerSec(0.0);
-
     let dir_primary_neg = gtk::Button::with_label("← Axis 1");
     dir_primary_neg.set_tooltip_text(Some("Primary axis negative slew"));
     dir_primary_neg.connect_button_press_event(clone!(@weak program_data_rc => @default-panic, move |_, _| {
-        let speed = program_data_rc.borrow().gui.as_ref().unwrap().mount_widgets.slew_speed();
-        let res = program_data_rc.borrow_mut().mount_data.mount.as_mut().unwrap().slew(
-            mount::Axis::Primary,
-            match speed {
-                SiderealMultiple::Multiple(s) => mount::SlewSpeed::Specific(-s * mount::SIDEREAL_RATE),
-                SiderealMultiple::Max => mount::SlewSpeed::Max(false)
-            }
-        );
-        if let Err(e) = &res { on_mount_error(e) }
-        gtk::Inhibit(res.is_err())
+        gtk::Inhibit(axis_slew(mount::Axis::Primary, false, true, &program_data_rc).is_err())
     }));
     dir_primary_neg.connect_button_release_event(clone!(@weak program_data_rc => @default-panic, move |_, _| {
-        let res = program_data_rc.borrow_mut().mount_data.mount.as_mut().unwrap().slew(
-            mount::Axis::Primary,
-            mount::SlewSpeed::zero()
-        );
-        if let Err(e) = &res { on_mount_error(e) }
-        gtk::Inhibit(false)
+        gtk::Inhibit(axis_slew(mount::Axis::Primary, false, false, &program_data_rc).is_err())
     }));
 
     let dir_secondary_pos = gtk::Button::with_label("↑ Axis 2");
     dir_secondary_pos.set_tooltip_text(Some("Secondary axis positive slew"));
     dir_secondary_pos.connect_button_press_event(clone!(@weak program_data_rc => @default-panic, move |_, _| {
-        let speed = program_data_rc.borrow().gui.as_ref().unwrap().mount_widgets.slew_speed();
-        let res = program_data_rc.borrow_mut().mount_data.mount.as_mut().unwrap().slew(
-            mount::Axis::Secondary,
-            match speed {
-                SiderealMultiple::Multiple(s) => mount::SlewSpeed::Specific(s * mount::SIDEREAL_RATE),
-                SiderealMultiple::Max => mount::SlewSpeed::Max(true)
-            }
-        );
-        if let Err(e) = &res { on_mount_error(e) }
-        gtk::Inhibit(res.is_err())
+        gtk::Inhibit(axis_slew(mount::Axis::Secondary, true, true, &program_data_rc).is_err())
     }));
     dir_secondary_pos.connect_button_release_event(clone!(@weak program_data_rc => @default-panic, move |_, _| {
-        let res = program_data_rc.borrow_mut().mount_data.mount.as_mut().unwrap().slew(
-            mount::Axis::Secondary,
-            mount::SlewSpeed::zero()
-        );
-        if let Err(e) = &res { on_mount_error(e) }
-        gtk::Inhibit(false)
+        gtk::Inhibit(axis_slew(mount::Axis::Secondary, true, false, &program_data_rc).is_err())
     }));
 
     let dir_secondary_neg = gtk::Button::with_label("↓ Axis 2");
     dir_secondary_neg.set_tooltip_text(Some("Secondary axis negative slew"));
     dir_secondary_neg.connect_button_press_event(clone!(@weak program_data_rc => @default-panic, move |_, _| {
-        let speed = program_data_rc.borrow().gui.as_ref().unwrap().mount_widgets.slew_speed();
-        let res = program_data_rc.borrow_mut().mount_data.mount.as_mut().unwrap().slew(
-            mount::Axis::Secondary,
-            match speed {
-                SiderealMultiple::Multiple(s) => mount::SlewSpeed::Specific(-s * mount::SIDEREAL_RATE),
-                SiderealMultiple::Max => mount::SlewSpeed::Max(false)
-            }
-        );
-        if let Err(e) = &res { on_mount_error(e) }
-        gtk::Inhibit(res.is_err())
+        gtk::Inhibit(axis_slew(mount::Axis::Secondary, false, true, &program_data_rc).is_err())
     }));
     dir_secondary_neg.connect_button_release_event(clone!(@weak program_data_rc => @default-panic, move |_, _| {
-        let res = program_data_rc.borrow_mut().mount_data.mount.as_mut().unwrap().slew(
-            mount::Axis::Secondary,
-            mount::SlewSpeed::zero()
-        );
-        if let Err(e) = &res { on_mount_error(e) }
-        gtk::Inhibit(false)
+        gtk::Inhibit(axis_slew(mount::Axis::Secondary, false, false, &program_data_rc).is_err())
     }));
 
     let dir_primary_pos = gtk::Button::with_label("→ Axis 1");
     dir_primary_pos.set_tooltip_text(Some("Primary axis positive slew"));
     dir_primary_pos.connect_button_press_event(clone!(@weak program_data_rc => @default-panic, move |_, _| {
-        let speed = program_data_rc.borrow().gui.as_ref().unwrap().mount_widgets.slew_speed();
-        let res = program_data_rc.borrow_mut().mount_data.mount.as_mut().unwrap().slew(
-            mount::Axis::Primary,
-            match speed {
-                SiderealMultiple::Multiple(s) => mount::SlewSpeed::Specific(s * mount::SIDEREAL_RATE),
-                SiderealMultiple::Max => mount::SlewSpeed::Max(true)
-            }
-        );
-        if let Err(e) = &res { on_mount_error(e) }
-        gtk::Inhibit(res.is_err())
+        gtk::Inhibit(axis_slew(mount::Axis::Primary, true, true, &program_data_rc).is_err())
     }));
     dir_primary_pos.connect_button_release_event(clone!(@weak program_data_rc => @default-panic, move |_, _| {
-        let res = program_data_rc.borrow_mut().mount_data.mount.as_mut().unwrap().slew(
-            mount::Axis::Primary,
-            mount::SlewSpeed::zero()
-        );
-        if let Err(e) = &res { on_mount_error(e) }
-        gtk::Inhibit(false)
+        gtk::Inhibit(axis_slew(mount::Axis::Primary, true, false, &program_data_rc).is_err())
     }));
 
     (dir_primary_neg, dir_secondary_pos, dir_secondary_neg, dir_primary_pos)
 }
 
-pub fn init_mount_menu(program_data_rc: &Rc<RefCell<ProgramData>>, app_window: &gtk::ApplicationWindow) -> gtk::Menu {
+pub fn init_mount_menu(program_data_rc: &Rc<RefCell<ProgramData>>) -> gtk::Menu {
     let menu = gtk::Menu::new();
 
     let item_disconnect = gtk::MenuItem::with_label("Disconnect");
@@ -567,16 +510,16 @@ pub fn init_mount_menu(program_data_rc: &Rc<RefCell<ProgramData>>, app_window: &
     let item_connect = gtk::MenuItem::with_label("Connect...");
     item_connect.connect_activate(clone!(
         @weak program_data_rc,
-        @weak app_window,
         @weak item_disconnect
         => @default-panic, move |_| {
-            match connection_dialog::show_mount_connect_dialog(&app_window, &program_data_rc) {
+            match connection_dialog::show_mount_connect_dialog(&program_data_rc) {
                 Some(connection) => {
                     match mount::connect_to_mount(connection) {
                         Err(e) => show_message(
                             &format!("Failed to connect to mount: {:?}.", e),
                             "Error",
-                            gtk::MessageType::Error
+                            gtk::MessageType::Error,
+                            &program_data_rc
                         ),
                         Ok(mut mount) => {
                             log::info!("connected to {}", mount.get_info());
@@ -601,4 +544,22 @@ pub fn init_mount_menu(program_data_rc: &Rc<RefCell<ProgramData>>, app_window: &
     menu.append(&item_disconnect);
 
     menu
+}
+
+pub fn axis_slew(axis: mount::Axis, positive: bool, enable: bool, program_data_rc: &Rc<RefCell<ProgramData>>) -> Result<(), ()> {
+    let speed = program_data_rc.borrow().gui.as_ref().unwrap().mount_widgets.slew_speed();
+    let res = program_data_rc.borrow_mut().mount_data.mount.as_mut().unwrap().slew(
+        axis,
+        if enable {
+            match speed {
+                SiderealMultiple::Multiple(s) => mount::SlewSpeed::Specific(if positive { 1.0 } else { -1.0 } * s * mount::SIDEREAL_RATE),
+                SiderealMultiple::Max => mount::SlewSpeed::Max(positive)
+            }
+        } else {
+            mount::SlewSpeed::zero()
+        }
+    );
+    if let Err(e) = &res { on_mount_error(e, program_data_rc) }
+
+    res.map_err(|_| ())
 }

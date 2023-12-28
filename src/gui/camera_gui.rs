@@ -1,6 +1,6 @@
 //
 // Vidoxide - Image acquisition for amateur astronomy
-// Copyright (c) 2020-2022 Filip Szczerek <ga.software@yahoo.com>
+// Copyright (c) 2020-2023 Filip Szczerek <ga.software@yahoo.com>
 //
 // This project is licensed under the terms of the MIT license
 // (see the LICENSE file for details).
@@ -171,7 +171,11 @@ fn on_select_camera(
         program_data_rc.borrow_mut().camera = match driver.borrow_mut().open_camera(camera_info.id()) {
             Ok(camera) => Some(camera),
             Err(e) => {
-                show_message(&format!("Failed to open {}:\n{:?}", camera_info.name(), e), "Error", gtk::MessageType::Error);
+                show_message(
+                    &format!("Failed to open {}:\n{:?}", camera_info.name(), e),
+                    "Error", gtk::MessageType::Error,
+                    program_data_rc
+                );
                 return Err(());
             }
         };
@@ -183,7 +187,12 @@ fn on_select_camera(
         let frame_capturer = match fc_result {
             Ok(capturer) => capturer,
             Err(e) => {
-                show_message(&format!("Failed to open {}:\n{:?}", camera_info.name(), e), "Error", gtk::MessageType::Error);
+                show_message(
+                    &format!("Failed to open {}:\n{:?}", camera_info.name(), e),
+                    "Error",
+                    gtk::MessageType::Error,
+                    program_data_rc
+                );
                 disconnect_camera(&program_data_rc, false);
                 return Err(());
             }
@@ -678,7 +687,12 @@ fn on_camera_number_control_change(
     } else {
         let result = program_data_rc.borrow_mut().camera.as_mut().unwrap().set_number_control(ctrl_id, value);
         if let Err(error) = result {
-            show_message(&format!("Failed to set camera control.\n{:?}", error), "Error", gtk::MessageType::Error);
+            show_message(
+                &format!("Failed to set camera control.\n{:?}", error),
+                "Error",
+                gtk::MessageType::Error,
+                program_data_rc
+            );
         } else {
             schedule_refresh(program_data_rc);
         }

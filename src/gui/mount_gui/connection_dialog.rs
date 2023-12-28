@@ -31,13 +31,13 @@ pub(in crate::gui::mount_gui) trait ConnectionCreator {
 }
 
 /// Returns `None` if canceled.
-pub fn show_mount_connect_dialog(parent: &gtk::ApplicationWindow, program_data_rc: &Rc<RefCell<ProgramData>>)
+pub fn show_mount_connect_dialog(program_data_rc: &Rc<RefCell<ProgramData>>)
 -> Option<MountConnection> {
     macro_rules! configuration { {} => { program_data_rc.borrow().config } }
 
     let dialog = gtk::Dialog::with_buttons(
         Some("Connect to mount"),
-        Some(parent),
+        Some(&program_data_rc.borrow().gui.as_ref().unwrap().app_window),
         gtk::DialogFlags::MODAL,
         &[("OK", gtk::ResponseType::Accept), ("Cancel", gtk::ResponseType::Cancel)]
     );
