@@ -76,7 +76,6 @@ Install the [Rust toolchain](https://www.rust-lang.org/learn/get-started). C & C
 *Detailed instructions: to be provided.*
 prerequisites (Fedora): `libusb-devel`, `libudev-devel`, `lib1394-devel`
 (V4L2 needs (on Fedora): `llvm-devel`, `clang`)
-(on Linux etc. you might need to set `LD_LIBRARY_PATH` to (e.g.) `/opt/spinnaker/lib`)
 
 
 ### 3.2. MS Windows
@@ -118,7 +117,3 @@ Increase the USB-FS buffer size, e.g. (run as root):
 ```
 # echo 1000 > /sys/module/usbcore/parameters/usbfs_memory_mb
 ```
-
-#### Cannot build under Linux due to libSpinnaker.so.2 not found
-
-When building, use `LD_LIBRARY_PATH=/opt/spinnaker/lib`.
