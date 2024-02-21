@@ -13,15 +13,16 @@ Persistent configuration is saved in an INI file in the OS-specific user configu
 
 ## 3. Threading
 
-Vidoxide uses 5 threads:
+Vidoxide uses 6 threads:
 
-|  | Purpose    | Lifetime                          |
-|--|------------|-----------------------------------|
-|T1| Main (GUI) | program execution duration        |
-|T2| Timer      | program execution duration        |
-|T3| Capture    | from camera connect to disconnect |
-|T4| Recording  | program execution duration        |
-|T5| Histogram  | program execution duration        |
+|  | Purpose         | Lifetime                          |
+|--|-----------------|-----------------------------------|
+|T1| Main (GUI)      | program execution duration        |
+|T2| Timer           | program execution duration        |
+|T3| Capture         | from camera connect to disconnect |
+|T4| Recording       | program execution duration        |
+|T5| Histogram       | program execution duration        |
+|T6| Game controller | program execution duration        |
 
 
 GTK and its supporting libraries' functions are called only in T1, with the exception of message passing via `glib::Sender` in other threads which communicate with T1.
@@ -33,6 +34,8 @@ T3 is created upon connecting to a camera, and constantly captures frames. Frame
 T4 records frames sent by T3, if recording is in progress; otherwise, it waits for a new recording job.
 
 T5 determines image histogram when requested by T1.
+
+T6 listens to game controller events (including dis/connecting devices).
 
 
 ### 3.1. Thread communication
