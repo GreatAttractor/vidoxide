@@ -30,7 +30,7 @@ glib = "0.14.2"
 gtk = "0.14.0"
 log = "0.4.20"
 ioctl-rs = { version = "0.2.0", optional = true }
-libasicamera-sys = { path = "../libasicamera-sys", optional = true }
+libasicamera-sys = { path = "ext/libasicamera-sys", optional = true }
 libdc1394-sys = { version = "0.2.2", optional = true }
 libflycapture2-sys = { version = "0.1.1", optional = true }
 libspinnaker-sys = { version = "0.1.0", optional = true }

@@ -72,6 +72,9 @@ struct CropData {
     area: Rect
 }
 
+#[derive(PartialEq)]
+struct RecordingStillRunning(bool);
+
 pub fn capture_thread(
     mut camera: Box<dyn FrameCapturer + Send>,
     sender: glib::Sender<CaptureToMainThreadMsg>,
@@ -192,7 +195,7 @@ pub fn capture_thread(
                     }
 
                     if let Some(ref mut rec_data_contents) = rec_data {
-                        if !on_recording(
+                        if RecordingStillRunning(false) == on_recording(
                             rec_data_contents,
                             &capture_buf[current_buf_idx],
                             &buffered_kib,
@@ -200,7 +203,6 @@ pub fn capture_thread(
                             &mut num_dropped_frames,
                             &crop_data
                         ) {
-                            // error communicating with the recording thread; there must have been a recording failure
                             rec_data = None;
                         }
                     }
@@ -327,7 +329,6 @@ fn on_tracking(
     }
 }
 
-/// Returns false on communication-with-recording-thread error.
 #[must_use]
 fn on_recording(
     rec_data: &mut RecData,
@@ -336,7 +337,7 @@ fn on_recording(
     info: Option<&mut Info>,
     num_dropped_frames: &mut usize,
     crop_data: &Option<CropData>
-) -> bool {
+) -> RecordingStillRunning {
     let num_img_pixels = (image.width() * image.height()) as usize;
     let num_frag_pixels = if let Some(cd) = crop_data.as_ref() {
         (cd.area.width * cd.area.height) as usize
@@ -350,7 +351,7 @@ fn on_recording(
             if let Some(crop_data) = crop_data { crop_data.area } else { image.img_rect() },
             std::time::SystemTime::now()
         ))).is_err() {
-            return false;
+            return RecordingStillRunning(false);
         }
         rec_data.frame_counter += 1;
         buffered_kib.fetch_add(frame_kib_amount as isize, Ordering::Relaxed);
@@ -389,5 +390,5 @@ fn on_recording(
         });
     }
 
-    true
+    RecordingStillRunning(true)
 }
