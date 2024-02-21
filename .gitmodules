@@ -1,3 +1,6 @@
 [submodule "ext/ga_image"]
 	path = ext/ga_image
 	url = https://github.com/GreatAttractor/ga_image.git
+[submodule "ext/libasicamera-sys"]
+	path = ext/libasicamera-sys
+	url = https://github.com/GreatAttractor/libasicamera-sys.git
