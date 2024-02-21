@@ -46,6 +46,8 @@ mod keys {
     pub const SIM_SKY_ROTATION_SPEED_PIX_PER_SEC: &str = "SimulatorSkyRotationSpeedPixelsPerSecond";
 }
 
+const DEFAULT_PREVIEW_FPS_LIMIT: i32 = 60;
+
 pub struct Configuration {
     key_file: glib::KeyFile
 }
@@ -234,7 +236,8 @@ impl Configuration {
                 println!("WARNING: invalid configuration value for {}/{}: {}", groups::MAIN, keys::PREVIEW_FPS_LIMIT, value);
                 None
             },
-            _ => None
+
+            _ => Some(DEFAULT_PREVIEW_FPS_LIMIT)
         }
     }
 
