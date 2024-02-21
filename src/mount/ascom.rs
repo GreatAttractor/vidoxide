@@ -1,6 +1,6 @@
 //
 // Vidoxide - Image acquisition for amateur astronomy
-// Copyright (c) 2023 Filip Szczerek <ga.software@yahoo.com>
+// Copyright (c) 2023-2024 Filip Szczerek <ga.software@yahoo.com>
 //
 // This project is licensed under the terms of the MIT license
 // (see the LICENSE file for details).
@@ -14,8 +14,11 @@
 
 use winapi;
 use uuid::Uuid;
-use std::os::windows::ffi::OsStrExt;
-use crate::mount::{Axis, Mount, MountError, SIDEREAL_RATE};
+use std::{error::Error, os::windows::ffi::OsStrExt};
+use crate::mount::{Axis, Mount, SlewSpeed, RadPerSec, SIDEREAL_RATE};
+
+// TODO: what should be here?
+const MAX_SPEED: RadPerSec = RadPerSec(800.0 * SIDEREAL_RATE.0);
 
 #[repr(i32)]
 #[derive(Debug)]
@@ -43,7 +46,7 @@ macro_rules! checked_call {
     ($func_call:expr) => {
         match unsafe { $func_call } {
             winapi::shared::winerror::S_OK => Ok(()),
-            error => Err(error)
+            error => Err(into_err(error))
         }
     }
 }
@@ -59,20 +62,10 @@ fn iid_from_string(s: &str) -> winapi::shared::guiddef::IID {
     }
 }
 
-#[derive(Debug)]
-pub struct AscomError(String);
-
-impl std::convert::From<winapi::um::winnt::HRESULT> for AscomError {
-    fn from(e: winapi::um::winnt::HRESULT) -> AscomError {
-        AscomError(format!("Error code: 0x{:X}.", e))
-    }
+fn into_err(hres: winapi::um::winnt::HRESULT) -> Box<dyn Error> {
+	format!("error code: 0x{:X}", hres).into()
 }
 
-impl std::convert::From<AscomError> for MountError {
-    fn from(e: AscomError) -> MountError {
-        MountError::AscomError(e)
-    }
-}
 
 // Created manually based on "ASCOMPlatform/Interfaces/Master Interfaces/AscomMasterInterfaces.idl"
 // (https://github.com/ASCOMInitiative/ASCOMPlatform). UUID: EF0C67AD-A9D3-4f7b-A635-CD2095517633.
@@ -195,7 +188,8 @@ impl std::ops::Deref for ITelescope {
 
 pub struct Ascom {
     telescope: *mut ITelescope,
-    driver: String
+    driver: String,
+    tracking: bool
 }
 
 impl Drop for Ascom {
@@ -223,7 +217,7 @@ impl Ascom {
     ///
     /// * `progid` - ProgID of telescope (e.g., "EQMOD.Telescope").
     ///
-    pub fn new(progid: &str) -> Result<Ascom, AscomError> {
+    pub fn new(progid: &str) -> Result<Ascom, Box<dyn Error>> {
         // Note: we do not call winapi::um::objbase::CoInitialize and winapi::um::combaseapi::CoUninitialize,
         // since GTK already does that.
 
@@ -249,14 +243,24 @@ impl Ascom {
         let mut is_connected = VariantBool::FALSE;
         checked_call!(unsafe { ((*(*telescope).lpVtbl).Connected)(telescope, &mut is_connected as *mut _) });
         if is_connected == VariantBool::FALSE {
-            return Err(AscomError(
-                "connection to mount is not active; try using the ASCOM configuration dialog of the driver".to_string()
-            ));
+            return Err(
+                "connection to mount is not active; try using the ASCOM configuration dialog of the driver".into()
+            );
         }
 
         checked_call!(unsafe { ((*(*telescope).lpVtbl).Unpark)(telescope) });
 
-        Ok(Ascom{ telescope, driver: progid.to_string() })
+        Ok(Ascom{ telescope, driver: progid.to_string(), tracking: false })
+    }
+
+    fn set_motion(&mut self, axis: Axis, speed: RadPerSec) -> Result<(), Box<dyn Error>> {
+        checked_call!(unsafe { ((*(*self.telescope).lpVtbl).MoveAxis)(
+            self.telescope,
+            ascom_axis_from(axis),
+            speed.0 * 180.0 / std::f64::consts::PI
+        ) });
+
+        Ok(())
     }
 }
 
@@ -272,23 +276,40 @@ impl Mount for Ascom {
         format!("ASCOM – {}", self.driver)
     }
 
-    fn set_motion(&mut self, axis: Axis, speed: f64) -> Result<(), MountError> {
-        checked_call!(unsafe { ((*(*self.telescope).lpVtbl).MoveAxis)(
-            self.telescope,
-            ascom_axis_from(axis),
-            speed * 180.0 / std::f64::consts::PI
-        ) });
+    fn set_tracking(&mut self, enabled: bool) -> Result<(), Box<dyn Error>> {
+        self.tracking = enabled;
+        self.set_motion(Axis::Primary, if enabled { SIDEREAL_RATE } else { RadPerSec(0.0) })
+    }
+
+    fn guide(&mut self, axis1_speed: RadPerSec, axis2_speed: RadPerSec) -> Result<(), Box<dyn Error>> {
+        if !self.tracking { return Err("cannot guide when tracking disabled".into()); }
+
+        self.set_motion(Axis::Primary, axis1_speed + if self.tracking { SIDEREAL_RATE } else { RadPerSec(0.0) })?;
+        self.set_motion(Axis::Secondary, axis2_speed)?;
 
         Ok(())
     }
 
-    fn stop_motion(&mut self, axis: Axis) -> Result<(), MountError> {
-        checked_call!(unsafe { ((*(*self.telescope).lpVtbl).MoveAxis)(
-            self.telescope,
-            ascom_axis_from(axis),
-            0.0
-        ) });
+    fn slew(&mut self, axis: Axis, speed: SlewSpeed) -> Result<(), Box<dyn Error>> {
+        let speed = match speed {
+            SlewSpeed::Specific(s) => s,
+            SlewSpeed::Max(positive) => if positive { MAX_SPEED } else { -MAX_SPEED }
+        };
+
+        match axis {
+            Axis::Primary => self.set_motion(axis, speed + if self.tracking { SIDEREAL_RATE } else { RadPerSec(0.0) })?,
+            Axis::Secondary => self.set_motion(axis, speed)?
+        }
 
         Ok(())
+    }
+
+    fn slewing_speed_supported(&self, speed: RadPerSec) -> bool {
+        speed <= MAX_SPEED
+    }
+
+    fn stop(&mut self) -> Result<(), Box<dyn Error>> {
+        self.set_motion(Axis::Primary, RadPerSec(0.0))?;
+        self.set_motion(Axis::Secondary, RadPerSec(0.0))
     }
 }
