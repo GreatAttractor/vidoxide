@@ -44,8 +44,8 @@ impl ImgView {
     ///   (scrolling and zoom are applied).
     /// * `on_mouse_move` - Called on mouse move; receives image coordinates (scrolling and zoom are applied).
     /// * `draw_info_overlay` - Called after the image is drawn. Receives drawing context and zoom value.
-    /// * `draw_reticle` - Called after the image is drawn. Receives drawing context having with origin in the middle
-    ///    of the visible part of the image.
+    /// * `draw_reticle` - Called after the image is drawn. Receives drawing context having its origin in the middle
+    ///    of the captured image.
     ///
     pub fn new(
         on_button_down: Box<dyn Fn(Point2<i32>)>,
@@ -177,16 +177,16 @@ impl ImgView {
                     );
                     ctx.fill().unwrap();
 
+                    ctx.translate(
+                         state.zoom * surface.width() as f64 / 2.0,
+                         state.zoom * surface.height() as f64 / 2.0
+                    );
+                    draw_reticle(ctx);
+
                     draw_info_overlay(ctx, state.zoom);
                 },
                 None => ()
             }
-
-            ctx.translate(
-                top_widget.allocated_width() as f64 / 2.0 + top_widget.hadjustment().value(),
-                top_widget.allocated_height() as f64 / 2.0 + top_widget.vadjustment().value()
-            );
-            draw_reticle(ctx);
 
             gtk::Inhibit(true)
         }));
