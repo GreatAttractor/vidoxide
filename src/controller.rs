@@ -193,6 +193,10 @@ fn dispatch_event(event: StickEvent, program_data_rc: &Rc<RefCell<ProgramData>>)
             if src_action.matches(&event) { target_action = Some(TargetAction::MountAxis2Neg); break; }
         }
 
+        if let Some(src_action) = &actions.toggle_recording {
+            if src_action.matches(&event) { target_action = Some(TargetAction::ToggleRecording); break; }
+        }
+
         break;
     } // end of `program_data_rc` borrow
     if target_action.is_none() { return; }
@@ -217,6 +221,11 @@ fn dispatch_event(event: StickEvent, program_data_rc: &Rc<RefCell<ProgramData>>)
         TargetAction::MountAxis2Neg => if let EventValue::Discrete(value) = event_value(&event.event) {
             if program_data_rc.borrow().mount_data.mount.is_some() {
                 let _ = crate::gui::axis_slew(mount::Axis::Secondary, false, value, program_data_rc);
+            }
+        },
+        TargetAction::ToggleRecording => if let EventValue::Discrete(value) = event_value(&event.event) {
+            if value {
+                //TODO: toggle recording
             }
         },
 
