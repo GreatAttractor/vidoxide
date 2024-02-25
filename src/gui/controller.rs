@@ -201,7 +201,7 @@ fn show_controller_action_selection_dialog(
     );
 
     dialog.content_area().pack_start(
-        &gtk::Label::new(Some("Press a controller button or perform an axis movement:")),
+        &gtk::Label::new(Some("Press a controller button:")),
         true, true, PADDING
     );
     let action_label = gtk::Label::new(None);
