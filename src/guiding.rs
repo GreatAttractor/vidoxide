@@ -23,13 +23,13 @@ const GUIDE_CHECK_INTERVAL: std::time::Duration = std::time::Duration::from_mill
 
 pub fn start_guiding(program_data_rc: &Rc<RefCell<ProgramData>>) {
     let failed: bool = if program_data_rc.borrow().tracking.is_none() {
-        show_message("Target tracking is not enabled.", "Error", gtk::MessageType::Error);
+        show_message("Target tracking is not enabled.", "Error", gtk::MessageType::Error, program_data_rc);
         true
     } else if program_data_rc.borrow().mount_data.calibration.is_none() {
-        show_message("Calibration has not been performed.", "Error", gtk::MessageType::Error);
+        show_message("Calibration has not been performed.", "Error", gtk::MessageType::Error, program_data_rc);
         true
     } else if !program_data_rc.borrow().mount_data.sky_tracking_on {
-        show_message("Sky tracking is not enabled.", "Error", gtk::MessageType::Error);
+        show_message("Sky tracking is not enabled.", "Error", gtk::MessageType::Error, program_data_rc);
         true
     } else {
         false
@@ -42,8 +42,9 @@ pub fn start_guiding(program_data_rc: &Rc<RefCell<ProgramData>>) {
 
     let mut pd = program_data_rc.borrow_mut();
     pd.mount_data.guiding_pos = Some(pd.tracking.as_ref().unwrap().pos);
-    pd.mount_data.guiding_timer.run_once(
+    pd.mount_data.guiding_timer.run(
         GUIDE_CHECK_INTERVAL,
+        true,
         clone!(@weak program_data_rc => @default-panic, move || guiding_step(&program_data_rc))
     );
 
@@ -98,8 +99,9 @@ pub fn guiding_step(program_data_rc: &Rc<RefCell<ProgramData>>) {
 
             pd.mount_data.guide_slewing = true;
 
-            pd.mount_data.guiding_timer.run_once(
+            pd.mount_data.guiding_timer.run(
                 GUIDE_DIR_UPDATE_INTERVAL,
+                true,
                 clone!(@weak program_data_rc => @default-panic, move || guiding_step(&program_data_rc))
             );
         } else {
@@ -109,8 +111,9 @@ pub fn guiding_step(program_data_rc: &Rc<RefCell<ProgramData>>) {
             pd.mount_data.guide_slewing = false;
             log::info!("back on target");
 
-            pd.mount_data.guiding_timer.run_once(
+            pd.mount_data.guiding_timer.run(
                 GUIDE_CHECK_INTERVAL,
+                true,
                 clone!(@weak program_data_rc => @default-panic, move || guiding_step(&program_data_rc))
             );
         }
@@ -122,7 +125,7 @@ pub fn guiding_step(program_data_rc: &Rc<RefCell<ProgramData>>) {
         // mount already failed, so ignore further mount errors from this call, if any
         let _ = stop_guiding(program_data_rc);
         program_data_rc.borrow().gui.as_ref().unwrap().mount_widgets().disable_guide();
-        crate::gui::on_mount_error(&e);
+        crate::gui::on_mount_error(&e, program_data_rc);
     }
 }
 

@@ -972,6 +972,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "pasts"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "98a644f00d22e5a6c8a9aea7f4e0ab08d890b542e7a139d2b9f15620b9a47f4b"
+
+[[package]]
 name = "peeking_take_while"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1166,6 +1172,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "scan_fmt"
+version = "0.2.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0b53b0a5db882a8e2fdaae0a43f7b39e7e9082389e978398bdf223a55b581248"
+dependencies = [
+ "regex",
+]
+
+[[package]]
 name = "scopeguard"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1254,6 +1269,22 @@ name = "smallvec"
 version = "1.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fe0f37c9e8f3c5a4a66ad655a93c74daac4ad00c441533bf5c6e7990bb42604e"
+
+[[package]]
+name = "smelling_salts"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b0ac3b24afd6d59663abbd40d5b99d281d19413e70f43dc5277dfda314c1647b"
+
+[[package]]
+name = "stick"
+version = "0.12.2"
+source = "git+https://github.com/GreatAttractor/stick.git?rev=6269405a7d6d812b7497715b843a822a4d3f6dcd#6269405a7d6d812b7497715b843a822a4d3f6dcd"
+dependencies = [
+ "log",
+ "smelling_salts",
+ "winapi",
+]
 
 [[package]]
 name = "strsim"
@@ -1527,8 +1558,11 @@ dependencies = [
  "mmap",
  "num-traits",
  "os_info",
+ "pasts",
+ "scan_fmt",
  "serialport",
  "simplelog",
+ "stick",
  "strum 0.18.0",
  "strum_macros 0.18.0",
  "time 0.3.30",

@@ -11,6 +11,9 @@
 //!
 
 mod camera_gui;
+mod checked_listbox;
+#[cfg(feature = "controller")]
+mod controller;
 mod dec_intervals;
 mod dispersion_dialog;
 mod freezeable;
@@ -33,6 +36,8 @@ use camera_gui::{
     BooleanControlWidgets
 };
 use cgmath::{EuclideanSpace, Point2, Vector2, Zero};
+#[cfg(feature = "controller")]
+use controller::{ControllerDialog, init_controller_menu};
 use crate::{CameraControlChange, NewControlValue, OnCapturePauseAction, ProgramData};
 use crate::camera;
 use crate::camera::CameraError;
@@ -63,7 +68,9 @@ use std::path::Path;
 use std::rc::Rc;
 use std::sync::atomic::Ordering;
 
-pub use mount_gui::on_mount_error;
+#[cfg(feature = "controller")]
+pub use crate::controller::on_controller_event;
+pub use mount_gui::{axis_slew, on_mount_error};
 
 /// Control padding in pixels.
 const PADDING: u32 = 10;
@@ -166,6 +173,7 @@ pub struct Stabilization {
 }
 
 pub struct GuiData {
+    app_window: gtk::ApplicationWindow,
     controls_box: gtk::Box,
     control_widgets: std::collections::HashMap<camera::CameraControlId, (CommonControlWidgets, ControlWidgetBundle)>,
     status_bar: StatusBarFields,
@@ -177,6 +185,8 @@ pub struct GuiData {
     reticle: Reticle,
     stabilization: Stabilization,
     preview_processing: PreviewProcessing,
+    #[cfg(feature = "controller")]
+    controller_dialog: ControllerDialog,
     dispersion_dialog: DispersionDialog,
     psf_dialog: PsfDialog,
     mount_widgets: MountWidgets,
@@ -191,6 +201,12 @@ pub struct GuiData {
 
 impl GuiData {
     pub fn mount_widgets(&self) -> &MountWidgets { &self.mount_widgets }
+
+    #[cfg(feature = "controller")]
+    pub fn controller_dialog(&self) -> &ControllerDialog { &self.controller_dialog }
+
+    #[cfg(feature = "controller")]
+    pub fn controller_dialog_mut(&mut self) -> &mut ControllerDialog { &mut self.controller_dialog }
 }
 
 struct DialogDestroyer {
@@ -326,7 +342,7 @@ fn on_preview_area_button_up(pos: Point2<i32>, program_data_rc: &Rc<RefCell<Prog
     if send_to_cap_thread_res.is_err() {
         crate::on_capture_thread_failure(program_data_rc);
     } else if show_crop_error {
-        show_message("Cannot set crop area during recording.", "Error", gtk::MessageType::Error);
+        show_message("Cannot set crop area during recording.", "Error", gtk::MessageType::Error, program_data_rc);
     }
 }
 
@@ -340,23 +356,23 @@ fn on_preview_area_mouse_move(pos: Point2<i32>, program_data_rc: &Rc<RefCell<Pro
 }
 
 pub fn init_main_window(app: &gtk::Application, program_data_rc: &Rc<RefCell<ProgramData>>) {
-    let window = gtk::ApplicationWindow::new(app);
-    window.set_title("Vidoxide");
+    let app_window = gtk::ApplicationWindow::new(app);
+    app_window.set_title("Vidoxide");
 
-    let action_map = setup_actions(&window, program_data_rc);
+    let action_map = setup_actions(&app_window, program_data_rc);
 
     {
         let config = &program_data_rc.borrow().config;
 
         if let Some(pos) = program_data_rc.borrow().config.main_window_pos() {
-            window.move_(pos.x, pos.y);
-            window.resize(pos.width, pos.height);
+            app_window.move_(pos.x, pos.y);
+            app_window.resize(pos.width, pos.height);
         } else {
-            window.resize(800, 600);
+            app_window.resize(800, 600);
         }
 
         if let Some(is_maximized) = config.main_window_maximized() {
-            if is_maximized { window.maximize(); }
+            if is_maximized { app_window.maximize(); }
         }
     }
 
@@ -386,7 +402,7 @@ pub fn init_main_window(app: &gtk::Application, program_data_rc: &Rc<RefCell<Pro
     if let Some(paned_pos) = program_data_rc.borrow().config.camera_controls_paned_pos() {
         cam_controls_and_histogram.set_position(paned_pos);
     } else {
-        cam_controls_and_histogram.set_position(window.size().1 / 2);
+        cam_controls_and_histogram.set_position(app_window.size().1 / 2);
     }
 
     let controls_notebook = gtk::Notebook::new();
@@ -402,7 +418,7 @@ pub fn init_main_window(app: &gtk::Application, program_data_rc: &Rc<RefCell<Pro
     let controls_notebook_scroller = gtk::ScrolledWindow::new::<gtk::Adjustment, gtk::Adjustment>(None, None);
     controls_notebook_scroller.add(&controls_notebook);
 
-    let (menu_bar, camera_menu, camera_menu_items) = init_menu(&window, program_data_rc);
+    let (menu_bar, camera_menu, camera_menu_items) = init_menu(&app_window, program_data_rc);
 
     let window_contents = gtk::Paned::new(gtk::Orientation::Horizontal);
     window_contents.set_wide_handle(true);
@@ -411,23 +427,23 @@ pub fn init_main_window(app: &gtk::Application, program_data_rc: &Rc<RefCell<Pro
     if let Some(paned_pos) = program_data_rc.borrow().config.main_window_paned_pos() {
         window_contents.set_position(paned_pos);
     } else {
-        window_contents.set_position(window.size().0 - 400);
+        window_contents.set_position(app_window.size().0 - 400);
     }
 
     let (status_bar_frame, status_bar) = create_status_bar();
 
     let top_lvl_v_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
     top_lvl_v_box.pack_start(&menu_bar, false, false, PADDING);
-    let (toolbar, default_mouse_mode_button, stabilization_button) = create_toolbar(&window, &program_data_rc);
+    let (toolbar, default_mouse_mode_button, stabilization_button) = create_toolbar(&app_window, &program_data_rc);
     top_lvl_v_box.pack_start(&toolbar, false, false, 0);
     top_lvl_v_box.pack_start(&window_contents, true, true, PADDING);
     top_lvl_v_box.pack_start(&status_bar_frame, false, false, PADDING);
 
-    window.add(&top_lvl_v_box);
+    app_window.add(&top_lvl_v_box);
 
-    window.show_all();
+    app_window.show_all();
 
-    window.connect_delete_event(clone!(
+    app_window.connect_delete_event(clone!(
         @weak program_data_rc,
         @weak window_contents,
         @weak cam_controls_and_histogram
@@ -447,6 +463,7 @@ pub fn init_main_window(app: &gtk::Application, program_data_rc: &Rc<RefCell<Pro
     let rtc_line_width = 2.0;
 
     let gui = GuiData{
+        app_window: app_window.clone(),
         controls_box: camera_controls_box,
         status_bar,
         control_widgets: Default::default(),
@@ -458,7 +475,7 @@ pub fn init_main_window(app: &gtk::Application, program_data_rc: &Rc<RefCell<Pro
         info_overlay: InfoOverlay::new(),
         reticle: Reticle{
             enabled: false,
-            dialog: create_reticle_dialog(&window, &program_data_rc, rtc_opacity, rtc_diameter, rtc_step, rtc_line_width),
+            dialog: create_reticle_dialog(&app_window, &program_data_rc, rtc_opacity, rtc_diameter, rtc_step, rtc_line_width),
             diameter: rtc_diameter,
             opacity: rtc_opacity,
             step: rtc_step,
@@ -469,13 +486,15 @@ pub fn init_main_window(app: &gtk::Application, program_data_rc: &Rc<RefCell<Pro
             toggle_button: stabilization_button
         },
         preview_processing: PreviewProcessing {
-            dialog: create_preview_processing_dialog(&window, &program_data_rc),
+            dialog: create_preview_processing_dialog(&app_window, &program_data_rc),
             gamma: 1.0,
             gain: Decibel(0.0),
             stretch_histogram: false
         },
-        dispersion_dialog: DispersionDialog::new(&window, &program_data_rc),
-        psf_dialog: PsfDialog::new(&window, &program_data_rc),
+        #[cfg(feature = "controller")]
+        controller_dialog: ControllerDialog::new(&app_window, &program_data_rc),
+        dispersion_dialog: DispersionDialog::new(&app_window, &program_data_rc),
+        psf_dialog: PsfDialog::new(&app_window, &program_data_rc),
         mouse_mode: MouseMode::None,
         default_mouse_mode_button,
         histogram_view,
@@ -510,8 +529,8 @@ fn setup_actions(app_window: &gtk::ApplicationWindow, program_data_rc: &Rc<RefCe
 
     //-----------------------------
     let set_roi_action = gtk::gio::SimpleAction::new(actions::SET_ROI, None);
-    set_roi_action.connect_activate(clone!(@weak app_window, @weak program_data_rc => @default-panic, move |_, _| {
-        on_set_roi(&app_window, &program_data_rc);
+    set_roi_action.connect_activate(clone!(@weak program_data_rc => @default-panic, move |_, _| {
+        on_set_roi(&program_data_rc);
     }));
     set_roi_action.set_enabled(false);
     action_group.add_action(&set_roi_action);
@@ -536,8 +555,8 @@ fn initiate_set_roi(rect: Rect, program_data: &mut ProgramData)
     result
 }
 
-fn on_set_roi(app_window: &gtk::ApplicationWindow, program_data_rc: &Rc<RefCell<ProgramData>>) {
-    if let Some(roi_rect) = roi_dialog::show_roi_dialog(app_window) {
+fn on_set_roi(program_data_rc: &Rc<RefCell<ProgramData>>) {
+    if let Some(roi_rect) = roi_dialog::show_roi_dialog(program_data_rc) {
         let result = initiate_set_roi(roi_rect, &mut program_data_rc.borrow_mut());
         if result.is_err() {
             crate::on_capture_thread_failure(program_data_rc);
@@ -605,7 +624,7 @@ fn create_toolbar(
     btn_zoom_custom.set_tooltip_text(Some("Custom zoom level"));
     btn_zoom_custom.connect_clicked(clone!(@weak program_data_rc, @weak main_wnd => @default-panic, move |_| {
         let old_zoom = program_data_rc.borrow().gui.as_ref().unwrap().preview_area.get_zoom();
-        if let Some(new_zoom) = show_custom_zoom_dialog(&main_wnd, old_zoom) {
+        if let Some(new_zoom) = show_custom_zoom_dialog(&main_wnd, old_zoom, &program_data_rc) {
             program_data_rc.borrow_mut().gui.as_mut().unwrap().preview_area.set_zoom(new_zoom);
         }
     }));
@@ -658,7 +677,7 @@ fn create_toolbar(
         let tracking_enabled = program_data_rc.borrow().tracking.is_some();
         if btn.is_active() && !tracking_enabled {
             btn.set_active(false);
-            show_message("Tracking is not enabled.", "Error", gtk::MessageType::Error);
+            show_message("Tracking is not enabled.", "Error", gtk::MessageType::Error, &program_data_rc);
             return;
         }
 
@@ -783,13 +802,21 @@ fn on_main_window_delete(
     config.set_main_window_maximized(wnd.is_maximized());
     config.set_main_window_paned_pos(main_wnd_contents.position());
     config.set_camera_controls_paned_pos(cam_controls_and_histogram.position());
-    config.set_recording_dest_path(&program_data_rc.borrow().gui.as_ref().unwrap().rec_widgets.dest_dir());
+    //TODO: encode a `Path` somehow;  config.set_recording_dest_path(&program_data_rc.borrow().gui.as_ref().unwrap().rec_widgets.dest_dir());
 }
 
 /// WARNING: this recursively enters the main event loop until the message dialog closes; therefore active borrows
 /// of `program_data_rc` MUST NOT be held when calling this function.
-pub fn show_message(msg: &str, title: &str, msg_type: gtk::MessageType) {
-    let dialog = gtk::MessageDialog::new::<gtk::Window>(None, gtk::DialogFlags::MODAL, msg_type, gtk::ButtonsType::Close, msg);
+pub fn show_message(msg: &str, title: &str, msg_type: gtk::MessageType, program_data_rc: &Rc<RefCell<ProgramData>>) {
+    let dialog = gtk::MessageDialog::new(
+        Some(&program_data_rc.borrow().gui.as_ref().unwrap().app_window),
+        gtk::DialogFlags::MODAL,
+        msg_type,
+        gtk::ButtonsType::Close,
+        msg
+    );
+    let _ddestr = DialogDestroyer::new(&dialog.clone().upcast());
+
     dialog.set_title(title);
     dialog.set_use_markup(true);
     dialog.run();
@@ -799,13 +826,15 @@ pub fn show_message(msg: &str, title: &str, msg_type: gtk::MessageType) {
 /// Returns (menu bar, camera menu, camera menu items).
 fn init_menu(
     window: &gtk::ApplicationWindow,
-    program_data: &Rc<RefCell<ProgramData>>
+    program_data_rc: &Rc<RefCell<ProgramData>>
 ) -> (gtk::MenuBar, gtk::Menu, Vec<(gtk::CheckMenuItem, glib::SignalHandlerId)>) {
     let accel_group = gtk::AccelGroup::new();
     window.add_accel_group(&accel_group);
 
     let about_item = gtk::MenuItem::with_label("About");
-    about_item.connect_activate(move |_| show_about_dialog());
+    about_item.connect_activate(
+        clone!(@weak program_data_rc => @default-panic, move |_| show_about_dialog(&program_data_rc))
+    );
 
     let quit_item = gtk::MenuItem::with_label("Quit");
     quit_item.connect_activate(clone!(@weak window => @default-panic, move |_| {
@@ -828,17 +857,24 @@ fn init_menu(
     menu_bar.append(&file_menu_item);
 
     let camera_menu_item = gtk::MenuItem::with_label("Camera");
-    let (camera_menu, camera_menu_items) = camera_gui::init_camera_menu(program_data);
+    let (camera_menu, camera_menu_items) = camera_gui::init_camera_menu(program_data_rc);
     camera_menu_item.set_submenu(Some(&camera_menu));
     menu_bar.append(&camera_menu_item);
 
     let mount_menu_item = gtk::MenuItem::with_label("Mount");
-    mount_menu_item.set_submenu(Some(&mount_gui::init_mount_menu(program_data, window)));
+    mount_menu_item.set_submenu(Some(&mount_gui::init_mount_menu(program_data_rc)));
     menu_bar.append(&mount_menu_item);
 
     let preview_menu_item = gtk::MenuItem::with_label("Preview");
-    preview_menu_item.set_submenu(Some(&init_preview_menu(program_data, &accel_group)));
+    preview_menu_item.set_submenu(Some(&init_preview_menu(program_data_rc, &accel_group)));
     menu_bar.append(&preview_menu_item);
+
+    #[cfg(feature = "controller")]
+    {
+        let controller_menu_item = gtk::MenuItem::with_label("Controller");
+        controller_menu_item.set_submenu(Some(&init_controller_menu(program_data_rc)));
+        menu_bar.append(&controller_menu_item);
+    }
 
     (menu_bar, camera_menu, camera_menu_items)
 }
@@ -894,7 +930,7 @@ fn init_preview_menu(
     menu
 }
 
-fn show_about_dialog() {
+fn show_about_dialog(program_data_rc: &Rc<RefCell<ProgramData>>) {
     show_message(
         &format!(
             "<big><big><b>Vidoxide</b></big></big>\n\n\
@@ -906,7 +942,8 @@ fn show_about_dialog() {
             os_info::get()
         ),
         "About Vidoxide",
-        gtk::MessageType::Info
+        gtk::MessageType::Info,
+        program_data_rc
     );
 }
 
@@ -928,7 +965,12 @@ pub fn on_recording_thread_message(
 
         RecordingToMainThreadMsg::Error(err) => {
             rec_gui::on_stop_recording(program_data_rc);
-            show_message(&format!("Error during recording:\n{}", err), "Recording error", gtk::MessageType::Error);
+            show_message(
+                &format!("Error during recording:\n{}", err),
+                "Recording error",
+                gtk::MessageType::Error,
+                program_data_rc
+            );
         }
     }
 }
@@ -1107,7 +1149,7 @@ fn on_tracking_ended(program_data_rc: &Rc<RefCell<ProgramData>>) {
         }
 
         if let Err(e) = &error {
-            mount_gui::on_mount_error(e);
+            mount_gui::on_mount_error(e, program_data_rc);
         }
     }
 
@@ -1345,7 +1387,8 @@ fn on_capture_paused(
                     show_message(
                         &format!("Failed to set camera control:\n{:?}", e),
                         "Error",
-                        gtk::MessageType::Error
+                        gtk::MessageType::Error,
+                        program_data_rc
                     );
                 } else {
                     camera_gui::schedule_refresh(program_data_rc);
@@ -1380,7 +1423,12 @@ fn on_capture_paused(
     }
 
     if let Some(error) = show_error {
-        show_message(&format!("Failed to set ROI:\n{:?}", error), "Error", gtk::MessageType::Error);
+        show_message(
+            &format!("Failed to set ROI:\n{:?}", error),
+            "Error",
+            gtk::MessageType::Error,
+            program_data_rc
+        );
     }
 }
 
@@ -1478,7 +1526,8 @@ pub fn on_histogram_thread_message(
 }
 
 /// Returns new zoom factor chosen by user or `None` if the dialog was canceled or there was an invalid input.
-fn show_custom_zoom_dialog(parent: &gtk::ApplicationWindow, old_value: f64) -> Option<f64> {
+fn show_custom_zoom_dialog(parent: &gtk::ApplicationWindow, old_value: f64, program_data_rc: &Rc<RefCell<ProgramData>>)
+-> Option<f64> {
     let dialog = gtk::Dialog::with_buttons(
         Some("Custom zoom factor (%)"),
         Some(parent),
@@ -1506,12 +1555,18 @@ fn show_custom_zoom_dialog(parent: &gtk::ApplicationWindow, old_value: f64) -> O
                 show_message(
                     &format!("Specify value from {:.0} to {:.0}.", MIN_ZOOM * 100.0, MAX_ZOOM * 100.0),
                     "Error",
-                    gtk::MessageType::Error
+                    gtk::MessageType::Error,
+                    program_data_rc
                 );
                 None
             }
         } else {
-            show_message(&format!("Invalid value: {}", entry.text()), "Error", gtk::MessageType::Error);
+            show_message(
+                &format!("Invalid value: {}", entry.text()),
+                "Error",
+                gtk::MessageType::Error,
+                program_data_rc
+            );
             None
         }
     } else {

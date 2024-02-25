@@ -1,14 +1,27 @@
-use crate::gui::{show_message, DialogDestroyer};
+//
+// Vidoxide - Image acquisition for amateur astronomy
+// Copyright (c) 2021-2023 Filip Szczerek <ga.software@yahoo.com>
+//
+// This project is licensed under the terms of the MIT license
+// (see the LICENSE file for details).
+//
+
+//!
+//! ROI dialog.
+//!
+
+use crate::{ProgramData, gui::{show_message, DialogDestroyer}};
 use gtk::prelude::*;
+use std::{cell::RefCell, rc::Rc};
 
 /// Control padding in pixels.
 const PADDING: u32 = 10;
 
-pub fn show_roi_dialog(parent: &gtk::ApplicationWindow)
+pub fn show_roi_dialog(program_data_rc: &Rc<RefCell<ProgramData>>)
 -> Option<ga_image::Rect> {
     let dialog = gtk::Dialog::with_buttons(
         Some("Set ROI"),
-        Some(parent),
+        Some(&program_data_rc.borrow().gui.as_ref().unwrap().app_window),
         gtk::DialogFlags::MODAL,
         &[("OK", gtk::ResponseType::Accept), ("Cancel", gtk::ResponseType::Cancel)]
     );
@@ -46,7 +59,12 @@ pub fn show_roi_dialog(parent: &gtk::ApplicationWindow)
             let height = entry_height.text().as_str().parse::<u32>();
 
             if x_offset.is_err() || y_offset.is_err() || width.is_err() || height.is_err() {
-                show_message("Invalid value; expected non-negative integers.", "Error", gtk::MessageType::Error);
+                show_message(
+                    "Invalid value; expected non-negative integers.",
+                    "Error",
+                    gtk::MessageType::Error,
+                    program_data_rc
+                );
             } else {
                 return Some(ga_image::Rect{
                     x: x_offset.unwrap() as i32,

@@ -13,6 +13,8 @@
 mod args;
 mod camera;
 mod config;
+#[cfg(feature = "controller")]
+mod controller;
 mod gui;
 mod guiding;
 mod input;
@@ -26,13 +28,15 @@ mod workers;
 use camera::drivers;
 use cgmath::{Point2, Vector2};
 use config::Configuration;
+#[cfg(feature = "controller")]
+use controller::{TargetAction, SourceAction};
 use crossbeam;
 use ga_image::Rect;
 use gtk::gio::prelude::*;
 use glib::clone;
 use mount::RadPerSec;
-use std::{cell::RefCell, sync::{atomic::{AtomicBool, AtomicIsize}, Arc}, rc::Rc};
-use timer::OneShotTimer;
+use std::{cell::RefCell, collections::HashMap, sync::{atomic::{AtomicBool, AtomicIsize}, Arc}, rc::Rc};
+use timer::Timer;
 use workers::capture::MainToCaptureThreadMsg;
 use workers::histogram::MainToHistogramThreadMsg;
 use workers::recording::{MainToRecordingThreadMsg, Job};
@@ -86,10 +90,10 @@ pub struct MountData {
     /// Desired tracking position. If `Some`, guiding is active and the mount will be slewed so that
     /// `ProgramData::tracking.pos` reaches this value.
     guiding_pos: Option<Point2<i32>>,
-    guiding_timer: OneShotTimer,
+    guiding_timer: Timer,
     guide_slewing: bool,
     calibration: Option<MountCalibration>,
-    calibration_timer: OneShotTimer
+    calibration_timer: Timer
 }
 
 impl MountData {
@@ -209,8 +213,14 @@ pub struct ProgramData {
     last_displayed_preview_image: Option<ga_image::Image>,
     snapshot_counter: usize,
     /// Used to refresh/rebuild all controls after user modification.
-    camera_controls_refresh_timer: timer::OneShotTimer,
-    mount_simulator_data: MountSimulatorData
+    camera_controls_refresh_timer: timer::Timer,
+    mount_simulator_data: MountSimulatorData,
+    #[cfg(feature = "controller")]
+    sel_dialog_ctrl_events: Option<Vec<workers::controller::StickEvent>>,
+    #[cfg(feature = "controller")]
+    ctrl_actions: controller::ActionAssignments,
+    #[cfg(feature = "controller")]
+    ctrl_names: HashMap<u64, String>
 }
 
 impl ProgramData {
@@ -274,6 +284,9 @@ fn main() {
         config.mount_simulator_sky_rotation_speed_pix_per_sec().unwrap_or(10)
     );
 
+    #[cfg(feature = "controller")]
+    let ctrl_actions = config.controller_actions();
+
     let program_data_rc = Rc::new(RefCell::new(ProgramData{
         config,
         camera: None,
@@ -298,10 +311,10 @@ fn main() {
             mount: None,
             sky_tracking_on: false,
             guiding_pos: None,
-            guiding_timer: OneShotTimer::new(),
+            guiding_timer: Timer::new(),
             guide_slewing: false,
             calibration: None,
-            calibration_timer: OneShotTimer::new()
+            calibration_timer: Timer::new()
         },
         tracking: None,
         crop_area: None,
@@ -312,9 +325,15 @@ fn main() {
         preview_fps_limit,
         last_displayed_preview_image_timestamp: None,
         last_displayed_preview_image: None,
-        camera_controls_refresh_timer: timer::OneShotTimer::new(),
+        camera_controls_refresh_timer: timer::Timer::new(),
         snapshot_counter: 1,
-        mount_simulator_data
+        mount_simulator_data,
+        #[cfg(feature = "controller")]
+        sel_dialog_ctrl_events: None,
+        #[cfg(feature = "controller")]
+        ctrl_actions,
+        #[cfg(feature = "controller")]
+        ctrl_names: HashMap::new()
     }));
 
     if !disabled_drivers.is_empty() {
@@ -352,6 +371,9 @@ fn main() {
 
     init_timer(std::time::Duration::from_secs(1), &program_data_rc);
 
+    #[cfg(feature = "controller")]
+    init_controller_thread(&program_data_rc);
+
     application.run_with_args::<String>(&[]); // make GTK ignore command-line arguments
 
     program_data_rc.borrow_mut().finish_capture_thread();
@@ -384,9 +406,24 @@ fn on_capture_thread_failure(program_data_rc: &Rc<RefCell<ProgramData>>) {
     gui::show_message(
         "Capture thread ended with error. Try reconnecting to the camera.",
         "Error",
-        gtk::MessageType::Error
+        gtk::MessageType::Error,
+        program_data_rc
     );
     gui::disconnect_camera(program_data_rc, true);
+}
+
+#[cfg(feature = "controller")]
+fn init_controller_thread(program_data_rc: &Rc<RefCell<ProgramData>>) {
+    let (sender_worker, receiver_main) = glib::MainContext::channel(glib::PRIORITY_DEFAULT);
+
+    receiver_main.attach(None, clone!(@weak program_data_rc => @default-panic, move |msg| {
+        gui::on_controller_event(msg, &program_data_rc);
+        glib::Continue(true)
+    }));
+
+    std::thread::spawn(move || {
+        workers::controller::controller_thread(sender_worker);
+    });
 }
 
 fn set_up_logging() {

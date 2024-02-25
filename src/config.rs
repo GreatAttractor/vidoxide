@@ -12,11 +12,16 @@
 
 use cgmath::Vector2;
 use std::path::{Path, PathBuf};
+use strum::IntoEnumIterator;
+
+#[cfg(feature = "controller")]
+use crate::{controller, controller::{ActionAssignments, TargetAction}};
 
 mod groups {
-    pub const UI: &str = "UI";
-    pub const MOUNT: &str = "Mount";
+    pub const CONTROLLER: &str = "Controller";
     pub const MAIN: &str = "Main";
+    pub const MOUNT: &str = "Mount";
+    pub const UI: &str = "UI";
 }
 
 mod keys {
@@ -68,6 +73,36 @@ impl Configuration {
         }
 
         Configuration{ key_file }
+    }
+
+    #[cfg(feature = "controller")]
+    pub fn save_controller_actions(&self, actions: &ActionAssignments) {
+        for target_action in TargetAction::iter() {
+            let s = if let Some(src_action) = actions.get(target_action) {
+                src_action.serialize()
+            } else {
+                "".to_string()
+            };
+            self.key_file.set_string(groups::CONTROLLER, target_action.config_key(), &s);
+        }
+    }
+
+    #[cfg(feature = "controller")]
+    pub fn controller_actions(&self) -> ActionAssignments {
+        use crate::controller::SourceAction;
+
+        let mut result = ActionAssignments::default();
+
+        for target_action in TargetAction::iter() {
+            if let Ok(s) = self.key_file.string(groups::CONTROLLER, target_action.config_key()).map(|s| s.to_string()) {
+                match s.parse::<SourceAction>() {
+                    Ok(src_action) => result.set(target_action, Some(src_action)),
+                    Err(e) => log::warn!("invalid action assignment: {}", e)
+                }
+            }
+        }
+
+        result
     }
 
     pub fn main_window_pos(&self) -> Option<gtk::Rectangle> {
@@ -205,13 +240,14 @@ impl Configuration {
         Some(Vector2{ x: numbers[0], y: numbers[1] })
     }
 
-    pub fn recording_dest_path(&self) -> Option<String> {
-        self.key_file.string(groups::MAIN, keys::RECORDING_DEST_PATH).ok().map(|s| s.to_string())
-    }
+    // TODO: encode a `Path` somehow
+    // pub fn recording_dest_path(&self) -> Option<String> {
+    //     self.key_file.string(groups::MAIN, keys::RECORDING_DEST_PATH).ok().map(|s| s.to_string())
+    // }
 
-    pub fn set_recording_dest_path(&self, value: &str) {
-        self.key_file.set_string(groups::MAIN, keys::RECORDING_DEST_PATH, value);
-    }
+    // pub fn set_recording_dest_path(&self, value: &str) {
+    //     self.key_file.set_string(groups::MAIN, keys::RECORDING_DEST_PATH, value);
+    // }
 
     pub fn toolbar_icon_size(&self) -> Option<i32> {
         self.key_file.integer(groups::UI, keys::TOOLBAR_ICON_SIZE).ok()

@@ -1,6 +1,6 @@
 //
 // Vidoxide - Image acquisition for amateur astronomy
-// Copyright (c) 2020-2022 Filip Szczerek <ga.software@yahoo.com>
+// Copyright (c) 2020-2023 Filip Szczerek <ga.software@yahoo.com>
 //
 // This project is licensed under the terms of the MIT license
 // (see the LICENSE file for details).
@@ -17,7 +17,7 @@ use crate::gui::actions;
 use crate::output;
 use crate::output::{OutputFormat};
 use crate::ProgramData;
-use crate::timer::OneShotTimer;
+use crate::timer::Timer;
 use crate::workers::capture::MainToCaptureThreadMsg;
 use crate::workers::recording;
 use crate::workers::recording::{Limit, MainToRecordingThreadMsg};
@@ -25,7 +25,7 @@ use glib::clone;
 use gtk::prelude::*;
 use std::cell::RefCell;
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use strum::IntoEnumIterator;
 use super::show_message;
@@ -46,7 +46,7 @@ pub struct RecWidgets {
     sequence_getter: Box<dyn Fn() -> (usize, std::time::Duration)>,
     pub sequence_idx: usize,
     pub sequence_next_start: Option<std::time::Instant>,
-    sequence_timer: OneShotTimer,
+    sequence_timer: Timer,
     others: gtk::Box,
 }
 
@@ -91,8 +91,8 @@ impl RecWidgets {
         (*self.rec_limit_getter)()
     }
 
-    pub fn dest_dir(&self) -> String {
-        self.dest_dir.filename().unwrap().as_path().to_str().unwrap().to_string()
+    pub fn dest_dir(&self) -> PathBuf {
+        self.dest_dir.filename().unwrap()
     }
 
     pub fn name_prefix(&self) -> String {
@@ -103,6 +103,16 @@ impl RecWidgets {
     pub fn sequence(&self) -> (usize, std::time::Duration) {
         (*self.sequence_getter)()
     }
+}
+
+fn append_to_fstem(p: &Path, suffix: &str) -> PathBuf {
+    let mut new_fstem = p.file_stem().unwrap().to_os_string();
+    new_fstem.push(suffix);
+    let mut new_p = p.parent().unwrap().join(&PathBuf::from(&new_fstem));
+
+    if let Some(e) = p.extension() { new_p.set_extension(e); }
+
+    new_p
 }
 
 fn on_start_recording(program_data_rc: &Rc<RefCell<ProgramData>>) {
@@ -124,9 +134,9 @@ fn on_start_recording(program_data_rc: &Rc<RefCell<ProgramData>>) {
         dest_path = {
             match output_fmt {
                 OutputFormat::SerVideo | OutputFormat::AviVideo => {
-                    let dest_fname = name_prefix.clone() + &sequence_suffix +
-                        if output_fmt == OutputFormat::AviVideo { ".avi" } else { ".ser" };
-                    Path::new(&rec_widgets.dest_dir()).join(dest_fname).to_str().unwrap().to_string()
+                    let mut dest_fname = PathBuf::from(name_prefix.clone() + &sequence_suffix);
+                    dest_fname.set_extension(if output_fmt == OutputFormat::AviVideo { "avi" } else { "ser" });
+                    Path::new(&rec_widgets.dest_dir()).join(&dest_fname).into()
                 },
                 OutputFormat::BmpSequence | OutputFormat::TiffSequence => {
                     rec_widgets.dest_dir()
@@ -144,17 +154,29 @@ fn on_start_recording(program_data_rc: &Rc<RefCell<ProgramData>>) {
         dest_path = new_path;
     }
 
+
+
     let writer: Box<dyn output::OutputWriter> = match output_fmt {
         OutputFormat::AviVideo | OutputFormat::SerVideo => {
             match std::fs::OpenOptions::new().read(false).write(true).create(true).open(&dest_path) {
                 Err(e) => {
-                    show_message(&format!("Error creating file: {}.", e), "Error", gtk::MessageType::Error);
+                    show_message(
+                        &format!("Error creating file: {}.", e),
+                        "Error",
+                        gtk::MessageType::Error,
+                        program_data_rc
+                    );
                     return;
                 },
 
                 Ok(file) => {
                     if output_fmt == OutputFormat::AviVideo {
-                        show_message("Recording as AVI not implemented yet.", "Error", gtk::MessageType::Error);
+                        show_message(
+                            "Recording as AVI not implemented yet.",
+                            "Error",
+                            gtk::MessageType::Error,
+                            program_data_rc
+                        );
                         return;
                     } else {
                         Box::new(output::ser::SerVideo::new(file))
@@ -193,20 +215,15 @@ fn on_start_recording(program_data_rc: &Rc<RefCell<ProgramData>>) {
 
 /// Saves current data & time, camera name and camera controls' state to a text file
 /// at the same directory as `rec_dest_path`.
-fn save_camera_controls_state(rec_dest_path: &str, program_data: &ProgramData) {
-    let parent_dir = match Path::new(rec_dest_path).parent() {
-        Some(p) => p.to_str().unwrap().to_string(),
-        None => "".to_string()
-    };
-    let dest_fpath = Path::new(&parent_dir).join(
-        Path::new(rec_dest_path).file_stem().unwrap().to_str().unwrap().to_string() + "_settings.txt"
-    );
+fn save_camera_controls_state(rec_dest_path: &Path, program_data: &ProgramData) {
+    let settings_fstem = append_to_fstem(rec_dest_path, "_settings");
+    let settings_path = rec_dest_path.parent().unwrap().join(settings_fstem).with_extension("txt");
     let mut file = std::fs::OpenOptions::new()
         .read(false)
         .write(true)
         .create(true)
         .truncate(true)
-        .open(dest_fpath)
+        .open(settings_path)
         .unwrap();
 
     writeln!(file, "Recorded with Vidoxide\n").unwrap(); //TODO: print Vidoxide version
@@ -301,11 +318,12 @@ pub fn create_recording_panel(program_data_rc: &Rc<RefCell<ProgramData>>) -> (gt
     let dest_dir_box = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     let dest_dir = gtk::FileChooserButton::new("Destination directory", gtk::FileChooserAction::SelectFolder);
 
-    if let Some(prev_dest_dir) = program_data_rc.borrow().config.recording_dest_path() {
-        dest_dir.set_filename(prev_dest_dir);
-    } else {
-        dest_dir.set_filename(".");
-    }
+    // TODO encode a `Path` somehow
+    // if let Some(prev_dest_dir) = program_data_rc.borrow().config.recording_dest_path() {
+    //     dest_dir.set_filename(prev_dest_dir);
+    // } else {
+    //     dest_dir.set_filename(".");
+    // }
 
     dest_dir_box.pack_start(&gtk::Label::new(Some("Dest. directory:")), false, false, PADDING);
     dest_dir_box.pack_start(&dest_dir, false, false, PADDING);
@@ -400,7 +418,7 @@ pub fn create_recording_panel(program_data_rc: &Rc<RefCell<ProgramData>>) -> (gt
         sequence_getter: Box::new(move || (btn_rec_count.value() as usize, sequence_interval.duration())),
         sequence_idx: 0,
         sequence_next_start: None,
-        sequence_timer: OneShotTimer::new()
+        sequence_timer: Timer::new()
     })
 }
 
@@ -413,7 +431,7 @@ pub fn on_recording_finished(program_data_rc: &Rc<RefCell<ProgramData>>) {
     if pd_gui.rec_widgets.sequence_idx < sequence_count {
         pd_gui.rec_widgets.sequence_next_start = Some(std::time::Instant::now() + sequence_interval);
 
-        pd_gui.rec_widgets.sequence_timer.run_once(sequence_interval, clone!(@weak program_data_rc
+        pd_gui.rec_widgets.sequence_timer.run(sequence_interval, true, clone!(@weak program_data_rc
             => @default-panic, move || {
                 program_data_rc.borrow_mut().gui.as_mut().unwrap().rec_widgets.sequence_next_start = None;
                 on_start_recording(&program_data_rc);
