@@ -1574,7 +1574,7 @@ fn show_custom_zoom_dialog(parent: &gtk::ApplicationWindow, old_value: f64, prog
     }
 }
 
-/// Draws reticle on a context whose (0, 0) is the middle of the visible part of the preview area.
+/// Draws reticle on a context whose (0, 0) is the middle of the captured image.
 fn draw_reticle(ctx: &cairo::Context, program_data: &ProgramData) {
     let reticle = &program_data.gui.as_ref().unwrap().reticle;
 

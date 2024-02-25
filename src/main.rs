@@ -245,23 +245,7 @@ impl ProgramData {
 fn main() {
     let args = args::parse_command_line(std::env::args());
 
-    if args.logging {
-        let tz_offset = chrono::Local::now().offset().clone();
-        let logfile = dirs::data_dir().unwrap_or(std::path::Path::new("").to_path_buf())
-            .join(format!("vidoxide_{}.log", chrono::Local::now().format("%Y-%m-%d_%H%M%S")));
-        println!("Logging to: {}", logfile.to_string_lossy());
-        simplelog::WriteLogger::init(
-            simplelog::LevelFilter::Info,
-            simplelog::ConfigBuilder::new()
-                .set_target_level(simplelog::LevelFilter::Error)
-                .set_time_offset(time::UtcOffset::from_whole_seconds(tz_offset.local_minus_utc()).unwrap())
-                .set_time_format_custom(simplelog::format_description!(
-                    "[year]-[month]-[day] [hour]:[minute]:[second].[subsecond digits:6]"
-                ))
-                .build(),
-            std::fs::File::create(logfile).unwrap()
-        ).unwrap();
-    }
+    if args.logging { set_up_logging(); }
 
     if gtk::init().is_err() {
         println!("Failed to initialize GTK.");
@@ -440,4 +424,27 @@ fn init_controller_thread(program_data_rc: &Rc<RefCell<ProgramData>>) {
     std::thread::spawn(move || {
         workers::controller::controller_thread(sender_worker);
     });
+}
+
+fn set_up_logging() {
+    std::panic::set_hook(Box::new(|info| {
+        let backtrace = std::backtrace::Backtrace::force_capture();
+        log::error!("{}\n\n{}", info, backtrace);
+    }));
+
+    let tz_offset = chrono::Local::now().offset().clone();
+    let logfile = dirs::data_dir().unwrap_or(std::path::Path::new("").to_path_buf())
+        .join(format!("vidoxide_{}.log", chrono::Local::now().format("%Y-%m-%d_%H%M%S")));
+    println!("Logging to: {}", logfile.to_string_lossy());
+    simplelog::WriteLogger::init(
+        simplelog::LevelFilter::Info,
+        simplelog::ConfigBuilder::new()
+            .set_target_level(simplelog::LevelFilter::Error)
+            .set_time_offset(time::UtcOffset::from_whole_seconds(tz_offset.local_minus_utc()).unwrap())
+            .set_time_format_custom(simplelog::format_description!(
+                "[year]-[month]-[day] [hour]:[minute]:[second].[subsecond digits:6]"
+            ))
+            .build(),
+        std::fs::File::create(logfile).unwrap()
+    ).unwrap();
 }
