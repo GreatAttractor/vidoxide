@@ -177,13 +177,13 @@ impl ImgView {
                     );
                     ctx.fill().unwrap();
 
-                    ctx.translate(
-                         state.zoom * surface.width() as f64 / 2.0,
-                         state.zoom * surface.height() as f64 / 2.0
-                    );
-                    draw_reticle(ctx);
-
                     draw_info_overlay(ctx, state.zoom);
+
+                    ctx.translate(
+                        state.zoom * surface.width() as f64 / 2.0,
+                        state.zoom * surface.height() as f64 / 2.0
+                   );
+                   draw_reticle(ctx);
                 },
                 None => ()
             }
