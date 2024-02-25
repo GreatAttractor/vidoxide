@@ -88,6 +88,10 @@ mod flir {
     pub const GAMMA_ENABLE:                                   &'static str = "GammaEnable";
     pub const GAMMA_ENABLED:                                  &'static str = "GammaEnabled";
     pub const ADC_BIT_DEPTH:                                  &'static str = "AdcBitDepth";
+    pub const BINNING_HORIZONTAL:                             &'static str = "BinningHorizontal";
+    pub const BINNING_HORIZONTAL_MODE:                        &'static str = "BinningHorizontalMode";
+    pub const BINNING_VERTICAL:                               &'static str = "BinningVertical";
+    pub const BINNING_VERTICAL_MODE:                          &'static str = "BinningVerticalMode";
 }
 
 /// Wrappers of Spinnaker objects.
@@ -661,6 +665,39 @@ impl SpinnakerCamera {
         Ok(())
     }
 
+    fn add_integer_control(
+        controls: &mut Vec<CameraControl>,
+        control_data: &mut Vec<ControlData>,
+        node_map: &spin::NodeMap,
+        name: &str,
+        display_name: &str
+    ) -> Result<(), CameraError> {
+        match node_map.node(name).ok() {
+            Some(node) => {
+                controls.push(CameraControl::Integer(IntegerControl{
+                    base: CameraControlBase{
+                        id: CameraControlId(control_data.len() as u64),
+                        label: display_name.to_string(),
+                        refreshable: false,
+                        access_mode: node.access_mode()?,
+                        auto_state: None,
+                        on_off_state: None,
+                        requires_capture_pause: false
+                    },
+                    value: node.int_value()?,
+                    min: node.min_int()?,
+                    max: node.max_int()?,
+                    step: node.int_increment()?,
+                }));
+
+                control_data.push(ControlData{ node, enum_entries: None });
+            },
+            _ => ()
+        }
+
+        Ok(())
+    }
+
     fn add_list_control(
         controls: &mut Vec<CameraControl>,
         control_data: &mut Vec<ControlData>,
@@ -865,6 +902,42 @@ impl Camera for SpinnakerCamera {
             flir::ACQUISITION_FRAME_RATE_ENABLE,
             "Frame Rate Enabled",
             false
+        )?;
+
+        SpinnakerCamera::add_integer_control(
+            &mut controls,
+            &mut control_data,
+            &genicam_node_map,
+            flir::BINNING_HORIZONTAL,
+            "Binning/horizontal"
+        )?;
+
+        SpinnakerCamera::add_list_control(
+            &mut controls,
+            &mut control_data,
+            &genicam_node_map,
+            flir::BINNING_HORIZONTAL_MODE,
+            "Binning/horizontal mode",
+            false, // TODO: or does it?
+            None
+        )?;
+
+        SpinnakerCamera::add_integer_control(
+            &mut controls,
+            &mut control_data,
+            &genicam_node_map,
+            flir::BINNING_VERTICAL,
+            "Binning/vertical"
+        )?;
+
+        SpinnakerCamera::add_list_control(
+            &mut controls,
+            &mut control_data,
+            &genicam_node_map,
+            flir::BINNING_HORIZONTAL_MODE,
+            "Binning/vertical mode",
+            false, // TODO: or does it?
+            None
         )?;
 
         //TODO: add automatic reading of unknown controls, including those from the "device" and "stream" maps,

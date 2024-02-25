@@ -385,6 +385,10 @@ pub fn create_control_widgets(
             );
         },
 
+        CameraControl::Integer(integer_ctrl) => {
+            log::warn!("skipping unsupported integer control \"{}\"", integer_ctrl.base().label);  //TODO: implement this
+        },
+
         CameraControl::Boolean(bool_ctrl) => {
             let widget_bundle = create_bool_control_widgets(
                 &bool_ctrl,

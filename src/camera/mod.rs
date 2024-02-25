@@ -115,6 +115,7 @@ pub trait Driver {
 #[derive(Debug)]
 pub enum CameraControl {
     Number(NumberControl),
+    Integer(IntegerControl),
     List(ListControl),
     Boolean(BooleanControl)
 }
@@ -177,6 +178,26 @@ impl NumberControl {
 }
 
 impl BaseProperties for NumberControl {
+    fn base(&self) -> &CameraControlBase { &self.base }
+}
+
+#[derive(Clone, Debug)]
+pub struct IntegerControl {
+    base: CameraControlBase,
+    value: i64,
+    min: i64,
+    max: i64,
+    step: i64,
+}
+
+impl IntegerControl {
+    pub fn value(&self) -> i64 { self.value }
+    pub fn min(&self) -> i64 { self.min }
+    pub fn max(&self) -> i64 { self.max }
+    pub fn step(&self) -> i64 { self.step }
+}
+
+impl BaseProperties for IntegerControl {
     fn base(&self) -> &CameraControlBase { &self.base }
 }
 
