@@ -55,6 +55,9 @@ impl State {
 
     fn on_stick_event(&mut self, index: usize, event: stick::Event) -> std::task::Poll<Exit> {
         let id = self.controllers[index].id();
+
+        log::info!("{:?}", event);
+
         self.sender.send(ControllerToMainThreadMsg::StickEvent(StickEvent{ id, index, event })).unwrap();
         if let stick::Event::Disconnect = event { self.controllers.remove(index); }
 

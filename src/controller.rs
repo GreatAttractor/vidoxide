@@ -460,16 +460,24 @@ fn dispatch_event(event: StickEvent, program_data_rc: &Rc<RefCell<ProgramData>>)
     //TODO: handle analog controls
     match target_action.unwrap() {
         TargetAction::MountAxis1Pos => if let EventValue::Discrete(value) = event_value(&event.event) {
-            let _ = crate::gui::axis_slew(mount::Axis::Primary, true, value, program_data_rc);
+            if program_data_rc.borrow().mount_data.mount.is_some() {
+                let _ = crate::gui::axis_slew(mount::Axis::Primary, true, value, program_data_rc);
+            }
         },
         TargetAction::MountAxis1Neg => if let EventValue::Discrete(value) = event_value(&event.event) {
-            let _ = crate::gui::axis_slew(mount::Axis::Primary, false, value, program_data_rc);
+            if program_data_rc.borrow().mount_data.mount.is_some() {
+                let _ = crate::gui::axis_slew(mount::Axis::Primary, false, value, program_data_rc);
+            }
         },
         TargetAction::MountAxis2Pos => if let EventValue::Discrete(value) = event_value(&event.event) {
-            let _ = crate::gui::axis_slew(mount::Axis::Secondary, true, value, program_data_rc);
+            if program_data_rc.borrow().mount_data.mount.is_some() {
+                let _ = crate::gui::axis_slew(mount::Axis::Secondary, true, value, program_data_rc);
+            }
         },
         TargetAction::MountAxis2Neg => if let EventValue::Discrete(value) = event_value(&event.event) {
-            let _ = crate::gui::axis_slew(mount::Axis::Secondary, false, value, program_data_rc);
+            if program_data_rc.borrow().mount_data.mount.is_some() {
+                let _ = crate::gui::axis_slew(mount::Axis::Secondary, false, value, program_data_rc);
+            }
         },
 
         _ => ()
