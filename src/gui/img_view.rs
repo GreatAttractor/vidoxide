@@ -141,54 +141,14 @@ impl ImgView {
                 if state.borrow().image.is_none() { return gtk::Inhibit(true); }
 
                 // ensures zooming happens around the current mouse position
-                ImgView::on_mouse_wheel(evt, &state, &top_widget, &drawing_area);
+                on_mouse_wheel(evt, &state, &top_widget, &drawing_area);
 
                 gtk::Inhibit(true)
             }
         ));
 
         drawing_area.connect_draw(clone!(@weak state, @weak top_widget => @default-panic, move |_, ctx| {
-            let state = state.borrow();
-
-            ctx.transform({
-                let mut m = cairo::Matrix::identity();
-                m.translate(
-                    -state.stabilization_offset.x as f64 * state.zoom,
-                    -state.stabilization_offset.y as f64 * state.zoom
-                );
-                m
-            });
-
-            match &state.image {
-                Some(surface) => {
-                    let source = cairo::SurfacePattern::create(&surface);
-                    source.set_matrix({
-                        let mut matrix = cairo::Matrix::identity();
-                        matrix.scale(1.0 / state.zoom, 1.0 / state.zoom);
-                        matrix
-                    });
-                    source.set_filter(cairo::Filter::Bilinear);
-                    ctx.set_source(&source).unwrap();
-                    //TODO: redraw only the invalidated areas (use `copy_clip_rectangle_list`)
-                    ctx.rectangle(
-                        0.0, 0.0,
-                        surface.width() as f64 * state.zoom,
-                        surface.height() as f64 * state.zoom
-                    );
-                    ctx.fill().unwrap();
-
-                    draw_info_overlay(ctx, state.zoom);
-
-                    ctx.translate(
-                        state.zoom * surface.width() as f64 / 2.0,
-                        state.zoom * surface.height() as f64 / 2.0
-                   );
-                   draw_reticle(ctx);
-                },
-                None => ()
-            }
-
-            gtk::Inhibit(true)
+            on_draw(&state, ctx, &draw_info_overlay, &draw_reticle)
         }));
 
         ImgView{
@@ -254,49 +214,98 @@ impl ImgView {
             y: self.top_widget.vadjustment().value() as i32
         }
      }
+}
 
-     fn on_mouse_wheel(
-         evt: &gdk::EventScroll,
-         state: &Rc<RefCell<State>>,
-         scroll_wnd: &gtk::ScrolledWindow,
-         drawing_area: &gtk::DrawingArea
-     ) {
-        let prev_zoom = state.borrow().zoom;
-        let new_zoom = match evt.direction() {
-            gdk::ScrollDirection::Up => (state.borrow().zoom * super::ZOOM_CHANGE_FACTOR).min(super::MAX_ZOOM),
-            gdk::ScrollDirection::Down => (state.borrow().zoom / super::ZOOM_CHANGE_FACTOR).max(super::MIN_ZOOM),
-            _ => state.borrow().zoom
-        };
+fn on_draw(
+    state: &Rc<RefCell<State>>,
+    ctx: &cairo::Context,
+    draw_info_overlay: &Box<dyn Fn(&cairo::Context, f64)>,
+    draw_reticle: &Box<dyn Fn(&cairo::Context)>
+) -> glib::signal::Inhibit {
+    let state = state.borrow();
 
-        let prev_scroll_pos_x = scroll_wnd.hadjustment().value();
-        let prev_scroll_pos_y = scroll_wnd.vadjustment().value();
-
-        let delta_x = evt.position().0 - prev_scroll_pos_x;
-        let delta_y = evt.position().1 - prev_scroll_pos_y;
-
-        ImgView::set_zoom_priv(&mut state.borrow_mut(), &drawing_area, new_zoom);
-
-        // The above call (which performs `set_size_request` on `drawing_area`) does not resize
-        // the `scroll_wnd`'s `Adjustment`s yet; since we already need to set their post-resize scroll
-        // positions, we reinitialize them ourselves.
-        let adj = scroll_wnd.hadjustment();
-        adj.set_upper(
-            state.borrow().image.as_ref().unwrap().width() as f64 * new_zoom
+    ctx.transform({
+        let mut m = cairo::Matrix::identity();
+        m.translate(
+            -state.stabilization_offset.x as f64 * state.zoom,
+            -state.stabilization_offset.y as f64 * state.zoom
         );
-        adj.set_value(
-            new_zoom / prev_zoom * (prev_scroll_pos_x + delta_x) - delta_x
-        );
-        scroll_wnd.set_hadjustment(Some(&adj));
+        m
+    });
 
-        let adj = scroll_wnd.vadjustment();
-        adj.set_upper(
-            state.borrow().image.as_ref().unwrap().height() as f64 * new_zoom
-        );
-        adj.set_value(
-            new_zoom / prev_zoom * (prev_scroll_pos_y + delta_y) - delta_y
-        );
-        scroll_wnd.set_vadjustment(Some(&adj));
+    match &state.image {
+        Some(surface) => {
+            let source = cairo::SurfacePattern::create(&surface);
+            source.set_matrix({
+                let mut matrix = cairo::Matrix::identity();
+                matrix.scale(1.0 / state.zoom, 1.0 / state.zoom);
+                matrix
+            });
+            source.set_filter(cairo::Filter::Bilinear);
+            ctx.set_source(&source).unwrap();
+            //TODO: redraw only the invalidated areas (use `copy_clip_rectangle_list`)
+            ctx.rectangle(
+                0.0, 0.0,
+                surface.width() as f64 * state.zoom,
+                surface.height() as f64 * state.zoom
+            );
+            ctx.fill().unwrap();
 
-        drawing_area.queue_draw();
-     }
+            draw_info_overlay(ctx, state.zoom);
+
+            ctx.translate(
+                state.zoom * surface.width() as f64 / 2.0,
+                state.zoom * surface.height() as f64 / 2.0
+           );
+           draw_reticle(ctx);
+        },
+        None => ()
+    }
+
+    gtk::Inhibit(true)
+}
+
+fn on_mouse_wheel(
+    evt: &gdk::EventScroll,
+    state: &Rc<RefCell<State>>,
+    scroll_wnd: &gtk::ScrolledWindow,
+    drawing_area: &gtk::DrawingArea
+) {
+   let prev_zoom = state.borrow().zoom;
+   let new_zoom = match evt.direction() {
+       gdk::ScrollDirection::Up => (state.borrow().zoom * super::ZOOM_CHANGE_FACTOR).min(super::MAX_ZOOM),
+       gdk::ScrollDirection::Down => (state.borrow().zoom / super::ZOOM_CHANGE_FACTOR).max(super::MIN_ZOOM),
+       _ => state.borrow().zoom
+   };
+
+   let prev_scroll_pos_x = scroll_wnd.hadjustment().value();
+   let prev_scroll_pos_y = scroll_wnd.vadjustment().value();
+
+   let delta_x = evt.position().0 - prev_scroll_pos_x;
+   let delta_y = evt.position().1 - prev_scroll_pos_y;
+
+   ImgView::set_zoom_priv(&mut state.borrow_mut(), &drawing_area, new_zoom);
+
+   // The above call (which performs `set_size_request` on `drawing_area`) does not resize
+   // the `scroll_wnd`'s `Adjustment`s yet; since we already need to set their post-resize scroll
+   // positions, we reinitialize them ourselves.
+   let adj = scroll_wnd.hadjustment();
+   adj.set_upper(
+       state.borrow().image.as_ref().unwrap().width() as f64 * new_zoom
+   );
+   adj.set_value(
+       new_zoom / prev_zoom * (prev_scroll_pos_x + delta_x) - delta_x
+   );
+   scroll_wnd.set_hadjustment(Some(&adj));
+
+   let adj = scroll_wnd.vadjustment();
+   adj.set_upper(
+       state.borrow().image.as_ref().unwrap().height() as f64 * new_zoom
+   );
+   adj.set_value(
+       new_zoom / prev_zoom * (prev_scroll_pos_y + delta_y) - delta_y
+   );
+   scroll_wnd.set_vadjustment(Some(&adj));
+
+   drawing_area.queue_draw();
 }
