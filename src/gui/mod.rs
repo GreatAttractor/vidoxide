@@ -602,47 +602,7 @@ fn create_toolbar(
         DEFAULT_TOOLBAR_ICON_SIZE
     };
 
-    let btn_zoom_in = gtk::ToolButton::new(Some(&resources::load_svg(resources::ToolbarIcon::ZoomIn, icon_size).unwrap()), None);
-    btn_zoom_in.set_tooltip_text(Some("Zoom in"));
-    btn_zoom_in.connect_clicked(clone!(@weak program_data_rc => @default-panic, move |_| {
-        program_data_rc.borrow_mut().gui.as_mut().unwrap().preview_area.change_zoom(ZOOM_CHANGE_FACTOR);
-    }));
-
-    let btn_zoom_out = gtk::ToolButton::new(
-        Some(&resources::load_svg(resources::ToolbarIcon::ZoomOut, icon_size).unwrap()),
-        None
-    );
-    btn_zoom_out.set_tooltip_text(Some("Zoom out"));
-    btn_zoom_out.connect_clicked(clone!(@weak program_data_rc => @default-panic, move |_| {
-        program_data_rc.borrow_mut().gui.as_mut().unwrap().preview_area.change_zoom(1.0 / ZOOM_CHANGE_FACTOR);
-    }));
-
-    let btn_zoom_custom = gtk::ToolButton::new(
-        Some(&resources::load_svg(resources::ToolbarIcon::ZoomCustom, icon_size).unwrap()),
-        None
-    );
-    btn_zoom_custom.set_tooltip_text(Some("Custom zoom level"));
-    btn_zoom_custom.connect_clicked(clone!(@weak program_data_rc, @weak main_wnd => @default-panic, move |_| {
-        let old_zoom = program_data_rc.borrow().gui.as_ref().unwrap().preview_area.get_zoom();
-        if let Some(new_zoom) = show_custom_zoom_dialog(&main_wnd, old_zoom, &program_data_rc) {
-            program_data_rc.borrow_mut().gui.as_mut().unwrap().preview_area.set_zoom(new_zoom);
-        }
-    }));
-
-    let btn_zoom_reset = gtk::ToolButton::new(
-        None::<&gtk::Widget>,
-        Some("1:1")
-    );
-    btn_zoom_reset.set_tooltip_text(Some("Reset to 100%"));
-    btn_zoom_reset.connect_clicked(clone!(@weak program_data_rc => @default-panic, move |_| {
-        program_data_rc.borrow_mut().gui.as_mut().unwrap().preview_area.set_zoom(1.0);
-    }));
-
-
-    toolbar.insert(&btn_zoom_in, -1);
-    toolbar.insert(&btn_zoom_out, -1);
-    toolbar.insert(&btn_zoom_custom, -1);
-    toolbar.insert(&btn_zoom_reset, -1);
+    create_preview_tb_buttons(&toolbar, program_data_rc, main_wnd, icon_size);
 
     toolbar.insert(&gtk::SeparatorToolItem::new(), -1);
 
@@ -694,6 +654,50 @@ fn create_toolbar(
 
     toolbar.insert(&gtk::SeparatorToolItem::new(), -1);
 
+    let btn_mouse_none = create_mouse_mode_tb_buttons(&toolbar, program_data_rc, icon_size);
+
+    toolbar.insert(&gtk::SeparatorToolItem::new(), -1);
+
+    let btn_set_roi = gtk::ToolButtonBuilder::new()
+        .label("ROI")
+        .tooltip_text("Set ROI by providing its position and size")
+        .build();
+    btn_set_roi.set_action_name(Some(&actions::prefixed(actions::SET_ROI)));
+    toolbar.insert(&btn_set_roi, -1);
+
+
+    let btn_unset_roi = gtk::ToolButton::new(
+        Some(&resources::load_svg(resources::ToolbarIcon::RoiOff, icon_size).unwrap()), None
+    );
+    btn_unset_roi.set_tooltip_text(Some("Disable ROI"));
+    btn_unset_roi.connect_clicked(clone!(@weak program_data_rc => @default-panic, move |_| {
+        let mut cap_send_result = Ok(());
+
+        {
+            let mut pd = program_data_rc.borrow_mut();
+            if pd.capture_thread_data.is_some() {
+                cap_send_result = pd.capture_thread_data.as_mut().unwrap().sender.send(MainToCaptureThreadMsg::Pause);
+                if cap_send_result.is_ok() {
+                    pd.on_capture_pause_action = Some(OnCapturePauseAction::DisableROI);
+                }
+            }
+        } // end borrow of `program_data_rc`
+
+        if cap_send_result.is_err() {
+            crate::on_capture_thread_failure(&program_data_rc);
+        }
+    }));
+    toolbar.insert(&btn_unset_roi, -1);
+
+    (toolbar, btn_mouse_none, btn_toggle_stabilization)
+}
+
+/// Returns "default mouse mode" button.
+fn create_mouse_mode_tb_buttons(
+    toolbar: &gtk::Toolbar,
+    program_data_rc: &Rc<RefCell<ProgramData>>,
+    icon_size: i32
+) -> gtk::RadioToolButton {
     let btn_mouse_none = gtk::RadioToolButtonBuilder::new()
         .label("⨉")
         .tooltip_text("Mouse mode: none")
@@ -753,40 +757,56 @@ fn create_toolbar(
     }));
     toolbar.insert(&btn_mouse_histogram, -1);
 
-    toolbar.insert(&gtk::SeparatorToolItem::new(), -1);
+    btn_mouse_none
+}
 
-    let btn_set_roi = gtk::ToolButtonBuilder::new()
-        .label("ROI")
-        .tooltip_text("Set ROI by providing its position and size")
-        .build();
-    btn_set_roi.set_action_name(Some(&actions::prefixed(actions::SET_ROI)));
-    toolbar.insert(&btn_set_roi, -1);
+fn create_preview_tb_buttons(
+    toolbar: &gtk::Toolbar,
+    program_data_rc: &Rc<RefCell<ProgramData>>,
+    main_wnd: &gtk::ApplicationWindow,
+    icon_size: i32
+) {
+    let btn_zoom_in = gtk::ToolButton::new(Some(&resources::load_svg(resources::ToolbarIcon::ZoomIn, icon_size).unwrap()), None);
+    btn_zoom_in.set_tooltip_text(Some("Zoom in"));
+    btn_zoom_in.connect_clicked(clone!(@weak program_data_rc => @default-panic, move |_| {
+        program_data_rc.borrow_mut().gui.as_mut().unwrap().preview_area.change_zoom(ZOOM_CHANGE_FACTOR);
+    }));
 
-
-    let btn_unset_roi = gtk::ToolButton::new(
-        Some(&resources::load_svg(resources::ToolbarIcon::RoiOff, icon_size).unwrap()), None
+    let btn_zoom_out = gtk::ToolButton::new(
+        Some(&resources::load_svg(resources::ToolbarIcon::ZoomOut, icon_size).unwrap()),
+        None
     );
-    btn_unset_roi.set_tooltip_text(Some("Disable ROI"));
-    btn_unset_roi.connect_clicked(clone!(@weak program_data_rc => @default-panic, move |_| {
-        let mut cap_send_result = Ok(());
+    btn_zoom_out.set_tooltip_text(Some("Zoom out"));
+    btn_zoom_out.connect_clicked(clone!(@weak program_data_rc => @default-panic, move |_| {
+        program_data_rc.borrow_mut().gui.as_mut().unwrap().preview_area.change_zoom(1.0 / ZOOM_CHANGE_FACTOR);
+    }));
 
-        {
-            let mut pd = program_data_rc.borrow_mut();
-            if pd.capture_thread_data.is_some() {
-                cap_send_result = pd.capture_thread_data.as_mut().unwrap().sender.send(MainToCaptureThreadMsg::Pause);
-                if cap_send_result.is_ok() {
-                    pd.on_capture_pause_action = Some(OnCapturePauseAction::DisableROI);
-                }
-            }
-        } // end borrow of `program_data_rc`
-
-        if cap_send_result.is_err() {
-            crate::on_capture_thread_failure(&program_data_rc);
+    let btn_zoom_custom = gtk::ToolButton::new(
+        Some(&resources::load_svg(resources::ToolbarIcon::ZoomCustom, icon_size).unwrap()),
+        None
+    );
+    btn_zoom_custom.set_tooltip_text(Some("Custom zoom level"));
+    btn_zoom_custom.connect_clicked(clone!(@weak program_data_rc, @weak main_wnd => @default-panic, move |_| {
+        let old_zoom = program_data_rc.borrow().gui.as_ref().unwrap().preview_area.get_zoom();
+        if let Some(new_zoom) = show_custom_zoom_dialog(&main_wnd, old_zoom, &program_data_rc) {
+            program_data_rc.borrow_mut().gui.as_mut().unwrap().preview_area.set_zoom(new_zoom);
         }
     }));
-    toolbar.insert(&btn_unset_roi, -1);
 
-    (toolbar, btn_mouse_none, btn_toggle_stabilization)
+    let btn_zoom_reset = gtk::ToolButton::new(
+        None::<&gtk::Widget>,
+        Some("1:1")
+    );
+    btn_zoom_reset.set_tooltip_text(Some("Reset to 100%"));
+    btn_zoom_reset.connect_clicked(clone!(@weak program_data_rc => @default-panic, move |_| {
+        program_data_rc.borrow_mut().gui.as_mut().unwrap().preview_area.set_zoom(1.0);
+    }));
+
+
+    toolbar.insert(&btn_zoom_in, -1);
+    toolbar.insert(&btn_zoom_out, -1);
+    toolbar.insert(&btn_zoom_custom, -1);
+    toolbar.insert(&btn_zoom_reset, -1);
 }
 
 fn on_main_window_delete(
