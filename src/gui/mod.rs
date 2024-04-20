@@ -97,6 +97,7 @@ mod actions {
     pub const DISCONNECT_CAMERA: &'static str = "disconnect camera";
     pub const TAKE_SNAPSHOT:     &'static str = "take snapshot";
     pub const SET_ROI:           &'static str = "set roi";
+    pub const UNDOCK_PREVIEW:    &'static str = "undock preview area";
 
     /// Returns prefixed action name to be used with `ActionableExt::set_action_name`.
     pub fn prefixed(s: &str) -> String {
@@ -196,7 +197,8 @@ pub struct GuiData {
     histogram_view: HistogramView,
     // We must store an action map ourselves (and not e.g. reuse `SimpleActionGroup`), because currently (0.14.0) with
     // `gio` one cannot access a group's action in a way allowing to change its enabled state.
-    action_map: HashMap<&'static str, gtk::gio::SimpleAction>
+    action_map: HashMap<&'static str, gtk::gio::SimpleAction>,
+    window_contents: gtk::Paned
 }
 
 impl GuiData {
@@ -359,7 +361,7 @@ pub fn init_main_window(app: &gtk::Application, program_data_rc: &Rc<RefCell<Pro
     let app_window = gtk::ApplicationWindow::new(app);
     app_window.set_title("Vidoxide");
 
-    let action_map = setup_actions(&app_window, program_data_rc);
+    let action_map = set_up_actions(&app_window, program_data_rc);
 
     {
         let config = &program_data_rc.borrow().config;
@@ -424,6 +426,7 @@ pub fn init_main_window(app: &gtk::Application, program_data_rc: &Rc<RefCell<Pro
     window_contents.set_wide_handle(true);
     window_contents.pack1(preview_area.top_widget(), true, true);
     window_contents.pack2(&controls_notebook_scroller, false, false);
+
     if let Some(paned_pos) = program_data_rc.borrow().config.main_window_paned_pos() {
         window_contents.set_position(paned_pos);
     } else {
@@ -498,13 +501,14 @@ pub fn init_main_window(app: &gtk::Application, program_data_rc: &Rc<RefCell<Pro
         mouse_mode: MouseMode::None,
         default_mouse_mode_button,
         histogram_view,
-        action_map
+        action_map,
+        window_contents
     };
 
     program_data_rc.borrow_mut().gui = Some(gui);
 }
 
-fn setup_actions(app_window: &gtk::ApplicationWindow, program_data_rc: &Rc<RefCell<ProgramData>>)
+fn set_up_actions(app_window: &gtk::ApplicationWindow, program_data_rc: &Rc<RefCell<ProgramData>>)
 -> HashMap<&'static str, gtk::gio::SimpleAction> {
     let action_group = gtk::gio::SimpleActionGroup::new();
     let mut action_map = HashMap::new();
@@ -535,6 +539,16 @@ fn setup_actions(app_window: &gtk::ApplicationWindow, program_data_rc: &Rc<RefCe
     set_roi_action.set_enabled(false);
     action_group.add_action(&set_roi_action);
     action_map.insert(actions::SET_ROI, set_roi_action);
+
+    // ----------------------------
+    let undock_preview_action = gtk::gio::SimpleAction::new(actions::UNDOCK_PREVIEW, None);
+    undock_preview_action.set_enabled(true);
+    undock_preview_action.connect_activate(clone!(@weak program_data_rc => @default-panic, move |action, _| {
+        on_undock_preview_area(&program_data_rc);
+        action.set_enabled(false);
+    }));
+    action_group.add_action(&undock_preview_action);
+    action_map.insert(actions::UNDOCK_PREVIEW, undock_preview_action);
 
     // ----------------------------
     app_window.insert_action_group(actions::PREFIX, Some(&action_group));
@@ -654,7 +668,7 @@ fn create_toolbar(
 
     toolbar.insert(&gtk::SeparatorToolItem::new(), -1);
 
-    let btn_mouse_none = create_mouse_mode_tb_buttons(&toolbar, program_data_rc, icon_size);
+    let btn_mouse_none = create_mouse_mode_tb_buttons(&toolbar, program_data_rc,  icon_size);
 
     toolbar.insert(&gtk::SeparatorToolItem::new(), -1);
 
@@ -664,7 +678,6 @@ fn create_toolbar(
         .build();
     btn_set_roi.set_action_name(Some(&actions::prefixed(actions::SET_ROI)));
     toolbar.insert(&btn_set_roi, -1);
-
 
     let btn_unset_roi = gtk::ToolButton::new(
         Some(&resources::load_svg(resources::ToolbarIcon::RoiOff, icon_size).unwrap()), None
@@ -689,7 +702,42 @@ fn create_toolbar(
     }));
     toolbar.insert(&btn_unset_roi, -1);
 
+    let btn_undock_preview_area = gtk::ToolButtonBuilder::new()
+        .label("⮹") // TODO create an icon
+        .tooltip_text("Undock preview area")
+        .build();
+    btn_undock_preview_area.set_action_name(Some(&actions::prefixed(actions::UNDOCK_PREVIEW)));
+    toolbar.insert(&btn_undock_preview_area, -1);
+
     (toolbar, btn_mouse_none, btn_toggle_stabilization)
+}
+
+fn on_undock_preview_area(program_data_rc: &Rc<RefCell<ProgramData>>) {
+    let preview_wnd = gtk::WindowBuilder::new()
+        .type_(gtk::WindowType::Toplevel)
+        .title("Vidoxide - preview")
+        .build();
+
+    let pd = program_data_rc.borrow();
+    let gui = pd.gui.as_ref().unwrap();
+
+    let pw = gui.preview_area.top_widget();
+    gui.window_contents.remove(pw);
+    preview_wnd.add(pw);
+    preview_wnd.show_all();
+
+    preview_wnd.connect_delete_event(clone!(
+        @weak program_data_rc
+        => @default-panic, move |wnd, _| {
+            let pd = program_data_rc.borrow();
+            let gui = pd.gui.as_ref().unwrap();
+            let pw = gui.preview_area.top_widget();
+            wnd.remove(pw);
+            gui.window_contents.pack1(pw, true, true);
+            gui.action_map.get(actions::UNDOCK_PREVIEW).unwrap().set_enabled(true);
+            gtk::Inhibit(false)
+        }
+    ));
 }
 
 /// Returns "default mouse mode" button.
@@ -946,6 +994,10 @@ fn init_preview_menu(
         program_data_rc.borrow().gui.as_ref().unwrap().psf_dialog.show();
     }));
     menu.append(&psf);
+
+    let undock = gtk::MenuItem::with_label("Undock preview area");
+    undock.set_action_name(Some(&actions::prefixed(actions::UNDOCK_PREVIEW)));
+    menu.append(&undock);
 
     menu
 }
