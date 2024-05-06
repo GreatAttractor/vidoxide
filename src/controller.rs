@@ -10,15 +10,16 @@
 //! Controller handling.
 //!
 
-use crate::{mount, workers, workers::controller::{ControllerToMainThreadMsg, StickEvent}, ProgramData};
-use scan_fmt::scan_fmt;
+use crate::{focuser, gui, mount, workers, workers::controller::{ControllerToMainThreadMsg, StickEvent}, ProgramData};
 use std::{cell::RefCell, collections::HashMap, error::Error, rc::Rc};
 use strum::IntoEnumIterator;
+
+const FOCUSER_ACTION_REL_DEADZONE: f64 = 0.1;
 
 mod serialized_event {
     use std::error::Error;
 
-    #[derive(Clone, Debug)]
+    #[derive(Clone, Debug, Hash, Eq, PartialEq)]
     pub struct SerializedEvent(String);
 
     impl SerializedEvent {
@@ -31,6 +32,86 @@ mod serialized_event {
         pub fn from_event(event: &stick::Event) -> SerializedEvent {
             SerializedEvent(format!("{}", event).split(' ').next().unwrap().to_string())
         }
+
+        pub fn is_discrete(&self) -> bool {
+            match self.as_str() {
+                "Exit"
+                | "ActionA"
+                | "ActionB"
+                | "ActionC"
+                | "ActionH"
+                | "ActionV"
+                | "ActionD"
+                | "MenuL"
+                | "MenuR"
+                | "Joy"
+                | "Cam"
+                | "BumperL"
+                | "BumperR"
+                | "Up"
+                | "Down"
+                | "Left"
+                | "Right"
+                | "PovUp"
+                | "PovDown"
+                | "PovLeft"
+                | "PovRight"
+                | "HatUp"
+                | "HatDown"
+                | "HatLeft"
+                | "HatRight"
+                | "TrimUp"
+                | "TrimDown"
+                | "TrimLeft"
+                | "TrimRight"
+                | "MicUp"
+                | "MicDown"
+                | "MicLeft"
+                | "MicRight"
+                | "MicPush"
+                | "Trigger"
+                | "Bumper"
+                | "ActionM"
+                | "ActionL"
+                | "ActionR"
+                | "Pinky"
+                | "PinkyForward"
+                | "PinkyBackward"
+                | "FlapsUp"
+                | "FlapsDown"
+                | "BoatForward"
+                | "BoatBackward"
+                | "AutopilotPath"
+                | "AutopilotAlt"
+                | "EngineMotorL"
+                | "EngineMotorR"
+                | "EngineFuelFlowL"
+                | "EngineFuelFlowR"
+                | "EngineIgnitionL"
+                | "EngineIgnitionR"
+                | "SpeedbrakeBackward"
+                | "SpeedbrakeForward"
+                | "ChinaBackward"
+                | "ChinaForward"
+                | "Apu"
+                | "RadarAltimeter"
+                | "LandingGearSilence"
+                | "Eac"
+                | "AutopilotToggle"
+                | "ThrottleButton"
+                | "Mouse"
+                | "Number"
+                | "PaddleLeft"
+                | "PaddleRight"
+                | "PinkyLeft"
+                | "PinkyRight"
+                | "Context"
+                | "Dpi"
+                | "Scroll" => true,
+
+                _ => false
+            }
+        }
     }
 }
 
@@ -42,15 +123,34 @@ enum EventValue {
 }
 
 #[derive(Clone, Debug)]
+pub struct ValueRange {
+    pub min: f64,
+    pub max: f64
+}
+
+impl ValueRange {
+    pub fn extend_with(&mut self, other: &ValueRange) {
+        self.min = self.min.min(other.min);
+        self.max = self.max.max(other.max);
+    }
+}
+
+#[derive(Clone, Debug)]
 pub struct SourceAction {
     pub ctrl_id: u64,
     pub ctrl_name: String, // only for user information, not used to filter controller events
-    pub event: SerializedEvent
+    pub event: SerializedEvent,
+    pub range: Option<ValueRange> // analog actions only
 }
 
 impl SourceAction {
     pub fn serialize(&self) -> String {
-        format!("[{:016X}][{}]{}", self.ctrl_id, self.ctrl_name, self.event.as_str())
+        let range_s: String = if let Some(range) = &self.range {
+            format!(";{:.05};{:.05}", range.min, range.max)
+        } else {
+            "".into()
+        };
+        format!("{:016X};{};{}{}", self.ctrl_id, self.ctrl_name, self.event.as_str(), range_s)
     }
 
     pub fn matches(&self, event: &StickEvent) -> bool {
@@ -62,10 +162,34 @@ impl std::str::FromStr for SourceAction {
     type Err = Box<dyn Error>;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let (ctrl_id, ctrl_name, event_str) =
-            scan_fmt!(s, "[{x}][{[^]]}]{}", [hex u64], String, String)?;
+        if s.is_empty() { return Err("unassigned".into()); }
 
-        Ok(SourceAction{ ctrl_id, ctrl_name, event: SerializedEvent::from_str(&event_str)? })
+        let fields: Vec<&str> = s.split(';').collect();
+        if fields.len() < 3 { return Err(format!("invalid entry: {}", s).into()); }
+
+        let id_bytes = hex::decode(fields[0])?;
+        if id_bytes.len() != 8 { return Err(format!("invalid 64-bit hex number: {}", fields[0]).into()); }
+        let id_bytes: [u8; 8] = [
+            id_bytes[0], id_bytes[1], id_bytes[2], id_bytes[3], id_bytes[4], id_bytes[5], id_bytes[6], id_bytes[7]
+        ];
+        let ctrl_id = u64::from_be_bytes(id_bytes);
+        let ctrl_name = fields[1].to_string();
+        let event_str = fields[2];
+
+        let event = SerializedEvent::from_str(&event_str)?;
+        let range = if event.is_discrete() {
+            None
+        } else {
+            if fields.len() < 5 { return Err(format!("missing analog event range: {}", s).into()); }
+            let min = fields[3].parse::<f64>()?;
+            let max = fields[4].parse::<f64>()?;
+            if !min.is_finite() || !max.is_finite() || min >= max {
+                return Err(format!("invalid analog event range: {}; {}", min, max).into());
+            }
+            Some(ValueRange{ min, max })
+        };
+
+        Ok(SourceAction{ ctrl_id, ctrl_name, event, range })
     }
 }
 
@@ -90,6 +214,30 @@ impl TargetAction {
             TargetAction::FocuserIn => "FocuserIn",
             TargetAction::FocuserOut => "FocuserOut",
             TargetAction::ToggleRecording => "ToggleRecording"
+        }
+    }
+
+    pub fn discrete_ctrl_action_allowed(&self) -> bool {
+        match self {
+            TargetAction::MountAxis1Pos => true,
+            TargetAction::MountAxis1Neg => true,
+            TargetAction::MountAxis2Pos => true,
+            TargetAction::MountAxis2Neg => true,
+            TargetAction::FocuserIn => true,
+            TargetAction::FocuserOut => true,
+            TargetAction::ToggleRecording => true
+        }
+    }
+
+    pub fn analog_ctrl_action_allowed(&self) -> bool {
+        match self {
+            TargetAction::MountAxis1Pos => false,
+            TargetAction::MountAxis1Neg => false,
+            TargetAction::MountAxis2Pos => false,
+            TargetAction::MountAxis2Neg => false,
+            TargetAction::FocuserIn => true,
+            TargetAction::FocuserOut => true,
+            TargetAction::ToggleRecording => false
         }
     }
 }
@@ -161,7 +309,7 @@ pub fn on_controller_event(msg: ControllerToMainThreadMsg, program_data_rc: &Rc<
                 pd.gui.as_mut().unwrap().controller_dialog_mut().remove_device(event.id);
             } else {
                 if let Some(sel_events) = &mut program_data_rc.borrow_mut().sel_dialog_ctrl_events {
-                    sel_events.push(event);
+                    sel_events.push((std::time::Instant::now(), event));
                     return;
                 }
 
@@ -174,30 +322,45 @@ pub fn on_controller_event(msg: ControllerToMainThreadMsg, program_data_rc: &Rc<
 fn dispatch_event(event: StickEvent, program_data_rc: &Rc<RefCell<ProgramData>>) {
 
     let mut target_action: Option<TargetAction> = None;
-    loop { // only for early exit from block
+    let mut analog_range: Option<ValueRange> = None;
+    'block: {
         let actions = &program_data_rc.borrow().ctrl_actions;
 
         if let Some(src_action) = &actions.mount_axis_1_pos {
-            if src_action.matches(&event) { target_action = Some(TargetAction::MountAxis1Pos); break; }
+            if src_action.matches(&event) { target_action = Some(TargetAction::MountAxis1Pos); break 'block; }
         }
 
         if let Some(src_action) = &actions.mount_axis_1_neg {
-            if src_action.matches(&event) { target_action = Some(TargetAction::MountAxis1Neg); break; }
+            if src_action.matches(&event) { target_action = Some(TargetAction::MountAxis1Neg); break 'block; }
         }
 
         if let Some(src_action) = &actions.mount_axis_2_pos {
-            if src_action.matches(&event) { target_action = Some(TargetAction::MountAxis2Pos); break; }
+            if src_action.matches(&event) { target_action = Some(TargetAction::MountAxis2Pos); break 'block; }
         }
 
         if let Some(src_action) = &actions.mount_axis_2_neg {
-            if src_action.matches(&event) { target_action = Some(TargetAction::MountAxis2Neg); break; }
+            if src_action.matches(&event) { target_action = Some(TargetAction::MountAxis2Neg); break 'block; }
         }
 
         if let Some(src_action) = &actions.toggle_recording {
-            if src_action.matches(&event) { target_action = Some(TargetAction::ToggleRecording); break; }
+            if src_action.matches(&event) { target_action = Some(TargetAction::ToggleRecording); break 'block; }
         }
 
-        break;
+        if let Some(src_action) = &actions.focuser_in {
+            if src_action.matches(&event) {
+                target_action = Some(TargetAction::FocuserIn);
+                analog_range = src_action.range.clone();
+                break 'block;
+            }
+        }
+
+        if let Some(src_action) = &actions.focuser_out {
+            if src_action.matches(&event) {
+                target_action = Some(TargetAction::FocuserOut);
+                analog_range = src_action.range.clone();
+                break 'block;
+            }
+        }
     } // end of `program_data_rc` borrow
     if target_action.is_none() { return; }
 
@@ -205,28 +368,44 @@ fn dispatch_event(event: StickEvent, program_data_rc: &Rc<RefCell<ProgramData>>)
     match target_action.unwrap() {
         TargetAction::MountAxis1Pos => if let EventValue::Discrete(value) = event_value(&event.event) {
             if program_data_rc.borrow().mount_data.mount.is_some() {
-                let _ = crate::gui::axis_slew(mount::Axis::Primary, true, value, program_data_rc);
+                let _ = gui::axis_slew(mount::Axis::Primary, true, value, program_data_rc);
             }
         },
         TargetAction::MountAxis1Neg => if let EventValue::Discrete(value) = event_value(&event.event) {
             if program_data_rc.borrow().mount_data.mount.is_some() {
-                let _ = crate::gui::axis_slew(mount::Axis::Primary, false, value, program_data_rc);
+                let _ = gui::axis_slew(mount::Axis::Primary, false, value, program_data_rc);
             }
         },
         TargetAction::MountAxis2Pos => if let EventValue::Discrete(value) = event_value(&event.event) {
             if program_data_rc.borrow().mount_data.mount.is_some() {
-                let _ = crate::gui::axis_slew(mount::Axis::Secondary, true, value, program_data_rc);
+                let _ = gui::axis_slew(mount::Axis::Secondary, true, value, program_data_rc);
             }
         },
         TargetAction::MountAxis2Neg => if let EventValue::Discrete(value) = event_value(&event.event) {
             if program_data_rc.borrow().mount_data.mount.is_some() {
-                let _ = crate::gui::axis_slew(mount::Axis::Secondary, false, value, program_data_rc);
+                let _ = gui::axis_slew(mount::Axis::Secondary, false, value, program_data_rc);
             }
         },
         TargetAction::ToggleRecording => if let EventValue::Discrete(value) = event_value(&event.event) {
             if value {
+                log::warn!("toggling recording via controller not yet implemented");
                 //TODO: toggle recording
             }
+        },
+        TargetAction::FocuserIn => match event_value(&event.event) {
+            EventValue::Discrete(value) => if program_data_rc.borrow().focuser_data.focuser.is_some() {
+                let _ = gui::focuser_move(focuser::Speed::new(if value { -1.0 } else { 0.0 }), program_data_rc);
+            },
+            EventValue::Analog(value) => if program_data_rc.borrow().focuser_data.focuser.is_some() {
+                let analog_range = analog_range.as_ref().unwrap();
+                // we only allow positive analog action values for focuser in/out movement
+                let scaled_value = (value.max(0.0) - analog_range.min.max(0.0))
+                    / (analog_range.max - analog_range.min.max(0.0));
+                let _ = gui::focuser_move(
+                    focuser::Speed::new(/*if scaled_value > FOCUSER_ACTION_REL_DEADZONE {*/ -scaled_value /*} else { 0.0 }*/),
+                    program_data_rc
+                );
+            },
         },
 
         _ => ()
@@ -336,99 +515,58 @@ fn event_value(event: &stick::Event) -> EventValue {
 
 /// Returns `true` for button-like events, `false` for analog-axis events.
 fn is_discrete(event: &stick::Event) -> bool {
-    match event {
-        stick::Event::Exit(_)
-        | stick::Event::ActionA(_)
-        | stick::Event::ActionB(_)
-        | stick::Event::ActionC(_)
-        | stick::Event::ActionH(_)
-        | stick::Event::ActionV(_)
-        | stick::Event::ActionD(_)
-        | stick::Event::MenuL(_)
-        | stick::Event::MenuR(_)
-        | stick::Event::Joy(_)
-        | stick::Event::Cam(_)
-        | stick::Event::BumperL(_)
-        | stick::Event::BumperR(_)
-        | stick::Event::Up(_)
-        | stick::Event::Down(_)
-        | stick::Event::Left(_)
-        | stick::Event::Right(_)
-        | stick::Event::PovUp(_)
-        | stick::Event::PovDown(_)
-        | stick::Event::PovLeft(_)
-        | stick::Event::PovRight(_)
-        | stick::Event::HatUp(_)
-        | stick::Event::HatDown(_)
-        | stick::Event::HatLeft(_)
-        | stick::Event::HatRight(_)
-        | stick::Event::TrimUp(_)
-        | stick::Event::TrimDown(_)
-        | stick::Event::TrimLeft(_)
-        | stick::Event::TrimRight(_)
-        | stick::Event::MicUp(_)
-        | stick::Event::MicDown(_)
-        | stick::Event::MicLeft(_)
-        | stick::Event::MicRight(_)
-        | stick::Event::MicPush(_)
-        | stick::Event::Trigger(_)
-        | stick::Event::Bumper(_)
-        | stick::Event::ActionM(_)
-        | stick::Event::ActionL(_)
-        | stick::Event::ActionR(_)
-        | stick::Event::Pinky(_)
-        | stick::Event::PinkyForward(_)
-        | stick::Event::PinkyBackward(_)
-        | stick::Event::FlapsUp(_)
-        | stick::Event::FlapsDown(_)
-        | stick::Event::BoatForward(_)
-        | stick::Event::BoatBackward(_)
-        | stick::Event::AutopilotPath(_)
-        | stick::Event::AutopilotAlt(_)
-        | stick::Event::EngineMotorL(_)
-        | stick::Event::EngineMotorR(_)
-        | stick::Event::EngineFuelFlowL(_)
-        | stick::Event::EngineFuelFlowR(_)
-        | stick::Event::EngineIgnitionL(_)
-        | stick::Event::EngineIgnitionR(_)
-        | stick::Event::SpeedbrakeBackward(_)
-        | stick::Event::SpeedbrakeForward(_)
-        | stick::Event::ChinaBackward(_)
-        | stick::Event::ChinaForward(_)
-        | stick::Event::Apu(_)
-        | stick::Event::RadarAltimeter(_)
-        | stick::Event::LandingGearSilence(_)
-        | stick::Event::Eac(_)
-        | stick::Event::AutopilotToggle(_)
-        | stick::Event::ThrottleButton(_)
-        | stick::Event::Mouse(_)
-        | stick::Event::Number(_, _)
-        | stick::Event::PaddleLeft(_)
-        | stick::Event::PaddleRight(_)
-        | stick::Event::PinkyLeft(_)
-        | stick::Event::PinkyRight(_)
-        | stick::Event::Context(_)
-        | stick::Event::Dpi(_)
-        | stick::Event::Scroll(_) => true,
-
-        _ => false
-    }
+    SerializedEvent::from_event(event).is_discrete()
 }
 
+/// For discrete events, returns the first discrete action in `events`.
+/// For analog events, returns the analog action which has the largest value range in `events`.
 pub fn choose_ctrl_action_based_on_events(
-    events: &[workers::controller::StickEvent],
-    ctrl_names: &HashMap<u64, String>
+    events: &[(std::time::Instant, workers::controller::StickEvent)],
+    ctrl_names: &HashMap<u64, String>,
+    analog: bool,
+    discrete: bool
 ) -> Option<SourceAction> {
     if events.is_empty() { return None; }
 
-    for event in events {
-        if is_discrete(&event.event) {
+    #[derive(Eq, PartialEq, Hash)]
+    struct AnalogEventKey { ctrl_id: u64, event: SerializedEvent }
+    let mut analog_events = std::collections::HashMap::<AnalogEventKey, ValueRange>::new();
+
+    for (_, event) in events {
+        if discrete && is_discrete(&event.event) {
             return Some(SourceAction{
                 ctrl_id: event.id,
                 ctrl_name: ctrl_names.get(&event.id).unwrap().clone(),
-                event: SerializedEvent::from_event(&event.event) });
+                event: SerializedEvent::from_event(&event.event),
+                range: None
+            });
+        }
+
+        if analog && !is_discrete(&event.event) {
+            let val = match event_value(&event.event) {
+                EventValue::Analog(a) => a,
+                _ => unreachable!()
+            };
+
+            analog_events
+                .entry(AnalogEventKey{ ctrl_id: event.id, event: SerializedEvent::from_event(&event.event) })
+                .and_modify(|e| {
+                    e.min = e.min.min(val);
+                    e.max = e.max.max(val);
+                })
+                .or_insert(ValueRange{ min: val, max: val });
         }
     }
 
-    None
+    // choose the analog action with the largest value range
+    match analog_events.iter().max_by(|(_, a), (_, b)| (a.max - a.min).partial_cmp(&(b.max - b.min)).unwrap()) {
+        Some((key, value)) => Some(SourceAction{
+            ctrl_id: key.ctrl_id,
+            ctrl_name: ctrl_names.get(&key.ctrl_id).unwrap().clone(),
+            event: key.event.clone(),
+            range: Some(value.clone())
+        }),
+
+        None => None,
+    }
 }

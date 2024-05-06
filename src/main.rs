@@ -15,6 +15,7 @@ mod camera;
 mod config;
 #[cfg(feature = "controller")]
 mod controller;
+mod focuser;
 mod gui;
 mod guiding;
 mod input;
@@ -166,6 +167,10 @@ mod sim_data {
 }
 pub use sim_data::MountSimulatorData;
 
+pub struct FocuserData {
+    focuser: Option<Box<dyn focuser::Focuser>>
+}
+
 #[derive(Debug)]
 pub enum TrackingMode {
     Centroid(Rect),
@@ -195,6 +200,7 @@ pub struct ProgramData {
     on_capture_pause_action: Option<OnCapturePauseAction>,
     preview_fps_counter: usize,
     preview_fps_last_timestamp: Option<std::time::Instant>,
+    focuser_data: FocuserData,
     /// Non-empty after the main window creation.
     gui: Option<gui::GuiData>,
     mount_data: MountData,
@@ -216,7 +222,7 @@ pub struct ProgramData {
     camera_controls_refresh_timer: timer::Timer,
     mount_simulator_data: MountSimulatorData,
     #[cfg(feature = "controller")]
-    sel_dialog_ctrl_events: Option<Vec<workers::controller::StickEvent>>,
+    sel_dialog_ctrl_events: Option<Vec<(std::time::Instant, workers::controller::StickEvent)>>,
     #[cfg(feature = "controller")]
     ctrl_actions: controller::ActionAssignments,
     #[cfg(feature = "controller")]
@@ -306,6 +312,7 @@ fn main() {
         on_capture_pause_action: None,
         preview_fps_counter: 0,
         preview_fps_last_timestamp: None,
+        focuser_data: FocuserData{ focuser: None },
         gui: None,
         mount_data: MountData{
             mount: None,

@@ -145,7 +145,11 @@ fn create_controls(
             @weak program_data_rc
             => @default-panic, move |_| {
                 // TODO allow unsetting an action
-                if let Some(src_action) = show_controller_action_selection_dialog(&parent, &program_data_rc) {
+                if let Some(src_action) = show_controller_action_selection_dialog(
+                    &parent,
+                    &program_data_rc,
+                    target_action
+                ) {
                     program_data_rc.borrow_mut().ctrl_actions.set(target_action, Some(src_action.clone()));
                     chosen_action_label.set_label(&format_src_action(&src_action));
                     log::info!("new action assignment: {:?} -> {}", src_action, target_action);
@@ -191,7 +195,8 @@ pub fn init_controller_menu(
 
 fn show_controller_action_selection_dialog(
     parent: &gtk::ApplicationWindow,
-    program_data_rc: &Rc<RefCell<ProgramData>>
+    program_data_rc: &Rc<RefCell<ProgramData>>,
+    target_action: TargetAction
 ) -> Option<SourceAction> {
     let dialog = gtk::Dialog::with_buttons(
         Some("Choose controller action"),
@@ -200,8 +205,15 @@ fn show_controller_action_selection_dialog(
         &[("OK", gtk::ResponseType::Ok), ("Cancel", gtk::ResponseType::Cancel)]
     );
 
+    let msg = match (target_action.analog_ctrl_action_allowed(), target_action.discrete_ctrl_action_allowed()) {
+        (true, false) => "Move controller analog axis through its full range.",
+        (false, true) => "Press controller button.",
+        (true, true) => "Press controller button or move its analog axis through its full range.",
+        (false, false) => unreachable!()
+    };
+
     dialog.content_area().pack_start(
-        &gtk::Label::new(Some("Press a controller button:")),
+        &gtk::Label::new(Some(msg)),
         true, true, PADDING
     );
     let action_label = gtk::Label::new(None);
@@ -209,6 +221,8 @@ fn show_controller_action_selection_dialog(
     dialog.show_all();
 
     program_data_rc.borrow_mut().sel_dialog_ctrl_events = Some(vec![]);
+
+    let refresh_interval = std::time::Duration::from_secs(1);
 
     let timer = Rc::new(crate::timer::Timer::new());
     let selected_src_action: Rc<RefCell<Option<SourceAction>>> = Rc::new(RefCell::new(None));
@@ -218,18 +232,11 @@ fn show_controller_action_selection_dialog(
         @weak action_label,
         @weak program_data_rc
         => @default-panic, move || {
-            let mut pd = program_data_rc.borrow_mut();
-            if let Some(action) = choose_ctrl_action_based_on_events(
-                &pd.sel_dialog_ctrl_events.as_ref().unwrap(),
-                &pd.ctrl_names
-            ) {
-                action_label.set_text(action.event.as_str());
-                *selected_src_action.borrow_mut() = Some(action);
-            }
-            pd.sel_dialog_ctrl_events.as_mut().unwrap().clear();
+            on_dialog_timer(program_data_rc, target_action, action_label, selected_src_action, 2 * refresh_interval);
         }
     );
-    timer.run(std::time::Duration::from_millis(500), false, handler);
+
+    timer.run(refresh_interval, false, handler);
 
     let result = if let gtk::ResponseType::Ok = dialog.run() {
         selected_src_action.borrow_mut().take()
@@ -242,4 +249,53 @@ fn show_controller_action_selection_dialog(
     dialog.close();
 
     result
+}
+
+fn on_dialog_timer(
+    program_data_rc: Rc<RefCell<ProgramData>>,
+    target_action: TargetAction,
+    action_label: gtk::Label,
+    selected_src_action: Rc<RefCell<Option<SourceAction>>>,
+    back_look_up_interval: std::time::Duration
+) {
+    let mut pd = program_data_rc.borrow_mut();
+
+    remove_older_than(pd.sel_dialog_ctrl_events.as_mut().unwrap(), std::time::Instant::now() - back_look_up_interval);
+
+    if let Some(mut action) = choose_ctrl_action_based_on_events(
+        &pd.sel_dialog_ctrl_events.as_ref().unwrap(),
+        &pd.ctrl_names,
+        target_action.analog_ctrl_action_allowed(),
+        target_action.discrete_ctrl_action_allowed()
+    ) {
+        let mut prev_action = selected_src_action.borrow_mut();
+        if let Some(prev_action) = prev_action.as_mut() {
+            if prev_action.ctrl_id == action.ctrl_id && prev_action.event == action.event {
+                if let Some(ref mut range) = action.range {
+                    range.extend_with(prev_action.range.as_ref().unwrap());
+                }
+            }
+        }
+
+        let text = &format!(
+            "{}{}",
+            action.event.as_str(),
+            &if let Some(range) = &action.range {
+                format!(" ({:.04}; {:.04})", range.min, range.max)
+            } else {
+                "".to_string()
+            }
+        );
+        action_label.set_text(&text);
+        *prev_action = Some(action);
+    }
+    pd.sel_dialog_ctrl_events.as_mut().unwrap().clear();
+}
+
+fn remove_older_than(
+    events: &mut Vec<(std::time::Instant, workers::controller::StickEvent)>, when: std::time::Instant
+) {
+    if let Some((remove_until_idx, _)) = events.iter().enumerate().find(|(_, (t, _))| *t >= when) {
+        events.drain(0..remove_until_idx);
+    }
 }

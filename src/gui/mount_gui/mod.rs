@@ -19,6 +19,7 @@ pub mod connection_dialog;
 
 use cgmath::{Point2, Vector2, InnerSpace};
 use crate::{MountCalibration, ProgramData};
+use crate::focuser;
 use crate::guiding;
 use crate::mount;
 use crate::mount::RadPerSec;
@@ -487,6 +488,8 @@ fn create_direction_buttons(program_data_rc: &Rc<RefCell<ProgramData>>)
 
     (dir_primary_neg, dir_secondary_pos, dir_secondary_neg, dir_primary_pos)
 }
+
+
 
 pub fn init_mount_menu(program_data_rc: &Rc<RefCell<ProgramData>>) -> gtk::Menu {
     let menu = gtk::Menu::new();

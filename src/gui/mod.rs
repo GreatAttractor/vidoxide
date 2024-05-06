@@ -16,13 +16,14 @@ mod checked_listbox;
 mod controller;
 mod dec_intervals;
 mod dispersion_dialog;
+mod focuser_gui;
 mod freezeable;
-mod preview_processing;
 mod histogram_utils;
 mod histogram_view;
 mod img_view;
 mod info_overlay;
 mod mount_gui;
+mod preview_processing;
 mod psf_dialog;
 mod rec_gui;
 mod reticle_dialog;
@@ -70,6 +71,7 @@ use std::sync::atomic::Ordering;
 
 #[cfg(feature = "controller")]
 pub use crate::controller::on_controller_event;
+pub use focuser_gui::focuser_move;
 pub use mount_gui::{axis_slew, on_mount_error};
 
 /// Control padding in pixels.
@@ -929,9 +931,9 @@ fn init_menu(
     camera_menu_item.set_submenu(Some(&camera_menu));
     menu_bar.append(&camera_menu_item);
 
-    let mount_menu_item = gtk::MenuItem::with_label("Mount");
-    mount_menu_item.set_submenu(Some(&mount_gui::init_mount_menu(program_data_rc)));
-    menu_bar.append(&mount_menu_item);
+    let devices_menu_item = gtk::MenuItem::with_label("Devices");
+    devices_menu_item.set_submenu(Some(&init_devices_menu(program_data_rc)));
+    menu_bar.append(&devices_menu_item);
 
     let preview_menu_item = gtk::MenuItem::with_label("Preview");
     preview_menu_item.set_submenu(Some(&init_preview_menu(program_data_rc, &accel_group)));
@@ -945,6 +947,20 @@ fn init_menu(
     }
 
     (menu_bar, camera_menu, camera_menu_items)
+}
+
+fn init_devices_menu(program_data_rc: &Rc<RefCell<ProgramData>>) -> gtk::Menu {
+    let menu = gtk::Menu::new();
+
+    let mount_menu_item = gtk::MenuItem::with_label("Mount");
+    mount_menu_item.set_submenu(Some(&mount_gui::init_mount_menu(program_data_rc)));
+    menu.append(&mount_menu_item);
+
+    let focuser_menu_item = gtk::MenuItem::with_label("Focuser");
+    focuser_menu_item.set_submenu(Some(&focuser_gui::init_focuser_menu(program_data_rc)));
+    menu.append(&focuser_menu_item);
+
+    menu
 }
 
 fn init_preview_menu(
@@ -1205,19 +1221,17 @@ fn on_tracking_ended(program_data_rc: &Rc<RefCell<ProgramData>>) {
         //TODO: stop only if a guiding or calibration slew is in progress, not one started by user via an arrow button
 
         let mut error;
-        loop { // no actual loop, just for early exit
+        'block: {
             let mut pd = program_data_rc.borrow_mut();
             let mount = pd.mount_data.mount.as_mut().unwrap();
 
             error = mount.guide(RadPerSec(0.0), RadPerSec(0.0));
-            if error.is_err() { break; }
+            if error.is_err() { break 'block; }
 
             error = mount.slew(mount::Axis::Primary, mount::SlewSpeed::zero());
-            if error.is_err() { break; }
+            if error.is_err() { break 'block; }
 
             error = mount.slew(mount::Axis::Secondary, mount::SlewSpeed::zero());
-
-            break;
         }
 
         if let Err(e) = &error {
