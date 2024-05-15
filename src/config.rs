@@ -44,6 +44,7 @@ mod keys {
     // group MOUNT
     pub const IOPTRON_LAST_DEVICE: &str = "iOptronLastDevice";
     pub const SW_LAST_DEVICE: &str = "SkyWatcherLastDevice";
+    pub const ZWO_LAST_DEVICE: &str = "ZWOLastDevice";
     pub const ASCOM_LAST_DRIVER: &str = "AscomLastDriver";
     pub const SIM_SKY_ROTATION_DIR_IN_IMG_SPACE: &str = "SimulatorSkyRotationDirInImgSpace";
     pub const SIM_PRIMARY_AXIS_SLEW_DIR_IN_IMG_SPACE: &str = "SimulatorPrimaryAxisSlewDirInImgSpace";
@@ -175,6 +176,14 @@ impl Configuration {
 
     pub fn mount_simulator_primary_axis_slew_dir_in_img_space(&self) -> Option<Vector2<i32>> {
         self.read_vec2(groups::MOUNT, keys::SIM_PRIMARY_AXIS_SLEW_DIR_IN_IMG_SPACE)
+    }
+
+    pub fn zwo_last_device(&self) -> Option<String> {
+        self.key_file.string(groups::MOUNT, keys::ZWO_LAST_DEVICE).ok().map(|s| s.to_string())
+    }
+
+    pub fn set_zwo_last_device(&self, value: &str) {
+        self.key_file.set_string(groups::MOUNT, keys::ZWO_LAST_DEVICE, value);
     }
 
     pub fn mount_simulator_sky_rotation_speed_pix_per_sec(&self) -> Option<u32> {

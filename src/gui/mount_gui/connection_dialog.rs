@@ -13,7 +13,7 @@
 use crate::gui::DialogDestroyer;
 #[cfg(feature = "mount_ascom")]
 use crate::gui::mount_gui::ascom;
-use crate::gui::mount_gui::{ioptron, simulator, skywatcher};
+use crate::gui::mount_gui::{ioptron, simulator, skywatcher, zwo};
 use crate::mount::MountConnection;
 use crate::ProgramData;
 use gtk::prelude::*;
@@ -60,6 +60,9 @@ pub fn show_mount_connect_dialog(program_data_rc: &Rc<RefCell<ProgramData>>)
 
             MountConnection::IoptronSerial(_) =>
                 creators.push(ioptron::IoptronConnectionCreator::new(&configuration!())),
+
+            MountConnection::ZWOSerial(_) =>
+                creators.push(zwo::ZWOConnectionCreator::new(&configuration!())),
         }
     }
 

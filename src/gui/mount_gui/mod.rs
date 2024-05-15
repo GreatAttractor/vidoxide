@@ -15,6 +15,7 @@ mod ascom;
 mod ioptron;
 mod simulator;
 mod skywatcher;
+mod zwo;
 pub mod connection_dialog;
 
 use cgmath::{Point2, Vector2, InnerSpace};
