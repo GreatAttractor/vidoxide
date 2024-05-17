@@ -47,17 +47,20 @@ struct SlewingSpeed {
 }
 
 const SLEWING_SPEEDS: &'static [SlewingSpeed] = &[
-    SlewingSpeed{ sidereal_multiple: SiderealMultiple::Multiple(1.0),   label: "1x" },
-    SlewingSpeed{ sidereal_multiple: SiderealMultiple::Multiple(2.0),   label: "2x" },
-    SlewingSpeed{ sidereal_multiple: SiderealMultiple::Multiple(4.0),   label: "4x" },
-    SlewingSpeed{ sidereal_multiple: SiderealMultiple::Multiple(8.0),   label: "8x" },
-    SlewingSpeed{ sidereal_multiple: SiderealMultiple::Multiple(16.0),  label: "16x" },
-    SlewingSpeed{ sidereal_multiple: SiderealMultiple::Multiple(32.0),  label: "32x" },
-    SlewingSpeed{ sidereal_multiple: SiderealMultiple::Multiple(64.0),  label: "64x" },
-    SlewingSpeed{ sidereal_multiple: SiderealMultiple::Multiple(128.0), label: "128x" },
-    SlewingSpeed{ sidereal_multiple: SiderealMultiple::Multiple(256.0), label: "256x" },
-    SlewingSpeed{ sidereal_multiple: SiderealMultiple::Multiple(512.0), label: "512x" },
-    SlewingSpeed{ sidereal_multiple: SiderealMultiple::Max,             label: "MAX" },
+    SlewingSpeed{ sidereal_multiple: SiderealMultiple::Multiple(1.0),    label: "1x" },
+    SlewingSpeed{ sidereal_multiple: SiderealMultiple::Multiple(2.0),    label: "2x" },
+    SlewingSpeed{ sidereal_multiple: SiderealMultiple::Multiple(4.0),    label: "4x" },
+    SlewingSpeed{ sidereal_multiple: SiderealMultiple::Multiple(8.0),    label: "8x" },
+    SlewingSpeed{ sidereal_multiple: SiderealMultiple::Multiple(16.0),   label: "16x" },
+    SlewingSpeed{ sidereal_multiple: SiderealMultiple::Multiple(20.0),   label: "20x" },
+    SlewingSpeed{ sidereal_multiple: SiderealMultiple::Multiple(32.0),   label: "32x" },
+    SlewingSpeed{ sidereal_multiple: SiderealMultiple::Multiple(60.0),   label: "60x" },
+    SlewingSpeed{ sidereal_multiple: SiderealMultiple::Multiple(64.0),   label: "64x" },
+    SlewingSpeed{ sidereal_multiple: SiderealMultiple::Multiple(128.0),  label: "128x" },
+    SlewingSpeed{ sidereal_multiple: SiderealMultiple::Multiple(256.0),  label: "256x" },
+    SlewingSpeed{ sidereal_multiple: SiderealMultiple::Multiple(512.0),  label: "512x" },
+    SlewingSpeed{ sidereal_multiple: SiderealMultiple::Multiple(720.0),  label: "720x" },
+    SlewingSpeed{ sidereal_multiple: SiderealMultiple::Max,              label: "MAX" },
 ];
 
 const GUIDING_SPEEDS: &'static [SlewingSpeed] = &[
