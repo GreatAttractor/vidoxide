@@ -145,8 +145,8 @@ impl Mount for ZWO {
         let a2_s = (axis2_speed.0.abs() / SIDEREAL_RATE.0).max(MIN_SIDEREAL_MULT);
 
         if axis1_speed.is_zero() {
-            send_cmd_and_get_reply(&mut self.serial_port, ":Mgn0000#".into(), ResponseType::None).map(|_| ())?;
             send_cmd_and_get_reply(&mut self.serial_port, ":Mge0000#".into(), ResponseType::None).map(|_| ())?;
+            send_cmd_and_get_reply(&mut self.serial_port, ":Mgw0000#".into(), ResponseType::None).map(|_| ())?;
         } else {
             if a1_s > 0.9 {
                 return Err("unsupported primary axis guiding speed".into());
@@ -154,8 +154,8 @@ impl Mount for ZWO {
         }
 
         if axis2_speed.is_zero() {
+            send_cmd_and_get_reply(&mut self.serial_port, ":Mgn0000#".into(), ResponseType::None).map(|_| ())?;
             send_cmd_and_get_reply(&mut self.serial_port, ":Mgs0000#".into(), ResponseType::None).map(|_| ())?;
-            send_cmd_and_get_reply(&mut self.serial_port, ":Mgw0000#".into(), ResponseType::None).map(|_| ())?;
         } else {
             if a2_s > 0.9 {
                 return Err("unsupported secondary axis guiding speed".into());
@@ -169,15 +169,15 @@ impl Mount for ZWO {
         ).map(|_| ())?;
 
         if axis1_speed.0 > 0.0 {
-            send_cmd_and_get_reply(&mut self.serial_port, ":Mge2000#".into(), ResponseType::None).map(|_| ())?;
+            send_cmd_and_get_reply(&mut self.serial_port, ":Mge0500#".into(), ResponseType::None).map(|_| ())?;
         } else if axis1_speed.0 < 0.0 {
-            send_cmd_and_get_reply(&mut self.serial_port, ":Mgn2000#".into(), ResponseType::None).map(|_| ())?;
+            send_cmd_and_get_reply(&mut self.serial_port, ":Mgw0500#".into(), ResponseType::None).map(|_| ())?;
         }
 
         if axis2_speed.0 > 0.0 {
-            send_cmd_and_get_reply(&mut self.serial_port, ":Mgw2000#".into(), ResponseType::None).map(|_| ())?;
+            send_cmd_and_get_reply(&mut self.serial_port, ":Mgn0500#".into(), ResponseType::None).map(|_| ())?;
         } else if axis2_speed.0 < 0.0 {
-            send_cmd_and_get_reply(&mut self.serial_port, ":Mgs2000#".into(), ResponseType::None).map(|_| ())?;
+            send_cmd_and_get_reply(&mut self.serial_port, ":Mgs0500#".into(), ResponseType::None).map(|_| ())?;
         }
 
         Ok(())
