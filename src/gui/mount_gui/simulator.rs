@@ -10,8 +10,10 @@
 //! Sky-Watcher mount connection GUI.
 //!
 
-use crate::gui::mount_gui::connection_dialog::ConnectionCreator;
-use crate::mount::MountConnection;
+use crate::{
+    device_connection::{ConnectionCreator, DeviceConnection},
+    gui::BasicConnectionControls
+};
 use gtk::prelude::*;
 
 /// Control padding in pixels.
@@ -22,7 +24,7 @@ pub struct SimulatorConnectionCreator {
 }
 
 impl SimulatorConnectionCreator {
-    pub(in crate::gui::mount_gui) fn new(_configuration: &crate::config::Configuration) -> Box<dyn ConnectionCreator> {
+    pub fn new(_configuration: &crate::config::Configuration) -> Box<dyn ConnectionCreator> {
         let dialog_tab = gtk::Box::new(gtk::Orientation::Vertical, 0);
 
         dialog_tab.pack_start(
@@ -37,10 +39,10 @@ impl SimulatorConnectionCreator {
 }
 
 impl ConnectionCreator for SimulatorConnectionCreator {
-    fn dialog_tab(&self) -> &gtk::Box { &self.dialog_tab }
+    fn controls(&self) -> &gtk::Box { &self.dialog_tab }
 
-    fn create(&self, _configuration: &crate::config::Configuration) -> MountConnection {
-        MountConnection::Simulator
+    fn create(&self, _configuration: &crate::config::Configuration) -> DeviceConnection {
+        DeviceConnection::MountSimulator
     }
 
     fn label(&self) -> &'static str { "Simulator" }

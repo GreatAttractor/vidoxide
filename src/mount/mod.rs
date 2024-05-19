@@ -16,25 +16,11 @@ mod ioptron;
 mod simulator;
 mod skywatcher;
 
+use crate::device_connection::DeviceConnection;
 use std::error::Error;
 
 #[derive(Copy, Clone)]
 pub enum Axis { Primary, Secondary }
-
-#[derive(strum_macros::EnumIter)]
-pub enum MountConnection {
-    /// Contains device name of serial port.
-    SkyWatcherSerial(String),
-
-    // Contains device name of serial port.
-    IoptronSerial(String),
-
-    /// Contains ProgID of telescope (e.g., "EQMOD.Telescope").
-    #[cfg(feature = "mount_ascom")]
-    Ascom(String),
-
-    Simulator
-}
 
 pub const SECONDS_PER_DAY: f64 = 86164.09065;
 
@@ -134,23 +120,25 @@ pub trait Mount {
     fn set_mount_simulator_data(&mut self, _mount_simulator_data: crate::MountSimulatorData) {}
 }
 
-pub fn connect_to_mount(connection: MountConnection) -> Result<Box<dyn Mount>, Box<dyn Error>> {
+pub fn connect_to_mount(connection: DeviceConnection) -> Result<Box<dyn Mount>, Box<dyn Error>> {
     match connection {
-        MountConnection::SkyWatcherSerial(device) => {
+        DeviceConnection::SkyWatcherMountSerial{device} => {
             Ok(Box::new(skywatcher::SkyWatcher::new(&device)?))
         },
 
-        MountConnection::IoptronSerial(device) => {
+        DeviceConnection::IoptronMountSerial{device} => {
             Ok(Box::new(ioptron::Ioptron::new(&device)?))
         },
 
         #[cfg(feature = "mount_ascom")]
-        MountConnection::Ascom(progid) => {
-            Ok(Box::new(ascom::Ascom::new(&progid)?))
+        DeviceConnection::AscomMount{prog_id} => {
+            Ok(Box::new(ascom::Ascom::new(&prog_id)?))
         },
 
-        MountConnection::Simulator => {
+        DeviceConnection::MountSimulator => {
             Ok(Box::new(simulator::Simulator::new()))
-        }
+        },
+
+        DeviceConnection::DreamFocuserMini{..} => unreachable!()
     }
 }

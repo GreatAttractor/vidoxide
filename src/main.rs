@@ -15,6 +15,7 @@ mod camera;
 mod config;
 #[cfg(feature = "controller")]
 mod controller;
+mod device_connection;
 mod focuser;
 mod gui;
 mod guiding;

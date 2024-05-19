@@ -43,8 +43,8 @@ serialport = "4.2.0"
 simplelog = "0.12.1"
 # Needed until https://github.com/ardaku/stick/pull/38 is merged to upstream repo.
 stick = { git = "https://github.com/GreatAttractor/stick.git", rev = "6269405a7d6d812b7497715b843a822a4d3f6dcd", optional = true }
-strum = "0.18.0"
-strum_macros = "0.18.0"
+strum = { version = "0.26.2", features = ["derive"] }
+strum_macros = "0.26.2"
 time = "0.3.30" # why needed explicitly? simplelog's use not enough?
 uuid = { version = "0.8", optional = true }
 v4l2-sys = { version = "1.1.0", optional = true }

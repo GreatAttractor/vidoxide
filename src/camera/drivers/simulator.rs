@@ -18,6 +18,7 @@ use ga_image;
 use std::cell::RefCell;
 use std::sync::{Arc, RwLock, atomic::Ordering};
 use strum::IntoEnumIterator;
+use strum_macros as sm;
 
 mod control_ids {
     pub const IMAGE_SHOWN: u64 = 1;
@@ -78,7 +79,7 @@ pub struct SimCamera {
     user_video: Option<std::path::PathBuf>
 }
 
-#[derive(PartialEq, strum_macros::EnumIter)]
+#[derive(PartialEq, sm::EnumIter)]
 enum ImageShown {
     LandscapeRGB8,
     LandscapeMono8,

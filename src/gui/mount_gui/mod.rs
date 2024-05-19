@@ -11,22 +11,17 @@
 //!
 
 #[cfg(feature = "mount_ascom")]
-mod ascom;
-mod ioptron;
-mod simulator;
-mod skywatcher;
-pub mod connection_dialog;
+pub mod ascom;
+pub mod ioptron;
+pub mod simulator;
+pub mod skywatcher;
 
 use cgmath::{Point2, Vector2, InnerSpace};
-use crate::{MountCalibration, ProgramData};
-use crate::focuser;
-use crate::guiding;
-use crate::mount;
-use crate::mount::RadPerSec;
+use crate::{device_connection::DeviceConnectionDiscriminants, MountCalibration, ProgramData};
+use crate::{focuser, gui::{device_connection_dialog, show_message}, guiding, mount, mount::RadPerSec};
 use glib::{clone};
 use gtk::prelude::*;
 use std::{cell::RefCell, error::Error, rc::Rc};
-use super::show_message;
 
 /// Control padding in pixels.
 const PADDING: u32 = 10;
@@ -225,17 +220,16 @@ fn on_calibration_timer(program_data_rc: &Rc<RefCell<ProgramData>>) {
 
     const MIN_VECTOR_LENGTH: i32 = 50;
     let must_show_error: RefCell<Option<String>> = RefCell::new(None);
-    loop { // `program_data_rc` borrow starts
+    'block: { // `program_data_rc` borrow starts
         let mut pd = program_data_rc.borrow_mut();
         let tracking_pos = pd.tracking.as_ref().unwrap().pos;
 
-        let sd_on = pd.mount_data.sky_tracking_on;
         if pd.mount_data.calibration.as_ref().unwrap().primary_dir.is_none() {
             let res = pd.mount_data.mount.as_mut().unwrap().slew(mount::Axis::Primary, mount::SlewSpeed::zero());
-            if let Err(e) = &res { must_show_error.replace(Some(mount_error_msg(e))); break; }
+            if let Err(e) = &res { must_show_error.replace(Some(mount_error_msg(e))); break 'block; }
         } else {
             let res = pd.mount_data.mount.as_mut().unwrap().slew(mount::Axis::Secondary, mount::SlewSpeed::zero());
-            if let Err(e) = &res { must_show_error.replace(Some(mount_error_msg(e))); break; }
+            if let Err(e) = &res { must_show_error.replace(Some(mount_error_msg(e))); break 'block; }
         }
 
         let dir_getter = || -> Option<Vector2<f64>> {
@@ -262,7 +256,7 @@ fn on_calibration_timer(program_data_rc: &Rc<RefCell<ProgramData>>) {
                 let res = pd.mount_data.mount.as_mut().unwrap().slew(mount::Axis::Secondary, slew_speed);
                 if let Err(e) = &res {
                     must_show_error.replace(Some(mount_error_msg(e)));
-                    break;
+                    break 'block;
                 } else {
                     pd.mount_data.calibration.as_mut().unwrap().origin = pd.tracking.as_ref().unwrap().pos;
                     pd.mount_data.calibration_timer.run(
@@ -288,12 +282,11 @@ fn on_calibration_timer(program_data_rc: &Rc<RefCell<ProgramData>>) {
                     must_show_error.replace(
                         Some("Mount-axes-to-image transformation matrix is non-invertible.".to_string())
                     );
-                    break;
+                    break 'block;
                 }
             }
         }
 
-        break;
     } // `program_data_rc` borrow ends
 
     if let Some(msg) = must_show_error.take() {
@@ -515,7 +508,15 @@ pub fn init_mount_menu(program_data_rc: &Rc<RefCell<ProgramData>>) -> gtk::Menu 
         @weak program_data_rc,
         @weak item_disconnect
         => @default-panic, move |_| {
-            match connection_dialog::show_mount_connect_dialog(&program_data_rc) {
+            match device_connection_dialog::show_device_connection_dialog(
+                "Connect to mount",
+                &program_data_rc,
+                &[
+                    DeviceConnectionDiscriminants::SkyWatcherMountSerial,
+                    DeviceConnectionDiscriminants::IoptronMountSerial,
+                    DeviceConnectionDiscriminants::MountSimulator
+                ]
+            ) {
                 Some(connection) => {
                     match mount::connect_to_mount(connection) {
                         Err(e) => show_message(

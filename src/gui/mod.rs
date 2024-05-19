@@ -10,11 +10,13 @@
 //! GUI module.
 //!
 
+mod basic_connection_controls;
 mod camera_gui;
 mod checked_listbox;
 #[cfg(feature = "controller")]
 mod controller;
 mod dec_intervals;
+mod device_connection_dialog;
 mod dispersion_dialog;
 mod focuser_gui;
 mod freezeable;
@@ -72,7 +74,16 @@ use std::sync::atomic::Ordering;
 #[cfg(feature = "controller")]
 pub use crate::controller::on_controller_event;
 pub use focuser_gui::focuser_move;
+#[cfg(feature = "mount_ascom")]
+pub use mount_gui::ascom;
+pub use mount_gui::{
+    ioptron,
+    simulator,
+    skywatcher
+};
+
 pub use mount_gui::{axis_slew, on_mount_error};
+pub use basic_connection_controls::BasicConnectionControls;
 
 /// Control padding in pixels.
 const PADDING: u32 = 10;
