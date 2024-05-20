@@ -39,6 +39,7 @@ Demonstration video: [link](https://www.youtube.com/watch?v=7s_nibrTrsU)
   - Sky-Watcher direct serial connection (tested with a 2014 HEQ5), multiplatform
   - iOptron direct serial connection, multiplatform
   - ASCOM (tested with ASCOM/EQMod and a 2014 HEQ5), MS Windows only
+  - ZWO Mounts direct serial connection (tested on AM3/AM5)
 
 **Image feature tracking:**
   - self-guiding (with supported mounts): selected image feature (or a planet – via centroid) stays in the same place of the FOV
