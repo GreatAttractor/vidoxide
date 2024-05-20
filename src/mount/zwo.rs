@@ -164,7 +164,7 @@ impl Mount for ZWO {
 
         send_cmd_and_get_reply(
             &mut self.serial_port,
-            format!(":Rg{:.2}#", a1_s.max(0.1)),
+            format!(":Rg{:.2}#", a1_s.max(0.9)),
             ResponseType::None
         ).map(|_| ())?;
 
@@ -173,6 +173,12 @@ impl Mount for ZWO {
         } else if axis1_speed.0 < 0.0 {
             send_cmd_and_get_reply(&mut self.serial_port, ":Mgw0500#".into(), ResponseType::None).map(|_| ())?;
         }
+
+        send_cmd_and_get_reply(
+            &mut self.serial_port,
+            format!(":Rg{:.2}#", a2_s.max(0.9)),
+            ResponseType::None
+        ).map(|_| ())?;
 
         if axis2_speed.0 > 0.0 {
             send_cmd_and_get_reply(&mut self.serial_port, ":Mgn0500#".into(), ResponseType::None).map(|_| ())?;
