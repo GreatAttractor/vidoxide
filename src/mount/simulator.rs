@@ -40,7 +40,7 @@ impl Simulator {
 impl Drop for Simulator {
     fn drop(&mut self) {
         self.data.mount_connected.store(false, Ordering::Release);
-        self.stop();
+        let _ = self.stop();
     }
 }
 

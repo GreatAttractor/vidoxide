@@ -15,6 +15,7 @@ mod ascom;
 mod ioptron;
 mod simulator;
 mod skywatcher;
+mod zwo;
 
 use std::error::Error;
 
@@ -28,6 +29,9 @@ pub enum MountConnection {
 
     // Contains device name of serial port.
     IoptronSerial(String),
+
+    // Contains device name of serial port.
+    ZWOSerial(String),
 
     /// Contains ProgID of telescope (e.g., "EQMOD.Telescope").
     #[cfg(feature = "mount_ascom")]
@@ -142,6 +146,10 @@ pub fn connect_to_mount(connection: MountConnection) -> Result<Box<dyn Mount>, B
 
         MountConnection::IoptronSerial(device) => {
             Ok(Box::new(ioptron::Ioptron::new(&device)?))
+        },
+
+        MountConnection::ZWOSerial(device) => {
+            Ok(Box::new(zwo::ZWO::new(&device)?))
         },
 
         #[cfg(feature = "mount_ascom")]
