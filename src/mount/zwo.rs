@@ -162,22 +162,24 @@ impl Mount for ZWO {
             }
         }
 
+        // ZWO mounts only support the same guiding rate on both axis, so we will go with the 
+        // max value between both axis
         send_cmd_and_get_reply(
             &mut self.serial_port,
-            format!(":Rg{:.2}#", a1_s.max(0.1)),
+            format!(":Rg{:.2}#", a1_s.max(a2_s.max(0.9))),
             ResponseType::None
         ).map(|_| ())?;
 
         if axis1_speed.0 > 0.0 {
-            send_cmd_and_get_reply(&mut self.serial_port, ":Mge0500#".into(), ResponseType::None).map(|_| ())?;
+            send_cmd_and_get_reply(&mut self.serial_port, ":Mge3000#".into(), ResponseType::None).map(|_| ())?;
         } else if axis1_speed.0 < 0.0 {
-            send_cmd_and_get_reply(&mut self.serial_port, ":Mgw0500#".into(), ResponseType::None).map(|_| ())?;
+            send_cmd_and_get_reply(&mut self.serial_port, ":Mgw3000#".into(), ResponseType::None).map(|_| ())?;
         }
 
         if axis2_speed.0 > 0.0 {
-            send_cmd_and_get_reply(&mut self.serial_port, ":Mgn0500#".into(), ResponseType::None).map(|_| ())?;
+            send_cmd_and_get_reply(&mut self.serial_port, ":Mgn3000#".into(), ResponseType::None).map(|_| ())?;
         } else if axis2_speed.0 < 0.0 {
-            send_cmd_and_get_reply(&mut self.serial_port, ":Mgs0500#".into(), ResponseType::None).map(|_| ())?;
+            send_cmd_and_get_reply(&mut self.serial_port, ":Mgs3000#".into(), ResponseType::None).map(|_| ())?;
         }
 
         Ok(())
