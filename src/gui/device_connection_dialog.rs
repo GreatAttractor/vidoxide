@@ -12,7 +12,7 @@
 
 use crate::{
     ProgramData,
-    device_connection::{ConnectionCreator, DeviceConnection, DeviceConnectionDiscriminants},
+    devices::{ConnectionCreator, DeviceConnection, DeviceConnectionDiscriminants},
     gui::DialogDestroyer
 };
 use glib::clone;

@@ -10,7 +10,7 @@
 //! DreamFocuser mini driver.
 //!
 
-use crate::focuser::Focuser;
+use crate::devices::focuser::Focuser;
 use std::error::Error;
 
 pub struct DreamFocuserMini {
@@ -30,17 +30,17 @@ impl DreamFocuserMini {
     }
 }
 
-impl Focuser for DreamFocuserMini {
-    fn info(&self) -> String {
-        "DreamFocuser mini".into()
-    }
+// impl Focuser for DreamFocuserMini {
+//     fn info(&self) -> String {
+//         "DreamFocuser mini".into()
+//     }
 
-    fn move_(&mut self, speed: super::Speed) -> Result<(), Box<dyn Error>> {
-        log::info!("moving with speed {:.2}", speed.get());
-        Err("not yet implemented".into())
-    }
+//     fn move_(&mut self, speed: super::Speed) -> Result<(), Box<dyn Error>> {
+//         log::info!("moving with speed {:.2}", speed.get());
+//         Err("not yet implemented".into())
+//     }
 
-    fn position(&mut self) -> Result<super::Position, Box<dyn Error>> {
-        Err("not yet implemented".into())
-    }
-}
+//     fn position(&mut self) -> Result<super::Position, Box<dyn Error>> {
+//         Err("not yet implemented".into())
+//     }
+// }

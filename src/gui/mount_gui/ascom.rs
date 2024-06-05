@@ -11,7 +11,7 @@
 //!
 
 use crate::{
-    device_connection::{ConnectionCreator, DeviceConnection},
+    devices::{ConnectionCreator, DeviceConnection},
     gui::BasicConnectionControls
 };
 

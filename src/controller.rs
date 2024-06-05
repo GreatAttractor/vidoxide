@@ -10,7 +10,14 @@
 //! Controller handling.
 //!
 
-use crate::{focuser, gui, mount, workers, workers::controller::{ControllerToMainThreadMsg, StickEvent}, ProgramData};
+use crate::{
+    devices::focuser,
+    gui,
+    mount,
+    ProgramData,
+    workers,
+    workers::controller::{ControllerToMainThreadMsg, StickEvent},
+};
 use std::{cell::RefCell, collections::HashMap, error::Error, rc::Rc};
 use strum::IntoEnumIterator;
 

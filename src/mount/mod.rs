@@ -16,7 +16,7 @@ mod ioptron;
 mod simulator;
 mod skywatcher;
 
-use crate::device_connection::DeviceConnection;
+use crate::devices::DeviceConnection;
 use std::error::Error;
 
 #[derive(Copy, Clone)]
@@ -139,6 +139,6 @@ pub fn connect_to_mount(connection: DeviceConnection) -> Result<Box<dyn Mount>, 
             Ok(Box::new(simulator::Simulator::new()))
         },
 
-        DeviceConnection::DreamFocuserMini{..} => unreachable!()
+        _ => unreachable!()
     }
 }

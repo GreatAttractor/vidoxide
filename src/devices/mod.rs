@@ -7,8 +7,12 @@
 //
 
 //!
-//! Device connection enum.
+//! Device drivers module.
 //!
+
+mod utils;
+
+pub mod focuser;
 
 #[cfg(feature = "mount_ascom")]
 use crate::gui::mount_gui::ascom;
@@ -22,12 +26,14 @@ use strum_macros as sm;
 
 #[derive(sm::EnumDiscriminants)]
 pub enum DeviceConnection {
-    SkyWatcherMountSerial{device: String},
-    IoptronMountSerial{device: String},
+    SkyWatcherMountSerial{ device: String },
+    IoptronMountSerial{ device: String },
     #[cfg(feature = "mount_ascom")]
-    AscomMount{prog_id: String},
+    AscomMount{ prog_id: String },
     MountSimulator,
-    DreamFocuserMini{device: String}
+    DreamFocuserMini{ device: String },
+    FocusCube3Serial{ device: String },
+    FocusCube3TcpIp{ address: std::net::SocketAddr }
 }
 
 #[derive(Copy, Clone, PartialEq)]
@@ -50,7 +56,9 @@ impl DeviceConnection {
             #[cfg(feature = "mount_ascom")]
             DeviceConnection::AscomMount => DeviceType::Mount,
             DeviceConnection::MountSimulator => DeviceType::Mount,
-            DeviceConnection::DreamFocuserMini{..} => DeviceType::Focuser
+            DeviceConnection::DreamFocuserMini{..} => DeviceType::Focuser,
+            DeviceConnection::FocusCube3Serial{..} => DeviceType::Focuser,
+            DeviceConnection::FocusCube3TcpIp{..} => DeviceType::Focuser,
         }
     }
 }
@@ -67,7 +75,7 @@ impl DeviceConnectionDiscriminants {
 
             DeviceConnectionDiscriminants::IoptronMountSerial => ioptron::IoptronConnectionCreator::new(configuration),
 
-            DeviceConnectionDiscriminants::DreamFocuserMini => unimplemented!()
+            _ => unimplemented!()
         }
     }
 }

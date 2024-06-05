@@ -10,13 +10,13 @@
 //! Telescope focuser connection dialog.
 //!
 
-use crate::{focuser, gui::DialogDestroyer, ProgramData};
+use crate::{devices::DeviceConnection, gui::DialogDestroyer, ProgramData};
 use gtk::prelude::*;
 use std::{cell::RefCell, rc::Rc};
 
 /// Returns `None` if canceled.
 pub fn show_focuser_connect_dialog(program_data_rc: &Rc<RefCell<ProgramData>>)
--> Option<focuser::Connection> {
+-> Option<DeviceConnection> {
     let dialog = gtk::Dialog::with_buttons(
         Some("Connect to focuser"),
         Some(&program_data_rc.borrow().gui.as_ref().unwrap().app_window),
@@ -29,7 +29,7 @@ pub fn show_focuser_connect_dialog(program_data_rc: &Rc<RefCell<ProgramData>>)
     let response = dialog.run();
 
     if response == gtk::ResponseType::Accept {
-        Some(focuser::Connection::DreamFocuserMini("put something here".into()))
+        Some(DeviceConnection::FocusCube3Serial{ device: "/dev/ttyACM0".into() })
     } else {
         None
     }

@@ -12,7 +12,7 @@
 
 mod connection_dialog;
 
-use crate::{focuser, gui::show_message, ProgramData};
+use crate::{devices::focuser, gui::show_message, ProgramData};
 use glib::clone;
 use gtk::prelude::*;
 use std::{cell::RefCell, rc::Rc};

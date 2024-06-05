@@ -17,8 +17,8 @@ pub mod simulator;
 pub mod skywatcher;
 
 use cgmath::{Point2, Vector2, InnerSpace};
-use crate::{device_connection::DeviceConnectionDiscriminants, MountCalibration, ProgramData};
-use crate::{focuser, gui::{device_connection_dialog, show_message}, guiding, mount, mount::RadPerSec};
+use crate::{devices::DeviceConnectionDiscriminants, MountCalibration, ProgramData};
+use crate::{devices::focuser, gui::{device_connection_dialog, show_message}, guiding, mount, mount::RadPerSec};
 use glib::{clone};
 use gtk::prelude::*;
 use std::{cell::RefCell, error::Error, rc::Rc};

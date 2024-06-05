@@ -15,8 +15,7 @@ mod camera;
 mod config;
 #[cfg(feature = "controller")]
 mod controller;
-mod device_connection;
-mod focuser;
+mod devices;
 mod gui;
 mod guiding;
 mod input;
@@ -169,7 +168,7 @@ mod sim_data {
 pub use sim_data::MountSimulatorData;
 
 pub struct FocuserData {
-    focuser: Option<Box<dyn focuser::Focuser>>
+    focuser: Option<Box<dyn devices::focuser::Focuser>>
 }
 
 #[derive(Debug)]
