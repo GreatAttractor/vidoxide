@@ -60,6 +60,7 @@ use gtk::prelude::*;
 use histogram_view::HistogramView;
 use img_view::ImgView;
 use info_overlay::{InfoOverlay, ScreenSelection, draw_info_overlay};
+use focuser_gui::FocuserWidgets;
 use mount_gui::MountWidgets;
 use num_traits::cast::{FromPrimitive, AsPrimitive};
 use psf_dialog::PsfDialog;
@@ -203,6 +204,7 @@ pub struct GuiData {
     controller_dialog: ControllerDialog,
     dispersion_dialog: DispersionDialog,
     psf_dialog: PsfDialog,
+    focuser_widgets: FocuserWidgets,
     mount_widgets: MountWidgets,
     mouse_mode: MouseMode,
     info_overlay: InfoOverlay,
@@ -215,6 +217,8 @@ pub struct GuiData {
 }
 
 impl GuiData {
+    pub fn focuser_widgets(&self) -> &FocuserWidgets { &self.focuser_widgets }
+
     pub fn mount_widgets(&self) -> &MountWidgets { &self.mount_widgets }
 
     #[cfg(feature = "controller")]
@@ -430,6 +434,9 @@ pub fn init_main_window(app: &gtk::Application, program_data_rc: &Rc<RefCell<Pro
     let mount_widgets = mount_gui::create_mount_box(program_data_rc);
     controls_notebook.append_page(mount_widgets.wbox(), Some(&gtk::Label::new(Some("Mount"))));
 
+    let focuser_widgets = focuser_gui::create_focuser_box(program_data_rc);
+    controls_notebook.append_page(focuser_widgets.wbox(), Some(&gtk::Label::new(Some("Focuser"))));
+
     let controls_notebook_scroller = gtk::ScrolledWindow::new::<gtk::Adjustment, gtk::Adjustment>(None, None);
     controls_notebook_scroller.add(&controls_notebook);
 
@@ -487,6 +494,7 @@ pub fn init_main_window(app: &gtk::Application, program_data_rc: &Rc<RefCell<Pro
         camera_menu_items,
         preview_area,
         rec_widgets,
+        focuser_widgets,
         mount_widgets,
         info_overlay: InfoOverlay::new(),
         reticle: Reticle{

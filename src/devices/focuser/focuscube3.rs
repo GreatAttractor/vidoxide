@@ -12,7 +12,8 @@
 
 use crate::devices::{
     focuser::{DegC, Focuser, Position, PositionRange, Speed, SpeedRange, State, TargetPosition},
-    utils
+    utils,
+    utils::{InvalidResponseTreatment, ResponseType}
 };
 use std::error::Error;
 
@@ -57,6 +58,22 @@ impl FocusCube3 {
     }
 }
 
+// TODO simplify this (via enum_dispatch?)
+macro_rules! do_send {
+    ($io:expr, $cmd:expr, $resp_type:expr, $inv_resp_tr:expr) => {
+        utils::send_cmd_and_get_reply($io, $cmd, $resp_type, $inv_resp_tr).map(|_| ())
+    };
+}
+
+macro_rules! send_cmd {
+    ($focuser:expr, $cmd:expr, $resp_type:expr, $inv_resp_tr:expr) => {
+        match &mut $focuser.device {
+            Device::Serial(io) => do_send!(io, $cmd, $resp_type, $inv_resp_tr),
+            Device::TcpIp(io) => do_send!(io, $cmd, $resp_type, $inv_resp_tr),
+        }
+    };
+}
+
 impl Focuser for FocusCube3 {
     #[must_use]
     fn info(&self) -> String {
@@ -76,7 +93,16 @@ impl Focuser for FocusCube3 {
     }
 
     fn move_(&mut self, target: TargetPosition, speed: Speed) -> Result<(), Box<dyn Error>> {
-        unimplemented!()
+        if speed.is_zero() {
+            self.stop()
+        } else {
+            send_cmd!(
+                self,
+                format!("FM:{}\n", if let TargetPosition::Absolute(pos) = target { pos.0 } else { unimplemented!() }),
+                ResponseType::None,
+                InvalidResponseTreatment::Ignore { log_warning: true }
+            )
+        }
     }
 
     fn sync(&mut self, current_pos: Position) -> Result<(), Box<dyn Error>> {
@@ -84,6 +110,11 @@ impl Focuser for FocusCube3 {
     }
 
     fn stop(&mut self) -> Result<(), Box<dyn Error>> {
-        unimplemented!()
+        send_cmd!(
+            self,
+            "FH\n".into(),
+            ResponseType::None,
+            InvalidResponseTreatment::Ignore { log_warning: true }
+        )
     }
 }

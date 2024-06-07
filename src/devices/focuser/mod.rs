@@ -19,6 +19,7 @@ use std::error::Error;
 #[derive(Copy, Clone)]
 pub struct Position(pub i32);
 
+//TODO move absolute/relative support to the wrapper; here support only absolute
 #[derive(Copy, Clone)]
 pub enum TargetPosition {
     Absolute(Position),
@@ -80,10 +81,34 @@ pub trait Focuser {
     fn stop(&mut self) -> Result<(), Box<dyn Error>>;
 }
 
-pub fn connect_to_focuser(connection: DeviceConnection) -> Result<Box<dyn Focuser>, Box<dyn Error>> {
+pub enum FocuserDir { Negative, Positive }
+
+pub struct FocuserWrapper {
+    focuser: Box<dyn Focuser>
+}
+
+impl FocuserWrapper {
+    fn new(focuser: Box<dyn Focuser>) -> FocuserWrapper {
+        FocuserWrapper{ focuser }
+    }
+
+    pub fn get(&self) -> &Box<dyn Focuser> { &self.focuser }
+
+    pub fn get_mut(&mut self) -> &mut Box<dyn Focuser> { &mut self.focuser }
+
+    pub fn move_in_dir(&mut self, speed: Speed, dir: FocuserDir) -> Result<(), Box<dyn Error>> {
+        let PositionRange{ min, max } = self.focuser.pos_range().unwrap();
+        self.focuser.move_(
+            TargetPosition::Absolute(match dir { FocuserDir::Negative => min, FocuserDir::Positive => max }),
+            speed
+        )
+    }
+}
+
+pub fn connect_to_focuser(connection: DeviceConnection) -> Result<FocuserWrapper, Box<dyn Error>> {
     match connection {
         DeviceConnection::FocusCube3Serial{ device } => {
-            Ok(Box::new(focuscube3::FocusCube3::new(focuscube3::Connection::Serial{ device })?))
+            Ok(FocuserWrapper::new(Box::new(focuscube3::FocusCube3::new(focuscube3::Connection::Serial{ device })?)))
         },
 
         _ => unreachable!()

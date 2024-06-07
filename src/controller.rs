@@ -401,15 +401,20 @@ fn dispatch_event(event: StickEvent, program_data_rc: &Rc<RefCell<ProgramData>>)
         },
         TargetAction::FocuserIn => match event_value(&event.event) {
             EventValue::Discrete(value) => if program_data_rc.borrow().focuser_data.focuser.is_some() {
-                let _ = gui::focuser_move(focuser::Speed::new(if value { -1.0 } else { 0.0 }), program_data_rc);
+                let _ = gui::focuser_move(
+                    focuser::Speed::new(if value { 1.0 } else { 0.0 }),
+                    focuser::FocuserDir::Negative,
+                    program_data_rc
+                );
             },
             EventValue::Analog(value) => if program_data_rc.borrow().focuser_data.focuser.is_some() {
                 let analog_range = analog_range.as_ref().unwrap();
-                // we only allow positive analog action values for focuser in/out movement
+                // we only allow analog action values for focuser in/out movement
                 let scaled_value = (value.max(0.0) - analog_range.min.max(0.0))
                     / (analog_range.max - analog_range.min.max(0.0));
                 let _ = gui::focuser_move(
-                    focuser::Speed::new(/*if scaled_value > FOCUSER_ACTION_REL_DEADZONE {*/ -scaled_value /*} else { 0.0 }*/),
+                    focuser::Speed::new(/*if scaled_value > FOCUSER_ACTION_REL_DEADZONE {*/ scaled_value /*} else { 0.0 }*/),
+                    focuser::FocuserDir::Negative,
                     program_data_rc
                 );
             },

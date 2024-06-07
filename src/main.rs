@@ -168,7 +168,7 @@ mod sim_data {
 pub use sim_data::MountSimulatorData;
 
 pub struct FocuserData {
-    focuser: Option<Box<dyn devices::focuser::Focuser>>
+    focuser: Option<devices::focuser::FocuserWrapper>
 }
 
 #[derive(Debug)]
