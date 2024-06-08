@@ -108,7 +108,7 @@ pub fn focuser_move(
     program_data_rc: &Rc<RefCell<ProgramData>>
 ) -> Result<(), ()> {
     log::info!("attempted focuser move with speed {:.02}", speed.get()); //TESTING #######
-    let res = program_data_rc.borrow_mut().focuser_data.focuser.as_mut().unwrap().move_in_dir(speed, dir);
+    let res = program_data_rc.borrow_mut().focuser_data.focuser.as_mut().unwrap().begin_move_in_dir(speed, dir);
     if let Err(e) = &res { /*TODO on_mount_error(e, program_data_rc)*/ }
     res.map_err(|_| ())
 }

@@ -11,7 +11,7 @@
 //!
 
 use crate::devices::{
-    focuser::{DegC, Focuser, Position, PositionRange, Speed, SpeedRange, State, TargetPosition},
+    focuser::{DegC, Focuser, Position, PositionRange, Speed, SpeedRange, State},
     utils,
     utils::{InvalidResponseTreatment, ResponseType}
 };
@@ -48,20 +48,24 @@ impl FocusCube3 {
             Connection::TcpIp { address } => Device::TcpIp(std::net::TcpStream::connect(address)?)
         };
 
-        Ok(FocusCube3{
+        let mut fc3 = FocusCube3{
             connection_str: match connection {
                 Connection::Serial{ device } => device,
                 Connection::TcpIp{ address } => address.to_string()
             },
             device
-        })
+        };
+
+        fc3.sync(Position(500_000))?;
+
+        Ok(fc3)
     }
 }
 
 // TODO simplify this (via enum_dispatch?)
 macro_rules! do_send {
     ($io:expr, $cmd:expr, $resp_type:expr, $inv_resp_tr:expr) => {
-        utils::send_cmd_and_get_reply($io, $cmd, $resp_type, $inv_resp_tr).map(|_| ())
+        utils::send_cmd_and_get_reply($io, $cmd, $resp_type, $inv_resp_tr) //.map(|_| ())
     };
 }
 
@@ -89,24 +93,46 @@ impl Focuser for FocusCube3 {
     }
 
     fn state(&mut self) -> Result<State, Box<dyn Error>> {
-        unimplemented!()
+        let reply = send_cmd!(
+            self,
+            "FA\n".into(),
+            ResponseType::EndsWith('\n'),
+            InvalidResponseTreatment::Ignore { log_warning: true }
+        )?;
+        let reply = std::str::from_utf8(&reply)?;
+
+        let parts: Vec<&str> = reply.split(':').collect();
+        if parts.len() < 6 || parts[0] != "FC3" { return Err(format!("invalid response: {}", reply).into()); }
+
+        let pos = Position(parts[1].parse::<i32>()?);
+        let moving = Some(if parts[2].chars().nth(0).unwrap() == '0' { false } else { true });
+        // TODO if the sensor is not connected, returns 0.0 - add some logic to detect recent other values and decide
+        // if we should return `Some` or `None`.
+        let temperature = Some(DegC(parts[3].parse::<f64>()?));
+
+        Ok(State{ pos, moving, temperature })
     }
 
-    fn move_(&mut self, target: TargetPosition, speed: Speed) -> Result<(), Box<dyn Error>> {
+    fn begin_move(&mut self, target: Position, speed: Speed) -> Result<(), Box<dyn Error>> {
         if speed.is_zero() {
             self.stop()
         } else {
             send_cmd!(
                 self,
-                format!("FM:{}\n", if let TargetPosition::Absolute(pos) = target { pos.0 } else { unimplemented!() }),
+                format!("FM:{}\n", target.0),
                 ResponseType::None,
                 InvalidResponseTreatment::Ignore { log_warning: true }
-            )
+            ).map(|_| ())
         }
     }
 
     fn sync(&mut self, current_pos: Position) -> Result<(), Box<dyn Error>> {
-        unimplemented!()
+        send_cmd!(
+            self,
+            format!("FN:{}\n", current_pos.0),
+            ResponseType::None,
+            InvalidResponseTreatment::Ignore { log_warning: true }
+        ).map(|_| ())
     }
 
     fn stop(&mut self) -> Result<(), Box<dyn Error>> {
@@ -115,6 +141,6 @@ impl Focuser for FocusCube3 {
             "FH\n".into(),
             ResponseType::None,
             InvalidResponseTreatment::Ignore { log_warning: true }
-        )
+        ).map(|_| ())
     }
 }

@@ -19,12 +19,8 @@ use std::error::Error;
 #[derive(Copy, Clone)]
 pub struct Position(pub i32);
 
-//TODO move absolute/relative support to the wrapper; here support only absolute
 #[derive(Copy, Clone)]
-pub enum TargetPosition {
-    Absolute(Position),
-    Relative(Position)
-}
+pub struct RelativePos(pub Position);
 
 /// For each focuser driver: value of 1.0 means "normal, reasonable speed"; not "so fast the attached mechanics will be
 /// torn apart before the user can react".
@@ -61,6 +57,7 @@ pub struct DegC(pub f64);
 
 pub struct State {
     pub pos: Position,
+    pub moving: Option<bool>,
     pub temperature: Option<DegC>
 }
 
@@ -74,7 +71,7 @@ pub trait Focuser {
 
     fn state(&mut self) -> Result<State, Box<dyn Error>>;
 
-    fn move_(&mut self, target: TargetPosition, speed: Speed) -> Result<(), Box<dyn Error>>;
+    fn begin_move(&mut self, target: Position, speed: Speed) -> Result<(), Box<dyn Error>>;
 
     fn sync(&mut self, current_pos: Position) -> Result<(), Box<dyn Error>>;
 
@@ -96,12 +93,13 @@ impl FocuserWrapper {
 
     pub fn get_mut(&mut self) -> &mut Box<dyn Focuser> { &mut self.focuser }
 
-    pub fn move_in_dir(&mut self, speed: Speed, dir: FocuserDir) -> Result<(), Box<dyn Error>> {
+    pub fn begin_move_rel(&mut self, rel_pos: RelativePos, speed: Speed) -> Result<(), Box<dyn Error>> {
+        unimplemented!()
+    }
+
+    pub fn begin_move_in_dir(&mut self, speed: Speed, dir: FocuserDir) -> Result<(), Box<dyn Error>> {
         let PositionRange{ min, max } = self.focuser.pos_range().unwrap();
-        self.focuser.move_(
-            TargetPosition::Absolute(match dir { FocuserDir::Negative => min, FocuserDir::Positive => max }),
-            speed
-        )
+        self.focuser.begin_move(match dir { FocuserDir::Negative => min, FocuserDir::Positive => max }, speed)
     }
 }
 
