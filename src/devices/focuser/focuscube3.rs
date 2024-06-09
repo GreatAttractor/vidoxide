@@ -19,7 +19,7 @@ use std::error::Error;
 
 pub enum Connection {
     Serial{ device: String },
-    TcpIp{ address: std::net::SocketAddr }
+    TcpIp{ address: String }
 }
 
 enum Device {
@@ -45,13 +45,24 @@ impl FocusCube3 {
                     .open()?)
             },
 
-            Connection::TcpIp { address } => Device::TcpIp(std::net::TcpStream::connect(address)?)
+            Connection::TcpIp { ref address } => {
+                let mut stream = std::net::TcpStream::connect(address)?;
+                // authenticate with default password
+                utils::send_cmd_and_get_reply(
+                    &mut stream,
+                    "12345678\n".into(),
+                    ResponseType::EndsWith('\n'),
+                    InvalidResponseTreatment::Ignore { log_warning: true }
+                )?;
+
+                Device::TcpIp(stream)
+            }
         };
 
         let mut fc3 = FocusCube3{
             connection_str: match connection {
                 Connection::Serial{ device } => device,
-                Connection::TcpIp{ address } => address.to_string()
+                Connection::TcpIp{ address } => address
             },
             device
         };

@@ -33,27 +33,27 @@ impl BasicConnectionControls {
 
         if let Some(title) = title {
             box_.pack_start(
-                &gtk::Label::new(Some(title)),
+                &gtk::LabelBuilder::new().label(title).justify(gtk::Justification::Left).build(),
                 false,
-                false,
+                true,
                 PADDING
             );
         }
 
+        //FIXME justification not working, add a stretched filler within a hbox?
         if let Some(info) = info {
             box_.pack_start(
-                &gtk::Label::new(Some(info)),
+                &gtk::LabelBuilder::new().label(info).justify(gtk::Justification::Left).build(),
                 false,
-                false,
+                true,
                 PADDING
             );
         }
-
 
         let entry = if has_entry {
             let entry = gtk::Entry::new();
             entry.set_text(&last_entry.unwrap_or("".to_string()));
-            box_.pack_start(&entry, true, false, PADDING);
+            box_.pack_start(&entry, false, false, PADDING);
             Some(entry)
         } else {
             None

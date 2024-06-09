@@ -28,9 +28,9 @@ pub fn show_focuser_connect_dialog(program_data_rc: &Rc<RefCell<ProgramData>>)
     dialog.show_all();
     let response = dialog.run();
 
-    if response == gtk::ResponseType::Accept {
-        Some(DeviceConnection::FocusCube3Serial{ device: "/dev/ttyACM0".into() })
-    } else {
+    // if response == gtk::ResponseType::Accept {
+    //     Some(DeviceConnection::FocusCube3{ connection: FC3Connection::Serial{ device: "/dev/ttyACM0".into() }})
+    // } else {
         None
-    }
+    // }
 }

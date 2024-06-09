@@ -12,8 +12,8 @@
 
 use crate::{
     ProgramData,
-    devices::{ConnectionCreator, DeviceConnection, DeviceConnectionDiscriminants},
-    gui::DialogDestroyer
+    devices::{DeviceConnection, DeviceConnectionDiscriminants},
+    gui::{ConnectionCreator, DialogDestroyer, make_creator, show_message}
 };
 use glib::clone;
 use gtk::prelude::*;
@@ -24,6 +24,7 @@ const PADDING: u32 = 10;
 
 pub fn show_device_connection_dialog(
     title: &str,
+    combo_label: &str,
     program_data_rc: &Rc<RefCell<ProgramData>>,
     connections: &[DeviceConnectionDiscriminants]
 ) -> Option<DeviceConnection> {
@@ -40,7 +41,7 @@ pub fn show_device_connection_dialog(
     let mut creators: Vec<Box<dyn ConnectionCreator>> = vec![];
 
     for connection in connections {
-        creators.push(connection.creator(&program_data_rc.borrow().config));
+        creators.push(make_creator(*connection, &program_data_rc.borrow().config));
     }
 
     let combo = gtk::ComboBoxText::new();
@@ -56,18 +57,25 @@ pub fn show_device_connection_dialog(
     }));
 
     let hbox = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-    hbox.pack_start(&gtk::Label::new(Some("Mount type:")), false, true, PADDING);
-    hbox.pack_start(&combo, true, true, PADDING);
-    dialog.content_area().pack_start(&hbox, true, true, PADDING);
+    hbox.pack_start(&gtk::Label::new(Some(combo_label)), false, true, PADDING);
+    hbox.pack_start(&combo, false, true, PADDING);
+    dialog.content_area().pack_start(&hbox, false, true, PADDING);
 
     dialog.content_area().pack_start(&notebook, true, true, PADDING);
 
     dialog.show_all();
-    let response = dialog.run();
+    loop {
+        let response = dialog.run();
 
-    if response == gtk::ResponseType::Accept {
-        Some(creators[notebook.current_page().unwrap() as usize].create(&configuration!()))
-    } else {
-        None
+        if response == gtk::ResponseType::Accept {
+            match creators[notebook.current_page().unwrap() as usize].create(&configuration!()) {
+                Ok(connection) => return Some(connection),
+                Err(e) => show_message(
+                    &format!("Error occurred: {}.", e), "Error", gtk::MessageType::Error, &program_data_rc
+                )
+            }
+        } else {
+            return None;
+        }
     }
 }

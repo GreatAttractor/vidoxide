@@ -11,9 +11,10 @@
 //!
 
 use crate::{
-    devices::{ConnectionCreator, DeviceConnection},
-    gui::BasicConnectionControls
+    devices::DeviceConnection,
+    gui::{BasicConnectionControls, ConnectionCreator}
 };
+use std::error::Error;
 
 pub struct SWConnectionCreator {
     controls: BasicConnectionControls
@@ -35,10 +36,10 @@ impl SWConnectionCreator {
 impl ConnectionCreator for SWConnectionCreator {
     fn controls(&self) -> &gtk::Box { &self.controls.controls() }
 
-    fn create(&self, configuration: &crate::config::Configuration) -> DeviceConnection {
+    fn create(&self, configuration: &crate::config::Configuration) -> Result<DeviceConnection, Box<dyn Error>> {
         let device = self.controls.connection_string();
         configuration.set_skywatcher_last_device(&device);
-        DeviceConnection::SkyWatcherMountSerial{device}
+        Ok(DeviceConnection::SkyWatcherMountSerial{device})
     }
 
     fn label(&self) -> &'static str { "Sky-Watcher (direct serial connection)" }

@@ -10,9 +10,15 @@
 //! Telescope focuser GUI.
 //!
 
-mod connection_dialog;
+mod connection_dialog; //TODO remove
 
-use crate::{devices::focuser, gui::show_message, ProgramData};
+pub mod focuscube3;
+
+use crate::{
+    devices::{DeviceConnectionDiscriminants, focuser},
+    gui::{device_connection_dialog, show_message},
+    ProgramData
+};
 use glib::clone;
 use gtk::prelude::*;
 use std::{cell::RefCell, rc::Rc};
@@ -74,7 +80,15 @@ pub fn init_focuser_menu(program_data_rc: &Rc<RefCell<ProgramData>>) -> gtk::Men
         @weak program_data_rc,
         @weak item_disconnect
         => @default-panic, move |_| {
-            match connection_dialog::show_focuser_connect_dialog(&program_data_rc) {
+            match device_connection_dialog::show_device_connection_dialog(
+                "Connect to focuser",
+                "Focuser type:",
+                &program_data_rc,
+                //TODO iterate over focuser-type items
+                &[
+                    DeviceConnectionDiscriminants::FocusCube3
+                ]
+            ) {
                 Some(connection) => {
                     match focuser::connect_to_focuser(connection) {
                         Err(e) => show_message(

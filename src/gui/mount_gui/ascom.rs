@@ -11,9 +11,10 @@
 //!
 
 use crate::{
-    devices::{ConnectionCreator, DeviceConnection},
-    gui::BasicConnectionControls
+    devices::DeviceConnection,
+    gui::{BasicConnectionControls, ConnectionCreator}
 };
+use std::error::Error;
 
 pub struct AscomConnectionCreator {
     dialog_tab: gtk::Box,
@@ -36,10 +37,10 @@ impl AscomConnectionCreator {
 impl ConnectionCreator for AscomConnectionCreator {
     fn controls(&self) -> &gtk::Box { &self.controls.controls() }
 
-    fn create(&self, configuration: &crate::config::Configuration) -> DeviceConnection {
+    fn create(&self, configuration: &crate::config::Configuration) -> Result<DeviceConnection, Box<dyn Error>> {
         let s = self.controls.connection_string();
         configuration.set_ascom_last_driver(&s);
-        DeviceConnection::AscomMount{device: s}
+        Ok(DeviceConnection::AscomMount{device: s})
     }
 
     fn label(&self) -> &'static str { "ASCOM" }

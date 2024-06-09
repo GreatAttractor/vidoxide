@@ -510,7 +510,9 @@ pub fn init_mount_menu(program_data_rc: &Rc<RefCell<ProgramData>>) -> gtk::Menu 
         => @default-panic, move |_| {
             match device_connection_dialog::show_device_connection_dialog(
                 "Connect to mount",
+                "Mount type:",
                 &program_data_rc,
+                //TODO iterate over mount-type items
                 &[
                     DeviceConnectionDiscriminants::SkyWatcherMountSerial,
                     DeviceConnectionDiscriminants::IoptronMountSerial,

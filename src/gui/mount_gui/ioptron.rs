@@ -11,9 +11,10 @@
 //!
 
 use crate::{
-    devices::{ConnectionCreator, DeviceConnection},
-    gui::BasicConnectionControls
+    devices::DeviceConnection,
+    gui::{BasicConnectionControls, ConnectionCreator}
 };
+use std::error::Error;
 
 pub struct IoptronConnectionCreator {
     controls: BasicConnectionControls
@@ -35,10 +36,10 @@ impl IoptronConnectionCreator {
 impl ConnectionCreator for IoptronConnectionCreator {
     fn controls(&self) -> &gtk::Box { &self.controls.controls() }
 
-    fn create(&self, configuration: &crate::config::Configuration) -> DeviceConnection {
+    fn create(&self, configuration: &crate::config::Configuration) -> Result<DeviceConnection, Box<dyn Error>> {
         let device = self.controls.connection_string();
         configuration.set_ioptron_last_device(&device);
-        DeviceConnection::IoptronMountSerial{device}
+        Ok(DeviceConnection::IoptronMountSerial{device})
     }
 
     fn label(&self) -> &'static str { "iOptron (direct serial connection)" }

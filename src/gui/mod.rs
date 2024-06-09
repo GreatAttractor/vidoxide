@@ -44,6 +44,7 @@ use controller::{ControllerDialog, init_controller_menu};
 use crate::{CameraControlChange, NewControlValue, OnCapturePauseAction, ProgramData};
 use crate::camera;
 use crate::camera::CameraError;
+use crate::devices::{DeviceConnection, DeviceConnectionDiscriminants};
 use crate::mount;
 use crate::mount::RadPerSec;
 use crate::resources;
@@ -68,6 +69,7 @@ use rec_gui::RecWidgets;
 use reticle_dialog::create_reticle_dialog;
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::error::Error;
 use std::path::Path;
 use std::rc::Rc;
 use std::sync::atomic::Ordering;
@@ -75,13 +77,16 @@ use std::sync::atomic::Ordering;
 #[cfg(feature = "controller")]
 pub use crate::controller::on_controller_event;
 pub use focuser_gui::focuser_move;
-#[cfg(feature = "mount_ascom")]
-pub use mount_gui::ascom;
-pub use mount_gui::{
-    ioptron,
-    simulator,
-    skywatcher
-};
+
+//TODO remove this
+// #[cfg(feature = "mount_ascom")]
+// pub use mount_gui::ascom;
+// pub use mount_gui::{
+//     ioptron,
+//     simulator,
+//     skywatcher
+// };
+//END TODO
 
 pub use mount_gui::{axis_slew, on_mount_error};
 pub use basic_connection_controls::BasicConnectionControls;
@@ -244,6 +249,40 @@ impl Drop for DialogDestroyer {
         unsafe { self.dialog.destroy(); }
     }
 }
+
+pub trait ConnectionCreator {
+    fn controls(&self) -> &gtk::Box;
+
+    fn create(
+        &self,
+        configuration: &crate::config::Configuration
+    ) -> Result<crate::devices::DeviceConnection, Box<dyn Error>>;
+
+    fn label(&self) -> &'static str;
+}
+
+pub fn make_creator(
+    connection: crate::devices::DeviceConnectionDiscriminants,
+    config: &crate::config::Configuration
+) -> Box<dyn ConnectionCreator> {
+    type DCD = DeviceConnectionDiscriminants;
+    match connection {
+        #[cfg(feature = "mount_ascom")]
+        DCD::AscomMount => creators.push(ascom::AscomConnectionCreator::new(config)),
+
+        DCD::MountSimulator => mount_gui::simulator::SimulatorConnectionCreator::new(config),
+
+        DCD::SkyWatcherMountSerial => mount_gui::skywatcher::SWConnectionCreator::new(config),
+
+        DCD::IoptronMountSerial => mount_gui::ioptron::IoptronConnectionCreator::new(config),
+
+        DCD::FocusCube3 => focuser_gui::focuscube3::FocusCube3ConnectionCreator::new(config),
+
+        _ => unimplemented!()
+
+    }
+}
+
 
 fn create_status_bar() -> (gtk::Frame, StatusBarFields) {
     let status_bar_box = gtk::Box::new(gtk::Orientation::Horizontal, 0);
@@ -1041,7 +1080,7 @@ fn show_about_dialog(program_data_rc: &Rc<RefCell<ProgramData>>) {
     show_message(
         &format!(
             "<big><big><b>Vidoxide</b></big></big>\n\n\
-            Copyright © 2020-2023 Filip Szczerek (ga.software@yahoo.com)\n\n\
+            Copyright © 2020-2024 Filip Szczerek (ga.software@yahoo.com)\n\n\
             This project is licensed under the terms of the MIT license (see the LICENSE file for details).\n\n\
             version: {}\n\
             OS: {}",

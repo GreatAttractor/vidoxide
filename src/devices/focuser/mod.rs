@@ -16,6 +16,8 @@ mod focuscube3;
 use crate::devices::DeviceConnection;
 use std::error::Error;
 
+pub type FC3Connection = focuscube3::Connection;
+
 #[derive(Copy, Clone)]
 pub struct Position(pub i32);
 
@@ -105,8 +107,8 @@ impl FocuserWrapper {
 
 pub fn connect_to_focuser(connection: DeviceConnection) -> Result<FocuserWrapper, Box<dyn Error>> {
     match connection {
-        DeviceConnection::FocusCube3Serial{ device } => {
-            Ok(FocuserWrapper::new(Box::new(focuscube3::FocusCube3::new(focuscube3::Connection::Serial{ device })?)))
+        DeviceConnection::FocusCube3{ connection } => {
+            Ok(FocuserWrapper::new(Box::new(focuscube3::FocusCube3::new(connection)?)))
         },
 
         _ => unreachable!()

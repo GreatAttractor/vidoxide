@@ -1,6 +1,6 @@
 //
 // Vidoxide - Image acquisition for amateur astronomy
-// Copyright (c) 2020-2022 Filip Szczerek <ga.software@yahoo.com>
+// Copyright (c) 2020-2024 Filip Szczerek <ga.software@yahoo.com>
 //
 // This project is licensed under the terms of the MIT license
 // (see the LICENSE file for details).
@@ -11,10 +11,11 @@
 //!
 
 use crate::{
-    devices::{ConnectionCreator, DeviceConnection},
-    gui::BasicConnectionControls
+    devices::DeviceConnection,
+    gui::{BasicConnectionControls, ConnectionCreator}
 };
 use gtk::prelude::*;
+use std::error::Error;
 
 /// Control padding in pixels.
 const PADDING: u32 = 10;
@@ -41,8 +42,8 @@ impl SimulatorConnectionCreator {
 impl ConnectionCreator for SimulatorConnectionCreator {
     fn controls(&self) -> &gtk::Box { &self.dialog_tab }
 
-    fn create(&self, _configuration: &crate::config::Configuration) -> DeviceConnection {
-        DeviceConnection::MountSimulator
+    fn create(&self, _configuration: &crate::config::Configuration) -> Result<DeviceConnection, Box<dyn Error>> {
+        Ok(DeviceConnection::MountSimulator)
     }
 
     fn label(&self) -> &'static str { "Simulator" }
