@@ -17,6 +17,18 @@ use crate::devices::{
 };
 use std::error::Error;
 
+#[derive(Copy, Clone, PartialEq)]
+struct RawSpeed(u16);
+
+const MAX_SPEED: RawSpeed = RawSpeed(400);
+
+impl RawSpeed {
+    fn from(speed: Speed) -> RawSpeed {
+        assert!(speed.get() <= 1.0);
+        RawSpeed((speed.get() * MAX_SPEED.0 as f64) as u16)
+    }
+}
+
 pub enum Connection {
     Serial{ device: String },
     TcpIp{ address: String }
@@ -29,8 +41,27 @@ enum Device {
 
 pub struct FocusCube3 {
     connection_str: String,
-    device: Device // TODO: use Box<dyn Read+Write> when trait upcasting is stabilized
+    device: Device, // TODO: use Box<dyn Read+Write> when trait upcasting is stabilized
+    speed: RawSpeed
 }
+
+// TODO simplify this (via enum_dispatch?)
+macro_rules! do_send {
+    ($io:expr, $cmd:expr, $resp_type:expr, $inv_resp_tr:expr) => {
+        utils::send_cmd_and_get_reply($io, $cmd, $resp_type, $inv_resp_tr) //.map(|_| ())
+    };
+}
+
+macro_rules! send_cmd {
+    ($focuser:expr, $cmd:expr, $resp_type:expr, $inv_resp_tr:expr) => {
+        match &mut $focuser.device {
+            Device::Serial(io) => do_send!(io, $cmd, $resp_type, $inv_resp_tr),
+            Device::TcpIp(io) => do_send!(io, $cmd, $resp_type, $inv_resp_tr),
+        }
+    };
+}
+
+//TODO change response expectations to their full contents
 
 impl FocusCube3 {
     pub fn new(connection: Connection) -> Result<FocusCube3, Box<dyn Error>> {
@@ -52,7 +83,7 @@ impl FocusCube3 {
                     &mut stream,
                     "12345678\n".into(),
                     ResponseType::EndsWith('\n'),
-                    InvalidResponseTreatment::Ignore { log_warning: true }
+                    InvalidResponseTreatment::Fail
                 )?;
 
                 Device::TcpIp(stream)
@@ -64,29 +95,34 @@ impl FocusCube3 {
                 Connection::Serial{ device } => device,
                 Connection::TcpIp{ address } => address
             },
-            device
+            device,
+            speed: RawSpeed(0)
         };
 
         fc3.sync(Position(500_000))?;
+        fc3.set_speed(MAX_SPEED)?;
 
         Ok(fc3)
     }
-}
 
-// TODO simplify this (via enum_dispatch?)
-macro_rules! do_send {
-    ($io:expr, $cmd:expr, $resp_type:expr, $inv_resp_tr:expr) => {
-        utils::send_cmd_and_get_reply($io, $cmd, $resp_type, $inv_resp_tr) //.map(|_| ())
-    };
-}
+    fn set_speed(&mut self, speed: RawSpeed) -> Result<(), Box<dyn Error>> {
+        if self.speed == speed {
+            Ok(())
+        } else if speed.0 == 0 {
+            self.stop()
+        } else {
+            send_cmd!(
+                self,
+                format!("SP:{}\n", speed.0),
+                ResponseType::EndsWith('\n'),
+                InvalidResponseTreatment::Fail
+            ).map(|_| ())?;
 
-macro_rules! send_cmd {
-    ($focuser:expr, $cmd:expr, $resp_type:expr, $inv_resp_tr:expr) => {
-        match &mut $focuser.device {
-            Device::Serial(io) => do_send!(io, $cmd, $resp_type, $inv_resp_tr),
-            Device::TcpIp(io) => do_send!(io, $cmd, $resp_type, $inv_resp_tr),
+            self.speed = speed;
+
+            Ok(())
         }
-    };
+    }
 }
 
 impl Focuser for FocusCube3 {
@@ -100,7 +136,7 @@ impl Focuser for FocusCube3 {
     }
 
     fn speed_range(&mut self) -> Result<SpeedRange, Box<dyn Error>> {
-        Ok(SpeedRange{ min: Speed(1.0), max: Speed(400.0) })
+        Ok(SpeedRange{ min: Speed(1.0 / MAX_SPEED.0 as f64), max: Speed(1.0) })
     }
 
     fn state(&mut self) -> Result<State, Box<dyn Error>> {
@@ -108,7 +144,7 @@ impl Focuser for FocusCube3 {
             self,
             "FA\n".into(),
             ResponseType::EndsWith('\n'),
-            InvalidResponseTreatment::Ignore { log_warning: true }
+            InvalidResponseTreatment::Fail
         )?;
         let reply = std::str::from_utf8(&reply)?;
 
@@ -128,11 +164,13 @@ impl Focuser for FocusCube3 {
         if speed.is_zero() {
             self.stop()
         } else {
+            self.set_speed(RawSpeed::from(speed))?;
+
             send_cmd!(
                 self,
                 format!("FM:{}\n", target.0),
-                ResponseType::None,
-                InvalidResponseTreatment::Ignore { log_warning: true }
+                ResponseType::EndsWith('\n'),
+                InvalidResponseTreatment::Fail
             ).map(|_| ())
         }
     }
@@ -142,7 +180,7 @@ impl Focuser for FocusCube3 {
             self,
             format!("FN:{}\n", current_pos.0),
             ResponseType::None,
-            InvalidResponseTreatment::Ignore { log_warning: true }
+            InvalidResponseTreatment::Fail
         ).map(|_| ())
     }
 
@@ -151,7 +189,9 @@ impl Focuser for FocusCube3 {
             self,
             "FH\n".into(),
             ResponseType::None,
-            InvalidResponseTreatment::Ignore { log_warning: true }
-        ).map(|_| ())
+            InvalidResponseTreatment::Fail
+        )?;
+
+        Ok(())
     }
 }
