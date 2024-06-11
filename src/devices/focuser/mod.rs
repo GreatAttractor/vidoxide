@@ -26,7 +26,7 @@ pub struct RelativePos(pub Position);
 
 /// For each focuser driver: value of 1.0 means "normal, reasonable speed"; not "so fast the attached mechanics will be
 /// torn apart before the user can react".
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq, PartialOrd)]
 pub struct Speed(f64);
 
 impl Speed {
@@ -40,9 +40,19 @@ impl Speed {
 
     pub fn get(&self) -> f64 { self.0 }
 
+    pub fn one() -> Speed { Speed(1.0) }
+
     pub fn zero() -> Speed { Speed(0.0) }
 
     pub fn is_zero(&self) -> bool { self.0 == 0.0 }
+}
+
+impl std::ops::Mul<f64> for Speed {
+    type Output = Self;
+
+    fn mul(self, x: f64) -> Speed {
+        Speed(self.0 * x)
+    }
 }
 
 pub struct PositionRange {
