@@ -13,15 +13,21 @@
 mod connection_dialog; //TODO remove
 
 pub mod focuscube3;
+pub mod simulator;
 
 use crate::{
-    devices::{DeviceConnectionDiscriminants, focuser},
+    devices::{DeviceConnectionDiscriminants, DeviceType, focuser},
     gui::{device_connection_dialog, show_message},
-    ProgramData
+    ProgramData,
+    timer::Timer
 };
 use glib::clone;
 use gtk::prelude::*;
 use std::{cell::RefCell, rc::Rc};
+use strum::IntoEnumIterator;
+
+const REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_millis(250);
+const REFRESH_DUR_AFTER_STOP: std::time::Duration = std::time::Duration::from_secs(1);
 
 /// Control padding in pixels.
 const PADDING: u32 = 10;
@@ -37,6 +43,9 @@ pub struct FocuserWidgets {
     status: gtk::Label,
     speeds: Rc<RefCell<Vec<SpeedDescr>>>,
     speed_combo: gtk::ComboBox,
+    position: gtk::Label,
+    refresh_timer: Timer,
+    refresh_stop_timer: Timer
 }
 
 impl FocuserWidgets {
@@ -89,6 +98,11 @@ pub fn init_focuser_menu(program_data_rc: &Rc<RefCell<ProgramData>>) -> gtk::Men
     item_disconnect.set_sensitive(false);
 
     let item_connect = gtk::MenuItem::with_label("Connect...");
+
+    let focuser_connections: Vec<DeviceConnectionDiscriminants> =
+        DeviceConnectionDiscriminants::iter().filter(|d| d.device_type() == DeviceType::Focuser).collect();
+
+
     item_connect.connect_activate(clone!(
         @weak program_data_rc,
         @weak item_disconnect
@@ -97,10 +111,7 @@ pub fn init_focuser_menu(program_data_rc: &Rc<RefCell<ProgramData>>) -> gtk::Men
                 "Connect to focuser",
                 "Focuser type:",
                 &program_data_rc,
-                //TODO iterate over focuser-type items
-                &[
-                    DeviceConnectionDiscriminants::FocusCube3
-                ]
+                &focuser_connections
             ) {
                 Some(connection) => {
                     match focuser::connect_to_focuser(connection) {
@@ -129,12 +140,50 @@ pub fn init_focuser_menu(program_data_rc: &Rc<RefCell<ProgramData>>) -> gtk::Men
     menu
 }
 
+fn schedule_refresh_stop(program_data_rc: &Rc<RefCell<ProgramData>>) {
+    program_data_rc.borrow().gui.as_ref().unwrap().focuser_widgets.refresh_stop_timer.run(
+        REFRESH_DUR_AFTER_STOP,
+        true,
+        clone!(@weak program_data_rc => @default-panic, move || {
+            program_data_rc.borrow().gui.as_ref().unwrap().focuser_widgets.refresh_timer.stop();
+        }
+    ));
+}
+
+fn on_refresh(program_data_rc: &Rc<RefCell<ProgramData>>) {
+    if program_data_rc.borrow().focuser_data.focuser.is_none() { return; }
+
+    let result = {
+        let mut pd = program_data_rc.borrow_mut();
+        pd.focuser_data.focuser.as_mut().unwrap().get_mut().state()
+    };
+
+    match result {
+        Err(e) => log::error!("failed to get focuser state: {}", e),
+        Ok(state) => {
+            program_data_rc.borrow().gui.as_ref().unwrap().focuser_widgets.position.set_text(&format!("{}", state.pos.0));
+        }
+    }
+}
+
 pub fn focuser_move(
     speed: focuser::Speed,
     dir: focuser::FocuserDir,
     program_data_rc: &Rc<RefCell<ProgramData>>
 ) -> Result<(), ()> {
-    let res = program_data_rc.borrow_mut().focuser_data.focuser.as_mut().unwrap().begin_move_in_dir(speed, dir);
+    if speed.is_zero() {
+        schedule_refresh_stop(program_data_rc);
+    } else {
+        program_data_rc.borrow().gui.as_ref().unwrap().focuser_widgets.refresh_timer.run(
+            REFRESH_INTERVAL,
+            false,
+            clone!(@weak program_data_rc => @default-panic, move || on_refresh(&program_data_rc) )
+        );
+    }
+
+
+
+    let res = program_data_rc.borrow_mut().focuser_data.focuser.as_mut().unwrap().move_in_dir(speed, dir);
     if let Err(e) = &res { /*TODO on_error...*/ }
     res.map_err(|_| ())
 }
@@ -210,6 +259,13 @@ pub fn create_focuser_box(program_data_rc: &Rc<RefCell<ProgramData>>) -> Focuser
 
     contents.pack_start(&move_box, false, false, PADDING);
 
+    let info_box = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    info_box.pack_start(&gtk::Label::new(Some("Position:")), false, false, PADDING);
+    let position = gtk::Label::new(None);
+    info_box.pack_start(&position, false, false, PADDING);
+    // TODO show temperature
+    contents.pack_start(&info_box, false, false, PADDING);
+
     let status_box = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     let status_label = gtk::LabelBuilder::new().justify(gtk::Justification::Left).label("disconnected").build();
     status_box.pack_start(&status_label, false, false, PADDING);
@@ -221,7 +277,10 @@ pub fn create_focuser_box(program_data_rc: &Rc<RefCell<ProgramData>>) -> Focuser
         wbox: contents,
         status: status_label,
         speeds,
-        speed_combo
+        speed_combo,
+        position,
+        refresh_timer: Timer::new(),
+        refresh_stop_timer: Timer::new()
     }
 }
 
@@ -229,4 +288,6 @@ fn on_stop(program_data_rc: &Rc<RefCell<ProgramData>>) {
     if let Err(e) = program_data_rc.borrow_mut().focuser_data.focuser.as_mut().unwrap().get_mut().stop() {
         log::error!("Failed to stop the focuser: {}.", e);
     }
+
+    schedule_refresh_stop(program_data_rc);
 }

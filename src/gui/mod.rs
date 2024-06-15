@@ -278,6 +278,8 @@ pub fn make_creator(
 
         DCD::FocusCube3 => focuser_gui::focuscube3::FocusCube3ConnectionCreator::new(config),
 
+        DCD::FocuserSimulator => focuser_gui::simulator::SimulatorConnectionCreator::new(config),
+
         _ => unimplemented!()
 
     }

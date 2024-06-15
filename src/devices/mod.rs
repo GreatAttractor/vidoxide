@@ -16,18 +16,21 @@ pub mod focuser;
 
 use gtk::prelude::*;
 use strum_macros as sm;
+use strum::EnumIter;
 
 #[derive(sm::EnumDiscriminants)]
+#[strum_discriminants(derive(EnumIter))]
 pub enum DeviceConnection {
     SkyWatcherMountSerial{ device: String },
     IoptronMountSerial{ device: String },
     #[cfg(feature = "mount_ascom")]
     AscomMount{ prog_id: String },
     MountSimulator,
-    DreamFocuserMini{ device: String },
+    FocuserSimulator,
+    //DreamFocuserMini{ device: String },
     FocusCube3{ connection: focuser::FC3Connection },
-
 }
+
 
 #[derive(Copy, Clone, PartialEq)]
 pub enum DeviceType {
@@ -35,16 +38,17 @@ pub enum DeviceType {
     Focuser
 }
 
-impl DeviceConnection {
+impl DeviceConnectionDiscriminants {
     pub fn device_type(&self) -> DeviceType {
         match self {
-            DeviceConnection::SkyWatcherMountSerial{..} => DeviceType::Mount,
-            DeviceConnection::IoptronMountSerial{..} => DeviceType::Mount,
+            DeviceConnectionDiscriminants::SkyWatcherMountSerial{..} => DeviceType::Mount,
+            DeviceConnectionDiscriminants::IoptronMountSerial{..} => DeviceType::Mount,
             #[cfg(feature = "mount_ascom")]
-            DeviceConnection::AscomMount => DeviceType::Mount,
-            DeviceConnection::MountSimulator => DeviceType::Mount,
-            DeviceConnection::DreamFocuserMini{..} => DeviceType::Focuser,
-            DeviceConnection::FocusCube3{..} => DeviceType::Focuser,
+            DeviceConnectionDiscriminants::AscomMount => DeviceType::Mount,
+            DeviceConnectionDiscriminants::MountSimulator => DeviceType::Mount,
+            // DeviceConnectionDiscriminants::DreamFocuserMini{..} => DeviceType::Focuser,
+            DeviceConnectionDiscriminants::FocusCube3{..} => DeviceType::Focuser,
+            DeviceConnectionDiscriminants::FocuserSimulator => DeviceType::Focuser,
         }
     }
 }

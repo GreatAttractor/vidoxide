@@ -1,6 +1,6 @@
 //
 // Vidoxide - Image acquisition for amateur astronomy
-// Copyright (c) 2020-2022 Filip Szczerek <ga.software@yahoo.com>
+// Copyright (c) 2020-2024 Filip Szczerek <ga.software@yahoo.com>
 //
 // This project is licensed under the terms of the MIT license
 // (see the LICENSE file for details).
@@ -834,7 +834,11 @@ impl Driver for IIDCDriver {
         checked_call!(dc1394_camera_enumerate(self.context.handle, &mut camera_list_ptr));
         if camera_list_ptr.is_null() { return Err(CameraError::IIDCError(dc1394error_t::DC1394_FAILURE)); }
         let camera_list = unsafe { camera_list_ptr.as_ref() }.unwrap();
-        let camera_ids = unsafe { std::slice::from_raw_parts(camera_list.ids, camera_list.num as usize) };
+        let camera_ids = if camera_list.num == 0 {
+            &[]
+        } else {
+            unsafe { std::slice::from_raw_parts(camera_list.ids, camera_list.num as usize) }
+        };
 
         Ok(camera_ids.iter().map(
             |id| CameraInfo{ id: CameraId::from(*id), name: self.camera_name_by_id(*id).unwrap() }

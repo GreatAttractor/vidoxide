@@ -12,6 +12,7 @@
 
 mod dream_focuser_mini;
 mod focuscube3;
+mod simulator;
 
 use crate::devices::DeviceConnection;
 use std::error::Error;
@@ -83,7 +84,8 @@ pub trait Focuser {
 
     fn state(&mut self) -> Result<State, Box<dyn Error>>;
 
-    fn begin_move(&mut self, target: Position, speed: Speed) -> Result<(), Box<dyn Error>>;
+    /// Non-blocking; reaching `target` can be queried via `state`.
+    fn move_(&mut self, target: Position, speed: Speed) -> Result<(), Box<dyn Error>>;
 
     fn sync(&mut self, current_pos: Position) -> Result<(), Box<dyn Error>>;
 
@@ -105,22 +107,24 @@ impl FocuserWrapper {
 
     pub fn get_mut(&mut self) -> &mut Box<dyn Focuser> { &mut self.focuser }
 
-    pub fn begin_move_rel(&mut self, rel_pos: RelativePos, speed: Speed) -> Result<(), Box<dyn Error>> {
+    /// Non-blocking; reaching target position can be queried via `Focuser::state`.
+    pub fn move_rel(&mut self, rel_pos: RelativePos, speed: Speed) -> Result<(), Box<dyn Error>> {
         unimplemented!()
     }
 
-    pub fn begin_move_in_dir(&mut self, speed: Speed, dir: FocuserDir) -> Result<(), Box<dyn Error>> {
+    pub fn move_in_dir(&mut self, speed: Speed, dir: FocuserDir) -> Result<(), Box<dyn Error>> {
         let PositionRange{ min, max } = self.focuser.pos_range().unwrap();
-        self.focuser.begin_move(match dir { FocuserDir::Negative => min, FocuserDir::Positive => max }, speed)
+        self.focuser.move_(match dir { FocuserDir::Negative => min, FocuserDir::Positive => max }, speed)
     }
 }
 
 pub fn connect_to_focuser(connection: DeviceConnection) -> Result<FocuserWrapper, Box<dyn Error>> {
     match connection {
-        DeviceConnection::FocusCube3{ connection } => {
-            Ok(FocuserWrapper::new(Box::new(focuscube3::FocusCube3::new(connection)?)))
-        },
+        DeviceConnection::FocusCube3{ connection } =>
+            Ok(FocuserWrapper::new(Box::new(focuscube3::FocusCube3::new(connection)?))),
 
-        _ => unreachable!()
+        DeviceConnection::FocuserSimulator => Ok(FocuserWrapper::new(Box::new(simulator::Simulator::new()?))),
+
+        _ => unimplemented!()
     }
 }

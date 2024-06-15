@@ -160,7 +160,7 @@ impl Focuser for FocusCube3 {
         Ok(State{ pos, moving, temperature })
     }
 
-    fn begin_move(&mut self, target: Position, speed: Speed) -> Result<(), Box<dyn Error>> {
+    fn move_(&mut self, target: Position, speed: Speed) -> Result<(), Box<dyn Error>> {
         if speed.is_zero() {
             self.stop()
         } else {
