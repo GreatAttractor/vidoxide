@@ -19,7 +19,7 @@ use std::error::Error;
 
 pub type FC3Connection = focuscube3::Connection;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct Position(pub i32);
 
 #[derive(Copy, Clone)]
@@ -27,7 +27,7 @@ pub struct RelativePos(pub Position);
 
 /// For each focuser driver: value of 1.0 means "normal, reasonable speed"; not "so fast the attached mechanics will be
 /// torn apart before the user can react".
-#[derive(Copy, Clone, PartialEq, PartialOrd)]
+#[derive(Copy, Clone, Debug, PartialEq, PartialOrd)]
 pub struct Speed(f64);
 
 impl Speed {

@@ -65,7 +65,6 @@ impl FocuserWidgets {
         let mut speeds = self.speeds.borrow_mut();
         for speed in speeds.iter_mut() {
             speed.supported = speed.speed >= min && speed.speed <= max;
-            //speed[idx] = mount.slewing_speed_supported(m * mount::SIDEREAL_RATE);
         }
     }
 
@@ -73,7 +72,6 @@ impl FocuserWidgets {
     {
         self.wbox.set_sensitive(false);
         self.status.set_text("disconnected");
-        // self.disable_sky_tracking_btn();
     }
 
     pub fn selected_speed(&self) -> focuser::Speed {
@@ -174,14 +172,15 @@ pub fn focuser_move(
     if speed.is_zero() {
         schedule_refresh_stop(program_data_rc);
     } else {
-        program_data_rc.borrow().gui.as_ref().unwrap().focuser_widgets.refresh_timer.run(
+        let pd = program_data_rc.borrow();
+        let gui = pd.gui.as_ref().unwrap();
+        gui.focuser_widgets.refresh_stop_timer.stop();
+        gui.focuser_widgets.refresh_timer.run(
             REFRESH_INTERVAL,
             false,
             clone!(@weak program_data_rc => @default-panic, move || on_refresh(&program_data_rc) )
         );
     }
-
-
 
     let res = program_data_rc.borrow_mut().focuser_data.focuser.as_mut().unwrap().move_in_dir(speed, dir);
     if let Err(e) = &res { /*TODO on_error...*/ }
@@ -205,7 +204,7 @@ pub fn create_focuser_box(program_data_rc: &Rc<RefCell<ProgramData>>) -> Focuser
         SpeedDescr{ speed: focuser::Speed::new(64.0),       label: "64x".into()  , supported: false },
     ]));
 
-    let normal_speed_idx = speeds.borrow().iter().enumerate().find(|(idx, s)| s.speed.get() == 1.0).unwrap().0;
+    let normal_speed_idx = speeds.borrow().iter().enumerate().find(|(_, s)| s.speed.get() == 1.0).unwrap().0;
 
     let contents = gtk::Box::new(gtk::Orientation::Vertical, 0);
 
@@ -240,7 +239,8 @@ pub fn create_focuser_box(program_data_rc: &Rc<RefCell<ProgramData>>) -> Focuser
     let btn_move_neg = gtk::Button::with_label("←");
     btn_move_neg.set_tooltip_text(Some("Move focuser in negative direction"));
     btn_move_neg.connect_button_press_event(clone!(@weak program_data_rc => @default-panic, move |_, _| {
-        gtk::Inhibit(focuser_move(focuser::Speed::new(1.0), focuser::FocuserDir::Negative, &program_data_rc).is_err())
+        let speed = program_data_rc.borrow().gui.as_ref().unwrap().focuser_widgets().selected_speed();
+        gtk::Inhibit(focuser_move(speed, focuser::FocuserDir::Negative, &program_data_rc).is_err())
     }));
     btn_move_neg.connect_button_release_event(clone!(@weak program_data_rc => @default-panic, move |_, _| {
         gtk::Inhibit(focuser_move(focuser::Speed::new(0.0), focuser::FocuserDir::Negative, &program_data_rc).is_err())
@@ -250,7 +250,8 @@ pub fn create_focuser_box(program_data_rc: &Rc<RefCell<ProgramData>>) -> Focuser
     let btn_move_pos = gtk::Button::with_label("→");
     btn_move_pos.set_tooltip_text(Some("Move focuser in positive direction"));
     btn_move_pos.connect_button_press_event(clone!(@weak program_data_rc => @default-panic, move |_, _| {
-        gtk::Inhibit(focuser_move(focuser::Speed::new(1.0), focuser::FocuserDir::Positive, &program_data_rc).is_err())
+        let speed = program_data_rc.borrow().gui.as_ref().unwrap().focuser_widgets().selected_speed();
+        gtk::Inhibit(focuser_move(speed, focuser::FocuserDir::Positive, &program_data_rc).is_err())
     }));
     btn_move_pos.connect_button_release_event(clone!(@weak program_data_rc => @default-panic, move |_, _| {
         gtk::Inhibit(focuser_move(focuser::Speed::new(0.0), focuser::FocuserDir::Negative, &program_data_rc).is_err())
