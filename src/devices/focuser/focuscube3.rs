@@ -78,6 +78,9 @@ impl FocusCube3 {
 
             Connection::TcpIp { ref address } => {
                 let mut stream = std::net::TcpStream::connect(address)?;
+                const TIMEOUT: std::time::Duration = std::time::Duration::from_millis(100);
+                stream.set_read_timeout(Some(TIMEOUT))?;
+                stream.set_write_timeout(Some(TIMEOUT))?;
                 // authenticate with default password
                 utils::send_cmd_and_get_reply(
                     &mut stream,

@@ -31,7 +31,9 @@ pub fn send_cmd_and_get_reply<T: std::io::Read + std::io::Write>(
     response_type: ResponseType,
     on_invalid_resp: InvalidResponseTreatment
 ) -> Result<Vec<u8>, Box<dyn Error>> {
+    let t0 = std::time::Instant::now();
     device.write_all(&cmd.clone().into_bytes())?;
+    log::trace!("device.write_all took {:.03} ms", t0.elapsed().as_secs_f64() * 1000.0);
 
     match &response_type {
         ResponseType::CharsReceived(chars) => { if chars.is_empty() { return Ok(vec![]); } },
@@ -43,6 +45,7 @@ pub fn send_cmd_and_get_reply<T: std::io::Read + std::io::Write>(
 
     let mut buf = vec![];
     let mut reply_received = false;
+    let t0 = std::time::Instant::now();
     while !reply_received {
         buf.push(0);
         if buf.len() > 1024 { return Err("response has too many characters".into()); }
@@ -58,6 +61,8 @@ pub fn send_cmd_and_get_reply<T: std::io::Read + std::io::Write>(
             ResponseType::None => unreachable!()
         };
     }
+
+    log::trace!("receiving reply took {:.03} ms", t0.elapsed().as_secs_f64() * 1000.0);
 
     if let ResponseType::CharsReceived(chars) = &response_type {
         if &buf != chars.as_bytes() { reply_error = true; }
