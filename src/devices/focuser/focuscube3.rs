@@ -84,7 +84,7 @@ impl FocusCube3 {
                 // authenticate with default password
                 utils::send_cmd_and_get_reply(
                     &mut stream,
-                    "12345678\n".into(),
+                    "12345678\n".as_bytes(),
                     ResponseType::EndsWith('\n'),
                     InvalidResponseTreatment::Fail
                 )?;
@@ -116,7 +116,7 @@ impl FocusCube3 {
         } else {
             send_cmd!(
                 self,
-                format!("SP:{}\n", speed.0),
+                format!("SP:{}\n", speed.0).as_bytes(),
                 ResponseType::EndsWith('\n'),
                 InvalidResponseTreatment::Fail
             ).map(|_| ())?;
@@ -145,7 +145,7 @@ impl Focuser for FocusCube3 {
     fn state(&mut self) -> Result<State, Box<dyn Error>> {
         let reply = send_cmd!(
             self,
-            "FA\n".into(),
+            "FA\n".as_bytes(),
             ResponseType::EndsWith('\n'),
             InvalidResponseTreatment::Fail
         )?;
@@ -171,7 +171,7 @@ impl Focuser for FocusCube3 {
 
             send_cmd!(
                 self,
-                format!("FM:{}\n", target.0),
+                format!("FM:{}\n", target.0).as_bytes(),
                 ResponseType::EndsWith('\n'),
                 InvalidResponseTreatment::Fail
             ).map(|_| ())
@@ -181,7 +181,7 @@ impl Focuser for FocusCube3 {
     fn sync(&mut self, current_pos: Position) -> Result<(), Box<dyn Error>> {
         send_cmd!(
             self,
-            format!("FN:{}\n", current_pos.0),
+            format!("FN:{}\n", current_pos.0).as_bytes(),
             ResponseType::None,
             InvalidResponseTreatment::Fail
         ).map(|_| ())
@@ -190,7 +190,7 @@ impl Focuser for FocusCube3 {
     fn stop(&mut self) -> Result<(), Box<dyn Error>> {
         send_cmd!(
             self,
-            "FH\n".into(),
+            "FH\n".as_bytes(),
             ResponseType::None,
             InvalidResponseTreatment::Fail
         )?;

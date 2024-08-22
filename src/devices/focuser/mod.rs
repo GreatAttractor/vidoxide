@@ -125,6 +125,9 @@ pub fn connect_to_focuser(connection: DeviceConnection) -> Result<FocuserWrapper
 
         DeviceConnection::FocuserSimulator => Ok(FocuserWrapper::new(Box::new(simulator::Simulator::new()?))),
 
+        DeviceConnection::DreamFocuserMini{ device } =>
+            Ok(FocuserWrapper::new(Box::new(dream_focuser_mini::DreamFocuserMini::new(&device)?))),
+
         _ => unimplemented!()
     }
 }

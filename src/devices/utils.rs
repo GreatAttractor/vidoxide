@@ -27,12 +27,12 @@ pub enum InvalidResponseTreatment {
 
 pub fn send_cmd_and_get_reply<T: std::io::Read + std::io::Write>(
     device: &mut T,
-    cmd: String,
+    cmd: &[u8],
     response_type: ResponseType,
     on_invalid_resp: InvalidResponseTreatment
 ) -> Result<Vec<u8>, Box<dyn Error>> {
     let t0 = std::time::Instant::now();
-    device.write_all(&cmd.clone().into_bytes())?;
+    device.write_all(cmd)?;
     log::trace!("device.write_all took {:.03} ms", t0.elapsed().as_secs_f64() * 1000.0);
 
     match &response_type {
@@ -69,7 +69,7 @@ pub fn send_cmd_and_get_reply<T: std::io::Read + std::io::Write>(
     }
 
     if reply_error {
-        let message = format!("cmd \"{}\" failed to get expected response: {:?}", cmd, response_type);
+        let message = format!("cmd \"{}\" failed to get expected response: {:?}", String::from_utf8_lossy(cmd), response_type);
         match on_invalid_resp {
             InvalidResponseTreatment::Fail => return Err(message.into()),
             InvalidResponseTreatment::Ignore{ log_warning } => if log_warning { log::warn!("{}", message); }

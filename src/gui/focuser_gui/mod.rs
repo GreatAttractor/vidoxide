@@ -12,6 +12,7 @@
 
 mod connection_dialog; //TODO remove
 
+pub mod dream_focuser_mini;
 pub mod focuscube3;
 pub mod simulator;
 

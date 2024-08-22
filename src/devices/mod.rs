@@ -27,7 +27,7 @@ pub enum DeviceConnection {
     AscomMount{ prog_id: String },
     MountSimulator,
     FocuserSimulator,
-    //DreamFocuserMini{ device: String },
+    DreamFocuserMini{ device: String },
     FocusCube3{ connection: focuser::FC3Connection },
 }
 
@@ -46,7 +46,7 @@ impl DeviceConnectionDiscriminants {
             #[cfg(feature = "mount_ascom")]
             DeviceConnectionDiscriminants::AscomMount => DeviceType::Mount,
             DeviceConnectionDiscriminants::MountSimulator => DeviceType::Mount,
-            // DeviceConnectionDiscriminants::DreamFocuserMini{..} => DeviceType::Focuser,
+            DeviceConnectionDiscriminants::DreamFocuserMini{..} => DeviceType::Focuser,
             DeviceConnectionDiscriminants::FocusCube3{..} => DeviceType::Focuser,
             DeviceConnectionDiscriminants::FocuserSimulator => DeviceType::Focuser,
         }

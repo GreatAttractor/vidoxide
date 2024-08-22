@@ -276,6 +276,8 @@ pub fn make_creator(
 
         DCD::IoptronMountSerial => mount_gui::ioptron::IoptronConnectionCreator::new(config),
 
+        DCD::DreamFocuserMini => focuser_gui::dream_focuser_mini::DreamFocuserMiniConnectionCreator::new(config),
+
         DCD::FocusCube3 => focuser_gui::focuscube3::FocusCube3ConnectionCreator::new(config),
 
         DCD::FocuserSimulator => focuser_gui::simulator::SimulatorConnectionCreator::new(config),

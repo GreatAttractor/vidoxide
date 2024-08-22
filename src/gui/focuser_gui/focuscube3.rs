@@ -7,7 +7,7 @@
 //
 
 //!
-//! iOptron mount connection GUI.
+//! FocusCube3 connection GUI.
 //!
 
 use crate::{
