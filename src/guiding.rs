@@ -1,6 +1,6 @@
 //
 // Vidoxide - Image acquisition for amateur astronomy
-// Copyright (c) 2020-2023 Filip Szczerek <ga.software@yahoo.com>
+// Copyright (c) 2020-2024 Filip Szczerek <ga.software@yahoo.com>
 //
 // This project is licensed under the terms of the MIT license
 // (see the LICENSE file for details).
@@ -72,7 +72,7 @@ pub fn guiding_step(program_data_rc: &Rc<RefCell<ProgramData>>) {
 
     let mut error = Ok(());
 
-    loop { // `loop` is only for an easy early exit from this block
+    'block: {
         let mut pd = program_data_rc.borrow_mut();
 
         let dpos = *pd.mount_data.guiding_pos.as_ref().unwrap() - pd.tracking.as_ref().unwrap().pos;
@@ -95,7 +95,7 @@ pub fn guiding_step(program_data_rc: &Rc<RefCell<ProgramData>>) {
             );
             error = pd.mount_data.mount.as_mut().unwrap().guide(x_speed, y_speed);
 
-            if error.is_err() { break; }
+            if error.is_err() { break 'block; }
 
             pd.mount_data.guide_slewing = true;
 
@@ -106,7 +106,7 @@ pub fn guiding_step(program_data_rc: &Rc<RefCell<ProgramData>>) {
             );
         } else {
             error = pd.mount_data.mount.as_mut().unwrap().guide(RadPerSec(0.0), RadPerSec(0.0));
-            if error.is_err() { break; }
+            if error.is_err() { break 'block; }
 
             pd.mount_data.guide_slewing = false;
             log::info!("back on target");
@@ -117,8 +117,6 @@ pub fn guiding_step(program_data_rc: &Rc<RefCell<ProgramData>>) {
                 clone!(@weak program_data_rc => @default-panic, move || guiding_step(&program_data_rc))
             );
         }
-
-        break;
     }
 
     if let Err(e) = error {

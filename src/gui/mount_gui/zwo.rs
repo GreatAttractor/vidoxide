@@ -10,51 +10,40 @@
 //! ZWO mount connection GUI.
 //!
 
-use crate::gui::mount_gui::connection_dialog::ConnectionCreator;
-use crate::mount::MountConnection;
-use gtk::prelude::*;
+use crate::{
+    devices::DeviceConnection,
+    gui::{BasicConnectionControls, ConnectionCreator}
+};
+use std::error::Error;
 
 /// Control padding in pixels.
 const PADDING: u32 = 10;
 
 pub struct ZWOConnectionCreator {
-    dialog_tab: gtk::Box,
-    entry: gtk::Entry
+    controls: BasicConnectionControls
 }
 
 impl ZWOConnectionCreator {
-    pub(in crate::gui::mount_gui) fn new(configuration: &crate::config::Configuration) -> Box<dyn ConnectionCreator> {
-        let vbox = gtk::Box::new(gtk::Orientation::Vertical, 0);
-
-        vbox.pack_start(
-            &gtk::Label::new(Some("ZWO direct serial connection")),
-            false,
-            false,
-            PADDING
-        );
-
-        vbox.pack_start(
-            &gtk::Label::new(Some("Device name (e.g., “COM5” on Windows or “/dev/ttyACM0” on Linux):")),
-            false,
-            false,
-            PADDING
-        );
-
-        let entry = gtk::Entry::new();
-        entry.set_text(&configuration.zwo_last_device().unwrap_or("".to_string()));
-        vbox.pack_start(&entry, true, false, PADDING);
-
-        Box::new(ZWOConnectionCreator{ dialog_tab: vbox, entry })
+    pub fn new(configuration: &crate::config::Configuration) -> Box<dyn ConnectionCreator> {
+        Box::new(ZWOConnectionCreator{
+            controls: BasicConnectionControls::new(
+                None,
+                Some("Device name (e.g., “COM5” on Windows or “/dev/ttyUSB0” on Linux):"),
+                true,
+                Some(configuration.zwo_last_device().unwrap_or("".to_string()))
+            )
+        })
     }
 }
 
 impl ConnectionCreator for ZWOConnectionCreator {
-    fn dialog_tab(&self) -> &gtk::Box { &self.dialog_tab }
+    fn controls(&self) -> &gtk::Box { &self.controls.controls() }
 
-    fn create(&self, configuration: &crate::config::Configuration) -> MountConnection {
-        configuration.set_zwo_last_device(&self.entry.text());
-        MountConnection::ZWOSerial(self.entry.text().as_str().to_string())
+    fn create(&self, configuration: &crate::config::Configuration) -> Result<DeviceConnection, Box<dyn Error>> {
+        let device = self.controls.connection_string();
+        configuration.set_zwo_last_device(&device);
+        Ok(DeviceConnection::IoptronMountSerial{device})
     }
 
-    fn label(&self) -> &'static str { "ZWO" }
+    fn label(&self) -> &'static str { "ZWO (direct serial connection)" }
 }

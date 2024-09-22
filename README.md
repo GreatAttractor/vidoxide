@@ -41,6 +41,10 @@ Demonstration video: [link](https://www.youtube.com/watch?v=7s_nibrTrsU)
   - ASCOM (tested with ASCOM/EQMod and a 2014 HEQ5), MS Windows only
   - ZWO Mounts direct serial connection (tested on AM3/AM5)
 
+**Supported focusers:**
+  - FocusCube 3
+  - DreamFocuser mini
+
 **Image feature tracking:**
   - self-guiding (with supported mounts): selected image feature (or a planet – via centroid) stays in the same place of the FOV
   - live crop: only a ROI around a selected image feature is recorded

@@ -10,19 +10,22 @@
 //! GUI module.
 //!
 
+mod basic_connection_controls;
 mod camera_gui;
 mod checked_listbox;
 #[cfg(feature = "controller")]
 mod controller;
 mod dec_intervals;
+mod device_connection_dialog;
 mod dispersion_dialog;
+mod focuser_gui;
 mod freezeable;
-mod preview_processing;
 mod histogram_utils;
 mod histogram_view;
 mod img_view;
 mod info_overlay;
 mod mount_gui;
+mod preview_processing;
 mod psf_dialog;
 mod rec_gui;
 mod reticle_dialog;
@@ -41,6 +44,7 @@ use controller::{ControllerDialog, init_controller_menu};
 use crate::{CameraControlChange, NewControlValue, OnCapturePauseAction, ProgramData};
 use crate::camera;
 use crate::camera::CameraError;
+use crate::devices::{DeviceConnection, DeviceConnectionDiscriminants};
 use crate::mount;
 use crate::mount::RadPerSec;
 use crate::resources;
@@ -57,6 +61,7 @@ use gtk::prelude::*;
 use histogram_view::HistogramView;
 use img_view::ImgView;
 use info_overlay::{InfoOverlay, ScreenSelection, draw_info_overlay};
+use focuser_gui::FocuserWidgets;
 use mount_gui::MountWidgets;
 use num_traits::cast::{FromPrimitive, AsPrimitive};
 use psf_dialog::PsfDialog;
@@ -64,13 +69,17 @@ use rec_gui::RecWidgets;
 use reticle_dialog::create_reticle_dialog;
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::error::Error;
 use std::path::Path;
 use std::rc::Rc;
 use std::sync::atomic::Ordering;
 
 #[cfg(feature = "controller")]
 pub use crate::controller::on_controller_event;
+pub use focuser_gui::focuser_move;
+
 pub use mount_gui::{axis_slew, on_mount_error};
+pub use basic_connection_controls::BasicConnectionControls;
 
 /// Control padding in pixels.
 const PADDING: u32 = 10;
@@ -190,6 +199,7 @@ pub struct GuiData {
     controller_dialog: ControllerDialog,
     dispersion_dialog: DispersionDialog,
     psf_dialog: PsfDialog,
+    focuser_widgets: FocuserWidgets,
     mount_widgets: MountWidgets,
     mouse_mode: MouseMode,
     info_overlay: InfoOverlay,
@@ -202,6 +212,8 @@ pub struct GuiData {
 }
 
 impl GuiData {
+    pub fn focuser_widgets(&self) -> &FocuserWidgets { &self.focuser_widgets }
+
     pub fn mount_widgets(&self) -> &MountWidgets { &self.mount_widgets }
 
     #[cfg(feature = "controller")]
@@ -227,6 +239,46 @@ impl Drop for DialogDestroyer {
         unsafe { self.dialog.destroy(); }
     }
 }
+
+pub trait ConnectionCreator {
+    fn controls(&self) -> &gtk::Box;
+
+    fn create(
+        &self,
+        configuration: &crate::config::Configuration
+    ) -> Result<crate::devices::DeviceConnection, Box<dyn Error>>;
+
+    fn label(&self) -> &'static str;
+}
+
+pub fn make_creator(
+    connection: crate::devices::DeviceConnectionDiscriminants,
+    config: &crate::config::Configuration
+) -> Box<dyn ConnectionCreator> {
+    type DCD = DeviceConnectionDiscriminants;
+    match connection {
+        #[cfg(feature = "mount_ascom")]
+        DCD::AscomMount => creators.push(ascom::AscomConnectionCreator::new(config)),
+
+        DCD::MountSimulator => mount_gui::simulator::SimulatorConnectionCreator::new(config),
+
+        DCD::SkyWatcherMountSerial => mount_gui::skywatcher::SWConnectionCreator::new(config),
+
+        DCD::IoptronMountSerial => mount_gui::ioptron::IoptronConnectionCreator::new(config),
+
+        DCD::ZWOMountSerial => mount_gui::zwo::ZWOConnectionCreator::new(config),
+
+        DCD::DreamFocuserMini => focuser_gui::dream_focuser_mini::DreamFocuserMiniConnectionCreator::new(config),
+
+        DCD::FocusCube3 => focuser_gui::focuscube3::FocusCube3ConnectionCreator::new(config),
+
+        DCD::FocuserSimulator => focuser_gui::simulator::SimulatorConnectionCreator::new(config),
+
+        _ => unimplemented!()
+
+    }
+}
+
 
 fn create_status_bar() -> (gtk::Frame, StatusBarFields) {
     let status_bar_box = gtk::Box::new(gtk::Orientation::Horizontal, 0);
@@ -417,6 +469,9 @@ pub fn init_main_window(app: &gtk::Application, program_data_rc: &Rc<RefCell<Pro
     let mount_widgets = mount_gui::create_mount_box(program_data_rc);
     controls_notebook.append_page(mount_widgets.wbox(), Some(&gtk::Label::new(Some("Mount"))));
 
+    let focuser_widgets = focuser_gui::create_focuser_box(program_data_rc);
+    controls_notebook.append_page(focuser_widgets.wbox(), Some(&gtk::Label::new(Some("Focuser"))));
+
     let controls_notebook_scroller = gtk::ScrolledWindow::new::<gtk::Adjustment, gtk::Adjustment>(None, None);
     controls_notebook_scroller.add(&controls_notebook);
 
@@ -474,6 +529,7 @@ pub fn init_main_window(app: &gtk::Application, program_data_rc: &Rc<RefCell<Pro
         camera_menu_items,
         preview_area,
         rec_widgets,
+        focuser_widgets,
         mount_widgets,
         info_overlay: InfoOverlay::new(),
         reticle: Reticle{
@@ -929,9 +985,9 @@ fn init_menu(
     camera_menu_item.set_submenu(Some(&camera_menu));
     menu_bar.append(&camera_menu_item);
 
-    let mount_menu_item = gtk::MenuItem::with_label("Mount");
-    mount_menu_item.set_submenu(Some(&mount_gui::init_mount_menu(program_data_rc)));
-    menu_bar.append(&mount_menu_item);
+    let devices_menu_item = gtk::MenuItem::with_label("Devices");
+    devices_menu_item.set_submenu(Some(&init_devices_menu(program_data_rc)));
+    menu_bar.append(&devices_menu_item);
 
     let preview_menu_item = gtk::MenuItem::with_label("Preview");
     preview_menu_item.set_submenu(Some(&init_preview_menu(program_data_rc, &accel_group)));
@@ -945,6 +1001,20 @@ fn init_menu(
     }
 
     (menu_bar, camera_menu, camera_menu_items)
+}
+
+fn init_devices_menu(program_data_rc: &Rc<RefCell<ProgramData>>) -> gtk::Menu {
+    let menu = gtk::Menu::new();
+
+    let mount_menu_item = gtk::MenuItem::with_label("Mount");
+    mount_menu_item.set_submenu(Some(&mount_gui::init_mount_menu(program_data_rc)));
+    menu.append(&mount_menu_item);
+
+    let focuser_menu_item = gtk::MenuItem::with_label("Focuser");
+    focuser_menu_item.set_submenu(Some(&focuser_gui::init_focuser_menu(program_data_rc)));
+    menu.append(&focuser_menu_item);
+
+    menu
 }
 
 fn init_preview_menu(
@@ -1006,7 +1076,7 @@ fn show_about_dialog(program_data_rc: &Rc<RefCell<ProgramData>>) {
     show_message(
         &format!(
             "<big><big><b>Vidoxide</b></big></big>\n\n\
-            Copyright © 2020-2023 Filip Szczerek (ga.software@yahoo.com)\n\n\
+            Copyright © 2020-2024 Filip Szczerek (ga.software@yahoo.com)\n\n\
             This project is licensed under the terms of the MIT license (see the LICENSE file for details).\n\n\
             version: {}\n\
             OS: {}",
@@ -1205,19 +1275,17 @@ fn on_tracking_ended(program_data_rc: &Rc<RefCell<ProgramData>>) {
         //TODO: stop only if a guiding or calibration slew is in progress, not one started by user via an arrow button
 
         let mut error;
-        loop { // no actual loop, just for early exit
+        'block: {
             let mut pd = program_data_rc.borrow_mut();
             let mount = pd.mount_data.mount.as_mut().unwrap();
 
             error = mount.guide(RadPerSec(0.0), RadPerSec(0.0));
-            if error.is_err() { break; }
+            if error.is_err() { break 'block; }
 
             error = mount.slew(mount::Axis::Primary, mount::SlewSpeed::zero());
-            if error.is_err() { break; }
+            if error.is_err() { break 'block; }
 
             error = mount.slew(mount::Axis::Secondary, mount::SlewSpeed::zero());
-
-            break;
         }
 
         if let Err(e) = &error {
