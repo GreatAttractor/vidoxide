@@ -37,6 +37,9 @@ impl DreamFocuserMiniConnectionCreator {
         );
 
         let device = gtk::Entry::new();
+        if let Some(s) = configuration.dreamfocuser_mini_last_serial_port() {
+            device.set_text(&s);
+        }
         controls.pack_start(&device, false, true, PADDING);
 
         Box::new(DreamFocuserMiniConnectionCreator{ controls, device })
@@ -48,8 +51,7 @@ impl ConnectionCreator for DreamFocuserMiniConnectionCreator {
 
     fn create(&self, configuration: &crate::config::Configuration) -> Result<DeviceConnection, Box<dyn Error>> {
         let device = self.device.text().as_str().to_string();
-
-        // TODO: update configuration configuration.set_...(&device);
+        configuration.set_dreamfocuser_mini_last_serial_port(&device);
         Ok(DeviceConnection::DreamFocuserMini{ device })
     }
 

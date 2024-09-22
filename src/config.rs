@@ -45,6 +45,8 @@ mod keys {
     // group FOCUSER
     pub const FOCUSCUBE3_LAST_SERIAL_PORT: &str = "FocusCube3LastSerialPort";
     pub const FOCUSCUBE3_LAST_NETWORK_ADDR: &str = "FocusCube3LastNetworkAddr";
+    pub const FOCUSCUBE3_LAST_NETWORK_PWD: &str = "FocusCube3LastNetworkPwd";
+    pub const DREAMFOCUSER_MINI_LAST_SERIAL_PORT: &str = "DreamFocuserMiniLastSerialPort";
 
     // group MOUNT
     pub const IOPTRON_LAST_DEVICE: &str = "iOptronLastDevice";
@@ -303,6 +305,22 @@ impl Configuration {
 
     pub fn set_focuscube3_last_network_addr(&self, value: &str) {
         self.key_file.set_string(groups::FOCUSER, keys::FOCUSCUBE3_LAST_NETWORK_ADDR, value);
+    }
+
+    pub fn focuscube3_last_network_pwd(&self) -> Option<String> {
+        self.key_file.string(groups::FOCUSER, keys::FOCUSCUBE3_LAST_NETWORK_PWD).ok().map(|s| s.to_string())
+    }
+
+    pub fn set_focuscube3_last_network_pwd(&self, value: &str) {
+        self.key_file.set_string(groups::FOCUSER, keys::FOCUSCUBE3_LAST_NETWORK_PWD, value);
+    }
+
+    pub fn dreamfocuser_mini_last_serial_port(&self) -> Option<String> {
+        self.key_file.string(groups::FOCUSER, keys::DREAMFOCUSER_MINI_LAST_SERIAL_PORT).ok().map(|s| s.to_string())
+    }
+
+    pub fn set_dreamfocuser_mini_last_serial_port(&self, value: &str) {
+        self.key_file.set_string(groups::FOCUSER, keys::DREAMFOCUSER_MINI_LAST_SERIAL_PORT, value);
     }
 }
 

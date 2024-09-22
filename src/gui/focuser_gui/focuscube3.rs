@@ -25,14 +25,13 @@ pub struct FocusCube3ConnectionCreator {
     rb_serial: gtk::RadioButton,
     serial_port: gtk::Entry,
     rb_net: gtk::RadioButton,
-    network_addr: gtk::Entry
+    network_addr: gtk::Entry,
+    network_pwd: gtk::Entry
 }
 
 impl FocusCube3ConnectionCreator {
     pub fn new(configuration: &crate::config::Configuration) -> Box<dyn ConnectionCreator> {
         let controls = gtk::Box::new(gtk::Orientation::Vertical, 0);
-
-        //focuscube3.local:9999
 
         let serial_box = gtk::Box::new(gtk::Orientation::Horizontal, 0);
         let rb_serial = gtk::RadioButton::with_label("Serial port:");
@@ -53,9 +52,27 @@ impl FocusCube3ConnectionCreator {
             network_addr.set_text("focuscube3.local:9999");
         }
         net_box.pack_start(&network_addr, false, false, PADDING);
+        net_box.pack_start(&gtk::Label::new(Some("password:")), false, false, PADDING);
+        let network_pwd = gtk::EntryBuilder::new().input_purpose(gtk::InputPurpose::Password).visibility(false).build();
+        if let Some(s) = configuration.focuscube3_last_network_pwd() {
+            network_pwd.set_text(&s);
+        } else {
+            network_pwd.set_text("12345678"); // default FC3 password
+        }
+        net_box.pack_start(&network_pwd, false, false, PADDING);
         controls.pack_start(&net_box, false, false, PADDING);
+        controls.pack_start(
+            &gtk::LabelBuilder::new()
+                .label("<b>WARNING</b>: password is stored in plain text in the configuration file.")
+                .use_markup(true)
+                .halign(gtk::Align::End)
+                .build(),
+            false,
+            true,
+            PADDING
+        );
 
-        Box::new(FocusCube3ConnectionCreator { controls, rb_serial, serial_port, rb_net, network_addr })
+        Box::new(FocusCube3ConnectionCreator { controls, rb_serial, serial_port, rb_net, network_addr, network_pwd })
     }
 }
 
@@ -69,9 +86,11 @@ impl ConnectionCreator for FocusCube3ConnectionCreator {
             Ok(DeviceConnection::FocusCube3{ connection: FC3Connection::Serial{ device } })
         } else {
             let address = self.network_addr.text().as_str().to_string();
+            let password = self.network_pwd.text().as_str().to_string();
             configuration.set_focuscube3_last_network_addr(&address);
+            configuration.set_focuscube3_last_network_pwd(&password);
 
-            Ok(DeviceConnection::FocusCube3{ connection: FC3Connection::TcpIp{ address } })
+            Ok(DeviceConnection::FocusCube3{ connection: FC3Connection::TcpIp{ address, password } })
         }
     }
 

@@ -31,7 +31,7 @@ impl RawSpeed {
 
 pub enum Connection {
     Serial{ device: String },
-    TcpIp{ address: String }
+    TcpIp{ address: String, password: String }
 }
 
 enum Device {
@@ -76,15 +76,15 @@ impl FocusCube3 {
                     .open()?)
             },
 
-            Connection::TcpIp { ref address } => {
+            Connection::TcpIp { ref address, ref password } => {
                 let mut stream = std::net::TcpStream::connect(address)?;
                 const TIMEOUT: std::time::Duration = std::time::Duration::from_millis(100);
                 stream.set_read_timeout(Some(TIMEOUT))?;
                 stream.set_write_timeout(Some(TIMEOUT))?;
-                // authenticate with default password
+                // authenticate
                 utils::send_cmd_and_get_reply(
                     &mut stream,
-                    "12345678\n".as_bytes(),
+                    password.as_bytes(),
                     ResponseType::EndsWith('\n'),
                     InvalidResponseTreatment::Fail
                 )?;
@@ -96,7 +96,7 @@ impl FocusCube3 {
         let mut fc3 = FocusCube3{
             connection_str: match connection {
                 Connection::Serial{ device } => device,
-                Connection::TcpIp{ address } => address
+                Connection::TcpIp{ address, password: _ } => address
             },
             device,
             speed: RawSpeed(0)
