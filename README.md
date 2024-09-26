@@ -98,7 +98,7 @@ Open the "MSYS2 MinGW 64-bit" shell (from the Start menu, or directly via `C:\ms
 $ pacman -S git base-devel mingw-w64-x86_64-toolchain mingw-w64-x86_64-gtk3
 ```
 
-From now on it is assumed that FlyCapture2 and Spinnaker camera APIs are to be used. Download and install the FlyCapture2 & Spinnaker SDKs, go to the location of FC2 binaries (by default, "C:\Program Files\Point Grey Research\FlyCapture2\bin64") and check if the `FlyCapture2_C.dll` file exists. If not, make a copy of the corresponding versioned file (e.g., `FlyCapture2_C_v100.dll`) in the same location and rename it `FlyCapture2_C.dll` (this is required due to the `libflycapture2-sys` crate's expectations).
+From now on it is assumed that the FlyCapture2, Spinnaker and ZWO ASI camera APIs are to be used. Download and install the FlyCapture2, Spinnaker & ZWO ASI SDKs, go to the location of FC2 binaries (by default, "C:\Program Files\Point Grey Research\FlyCapture2\bin64") and check if the `FlyCapture2_C.dll` file exists. If not, make a copy of the corresponding versioned file (e.g., `FlyCapture2_C_v100.dll`) in the same location and rename it `FlyCapture2_C.dll` (this is required due to the `libflycapture2-sys` crate's expectations).
 
 Pull Rust binaries into `$PATH`:
 ```bash
@@ -106,7 +106,7 @@ $ export PATH=$PATH:/c/Users/MY_USERNAME/.cargo/bin
 ```
 then change to the Vidoxide source directory and build it:
 ```bash
-$ SPINNAKER_LIBDIR="C:\Program Files\FLIR Systems\Spinnaker\bin64\vs2015" FLYCAP_LIBDIR="C:\Program Files\Point Grey Research\FlyCapture2\bin64" ASICAMERA_LIBDIR="C:\Downloads\ASI SDK\lib\x64" cargo build --release --features "camera_flycap2 camera_spinnaker mount_ascom"
+$ SPINNAKER_LIBDIR="C:\Program Files\FLIR Systems\Spinnaker\bin64\vs2015" FLYCAP_LIBDIR="C:\Program Files\Point Grey Research\FlyCapture2\bin64" ASICAMERA_LIBDIR="C:\Downloads\ASI SDK\lib\x64" cargo build --release --features "camera_flycap2 camera_spinnaker camera_asi mount_ascom"
 ```
 Initially it will take several minutes, as all dependencies have to be downloaded and built first. Note that the location of FC2 DLLs must be given in `FLYCAP_LIBDIR`, Spinnaker DLLs in `SPINNAKER_LIBDIR`, and ASI DLL in `ASICAMERA_LIBDIR`.
 
