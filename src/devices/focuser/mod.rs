@@ -17,6 +17,7 @@ mod simulator;
 use crate::devices::DeviceConnection;
 use std::error::Error;
 
+pub type DFminiConnection = dream_focuser_mini::Connection;
 pub type FC3Connection = focuscube3::Connection;
 
 #[derive(Copy, Clone, Debug)]
@@ -125,8 +126,8 @@ pub fn connect_to_focuser(connection: DeviceConnection) -> Result<FocuserWrapper
 
         DeviceConnection::FocuserSimulator => Ok(FocuserWrapper::new(Box::new(simulator::Simulator::new()?))),
 
-        DeviceConnection::DreamFocuserMini{ device } =>
-            Ok(FocuserWrapper::new(Box::new(dream_focuser_mini::DreamFocuserMini::new(&device)?))),
+        DeviceConnection::DreamFocuserMini{ connection } =>
+            Ok(FocuserWrapper::new(Box::new(dream_focuser_mini::DreamFocuserMini::new(connection)?))),
 
         _ => unimplemented!()
     }
