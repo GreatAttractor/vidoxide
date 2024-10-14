@@ -17,6 +17,7 @@ pub mod simulator;
 use crate::{
     devices::{DeviceConnectionDiscriminants, DeviceType, focuser},
     gui::{device_connection_dialog, show_message},
+    lim_freq_action::LimitedFreqAction,
     ProgramData,
     timer::Timer
 };
@@ -85,8 +86,8 @@ pub fn init_focuser_menu(program_data_rc: &Rc<RefCell<ProgramData>>) -> gtk::Men
     item_disconnect.connect_activate(clone!(@weak program_data_rc => @default-panic, move |menu_item| {
         {
             let mut pd = program_data_rc.borrow_mut();
-            let focuser_info = pd.focuser_data.focuser.as_ref().unwrap().get().info();
-            pd.focuser_data.focuser = None;
+            let focuser_info = pd.focuser_data.borrow().focuser.as_ref().unwrap().get().info();
+            pd.focuser_data.borrow_mut().focuser = None;
             pd.gui.as_ref().unwrap().focuser_widgets.on_disconnect();
             log::info!("disconnected from {}", focuser_info);
         }
@@ -111,7 +112,7 @@ pub fn init_focuser_menu(program_data_rc: &Rc<RefCell<ProgramData>>) -> gtk::Men
                 &focuser_connections
             ) {
                 Some(connection) => {
-                    match focuser::connect_to_focuser(connection) {
+                    match focuser::connect_to_focuser(connection, &program_data_rc) {
                         Err(e) => show_message(
                             &format!("Failed to connect to focuser: {:?}.", e),
                             "Error",
@@ -121,7 +122,7 @@ pub fn init_focuser_menu(program_data_rc: &Rc<RefCell<ProgramData>>) -> gtk::Men
                         Ok(mut focuser) => {
                             log::info!("connected to {}", focuser.get().info());
                             program_data_rc.borrow().gui.as_ref().unwrap().focuser_widgets.on_connect(&mut focuser);
-                            program_data_rc.borrow_mut().focuser_data.focuser = Some(focuser);
+                            program_data_rc.borrow_mut().focuser_data.borrow_mut().focuser = Some(focuser);
                             item_disconnect.set_sensitive(true);
                         }
                     }
@@ -148,11 +149,10 @@ fn schedule_refresh_stop(program_data_rc: &Rc<RefCell<ProgramData>>) {
 }
 
 fn on_refresh(program_data_rc: &Rc<RefCell<ProgramData>>) {
-    if program_data_rc.borrow().focuser_data.focuser.is_none() { return; }
+    if program_data_rc.borrow().focuser_data.borrow().focuser.is_none() { return; }
 
     let result = {
-        let mut pd = program_data_rc.borrow_mut();
-        pd.focuser_data.focuser.as_mut().unwrap().get_mut().state()
+        program_data_rc.borrow().focuser_data.borrow_mut().focuser.as_mut().unwrap().get_mut().state()
     };
 
     match result {
@@ -163,27 +163,45 @@ fn on_refresh(program_data_rc: &Rc<RefCell<ProgramData>>) {
     }
 }
 
+pub fn set_up_focuser_move_action(program_data_rc: &Rc<RefCell<ProgramData>>) {
+    let mut pd = program_data_rc.borrow_mut();
+    pd.focuser_move_action = Some(LimitedFreqAction::new(
+        std::time::Duration::from_millis(200),
+
+        Box::new(clone!(@weak pd.focuser_data as focuser_data => @default-panic, move |evt| {
+            if let Err(e) = focuser_data.borrow_mut().focuser.as_mut().unwrap().move_in_dir(evt.0, evt.1) {
+                log::error!("error when moving focuser: {}", e);
+            };
+        }))
+    ));
+}
+
 pub fn focuser_move(
     speed: focuser::Speed,
     dir: focuser::FocuserDir,
     program_data_rc: &Rc<RefCell<ProgramData>>
 ) -> Result<(), ()> {
-    if speed.is_zero() {
-        schedule_refresh_stop(program_data_rc);
-    } else {
-        let pd = program_data_rc.borrow();
-        let gui = pd.gui.as_ref().unwrap();
-        gui.focuser_widgets.refresh_stop_timer.stop();
-        gui.focuser_widgets.refresh_timer.run(
-            REFRESH_INTERVAL,
-            false,
-            clone!(@weak program_data_rc => @default-panic, move || on_refresh(&program_data_rc) )
-        );
-    }
+    // TODO implement better state polling for DFmini first
+    // if speed.is_zero() {
+    //     schedule_refresh_stop(program_data_rc);
+    // } else {
+    //     let pd = program_data_rc.borrow();
+    //     let gui = pd.gui.as_ref().unwrap();
+    //     gui.focuser_widgets.refresh_stop_timer.stop();
+    //     gui.focuser_widgets.refresh_timer.run(
+    //         REFRESH_INTERVAL,
+    //         false,
+    //         clone!(@weak program_data_rc => @default-panic, move || on_refresh(&program_data_rc) )
+    //     );
+    // }
 
-    let res = program_data_rc.borrow_mut().focuser_data.focuser.as_mut().unwrap().move_in_dir(speed, dir);
-    if let Err(e) = &res { /*TODO on_error...*/ }
-    res.map_err(|_| ())
+    // let res = program_data_rc.borrow_mut().focuser_data.focuser.as_mut().unwrap().move_in_dir(speed, dir);
+    // if let Err(e) = &res { /*TODO on_error...*/ }
+    // res.map_err(|_| ())
+
+    program_data_rc.borrow_mut().focuser_move_action.as_mut().unwrap().process((speed, dir));
+
+    Ok(())
 }
 
 pub fn create_focuser_box(program_data_rc: &Rc<RefCell<ProgramData>>) -> FocuserWidgets {
@@ -285,7 +303,7 @@ pub fn create_focuser_box(program_data_rc: &Rc<RefCell<ProgramData>>) -> Focuser
 }
 
 fn on_stop(program_data_rc: &Rc<RefCell<ProgramData>>) {
-    if let Err(e) = program_data_rc.borrow_mut().focuser_data.focuser.as_mut().unwrap().get_mut().stop() {
+    if let Err(e) = program_data_rc.borrow_mut().focuser_data.borrow_mut().focuser.as_mut().unwrap().get_mut().stop() {
         log::error!("Failed to stop the focuser: {}.", e);
     }
 

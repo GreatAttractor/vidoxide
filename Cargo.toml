@@ -5,20 +5,21 @@ authors = ["Filip Szczerek <ga.software@yahoo.com>"]
 edition = "2018"
 
 [features]
-default = ["controller"]
+default = ["bluetooth", "controller"]
 
+# required for DreamFocuser mini Bluetooth connection
+bluetooth = ["btleplug", "tokio", "uuid"]
 camera_asi = ["libasicamera-sys"]
 camera_flycap2 = ["libflycapture2-sys"]
 camera_iidc = ["libdc1394-sys"]
 camera_v4l2 = ["ioctl-rs", "mmap", "v4l2-sys"]
 camera_spinnaker = ["libspinnaker-sys"]
-
-mount_ascom = ["com", "uuid", "winapi"]
-
 controller = ["stick", "pasts", "hex"]
+mount_ascom = ["com", "uuid", "winapi"]
 
 [dependencies]
 atomic_float = "0.1.0"
+btleplug = { version = "0.11.5", optional = true }
 cgmath = "0.18.0"
 chrono = "0.4.12"
 com = { version = "0.3.0", optional = true }
@@ -46,7 +47,8 @@ stick = { git = "https://github.com/GreatAttractor/stick.git", rev = "6269405a7d
 strum = { version = "0.26.2", features = ["derive"] }
 strum_macros = "0.26.2"
 time = "0.3.30" # why needed explicitly? simplelog's use not enough?
-uuid = { version = "0.8", optional = true }
+tokio = { version = "1.40.0", features = ["rt", "rt-multi-thread", "sync"], optional = true }
+uuid = { version = "1.10.0", optional = true }
 v4l2-sys = { version = "1.1.0", optional = true }
 
 [dependencies.winapi]

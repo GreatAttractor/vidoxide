@@ -404,25 +404,27 @@ fn dispatch_event(event: StickEvent, program_data_rc: &Rc<RefCell<ProgramData>>)
 
             let speed = program_data_rc.borrow().gui.as_ref().unwrap().focuser_widgets().selected_speed();
 
-            match event_value(&event.event) {
-                EventValue::Discrete(value) => if program_data_rc.borrow().focuser_data.focuser.is_some() {
-                    let _ = gui::focuser_move(
-                        if value { speed } else { focuser::Speed::zero() },
-                        direction,
-                        program_data_rc
-                    );
-                },
+            if program_data_rc.borrow().focuser_data.borrow().focuser.is_some() {
+                match event_value(&event.event) {
+                    EventValue::Discrete(value) => {
+                        let _ = gui::focuser_move(
+                            if value { speed } else { focuser::Speed::zero() },
+                            direction,
+                            program_data_rc
+                        );
+                    },
 
-                EventValue::Analog(value) => if program_data_rc.borrow().focuser_data.focuser.is_some() {
-                    let analog_range = analog_range.as_ref().unwrap();
-                    let scaled_value = (value.max(0.0) - analog_range.min.max(0.0))
-                        / (analog_range.max - analog_range.min.max(0.0));
-                    let _ = gui::focuser_move(
-                        if scaled_value > FOCUSER_ACTION_REL_DEADZONE { speed * scaled_value } else { focuser::Speed::zero() },
-                        direction,
-                        program_data_rc
-                    );
-                },
+                    EventValue::Analog(value) => {
+                        let analog_range = analog_range.as_ref().unwrap();
+                        let scaled_value = (value.max(0.0) - analog_range.min.max(0.0))
+                            / (analog_range.max - analog_range.min.max(0.0));
+                        let _ = gui::focuser_move(
+                            if scaled_value > FOCUSER_ACTION_REL_DEADZONE { speed * scaled_value } else { focuser::Speed::zero() },
+                            direction,
+                            program_data_rc
+                        );
+                    },
+                }
             }
         },
     }

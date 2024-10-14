@@ -61,7 +61,7 @@ use gtk::prelude::*;
 use histogram_view::HistogramView;
 use img_view::ImgView;
 use info_overlay::{InfoOverlay, ScreenSelection, draw_info_overlay};
-use focuser_gui::FocuserWidgets;
+use focuser_gui::{FocuserWidgets};
 use mount_gui::MountWidgets;
 use num_traits::cast::{FromPrimitive, AsPrimitive};
 use psf_dialog::PsfDialog;
@@ -78,6 +78,7 @@ use std::sync::atomic::Ordering;
 pub use crate::controller::on_controller_event;
 pub use focuser_gui::focuser_move;
 
+pub use focuser_gui::set_up_focuser_move_action;
 pub use mount_gui::{axis_slew, on_mount_error};
 pub use basic_connection_controls::BasicConnectionControls;
 

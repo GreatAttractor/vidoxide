@@ -32,8 +32,13 @@ impl Timer {
 
         let (sender_timer, receiver_main) = glib::MainContext::channel::<()>(glib::PRIORITY_DEFAULT);
         receiver_main.attach(None, clone!(@weak handler => @default-panic, move |_| {
-            let loc_handler = handler.take().unwrap();
+            let loc_handler = handler.take();
+            if loc_handler.is_none() {
+                return glib::Continue(true);
+            }
+            let loc_handler = loc_handler.unwrap();
             loc_handler();
+
             // restore `handler` only if `None`; otherwise it means the user has already reassigned `handler`
             // during `loc_handler` execution
             if handler.borrow().is_none() { *handler.borrow_mut() = Some(loc_handler); }

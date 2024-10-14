@@ -19,6 +19,7 @@ mod devices;
 mod gui;
 mod guiding;
 mod input;
+mod lim_freq_action;
 mod mount;
 mod output;
 mod resources;
@@ -32,6 +33,7 @@ use config::Configuration;
 #[cfg(feature = "controller")]
 use controller::{TargetAction, SourceAction};
 use crossbeam;
+use devices::focuser;
 use ga_image::Rect;
 use gtk::gio::prelude::*;
 use glib::clone;
@@ -200,7 +202,7 @@ pub struct ProgramData {
     on_capture_pause_action: Option<OnCapturePauseAction>,
     preview_fps_counter: usize,
     preview_fps_last_timestamp: Option<std::time::Instant>,
-    focuser_data: FocuserData,
+    focuser_data: Rc<RefCell<FocuserData>>,
     /// Non-empty after the main window creation.
     gui: Option<gui::GuiData>,
     mount_data: MountData,
@@ -226,7 +228,11 @@ pub struct ProgramData {
     #[cfg(feature = "controller")]
     ctrl_actions: controller::ActionAssignments,
     #[cfg(feature = "controller")]
-    ctrl_names: HashMap<u64, String>
+    ctrl_names: HashMap<u64, String>,
+    #[cfg(feature = "bluetooth")]
+    tokio_rt: Rc<tokio::runtime::Runtime>,
+    /// Non-empty after program initialization.
+    focuser_move_action: Option<lim_freq_action::LimitedFreqAction<(focuser::Speed, focuser::FocuserDir)>>
 }
 
 impl ProgramData {
@@ -312,7 +318,7 @@ fn main() {
         on_capture_pause_action: None,
         preview_fps_counter: 0,
         preview_fps_last_timestamp: None,
-        focuser_data: FocuserData{ focuser: None },
+        focuser_data: Rc::new(RefCell::new(FocuserData{ focuser: None })),
         gui: None,
         mount_data: MountData{
             mount: None,
@@ -340,8 +346,13 @@ fn main() {
         #[cfg(feature = "controller")]
         ctrl_actions,
         #[cfg(feature = "controller")]
-        ctrl_names: HashMap::new()
+        ctrl_names: HashMap::new(),
+        #[cfg(feature = "bluetooth")]
+        tokio_rt: Rc::new(tokio::runtime::Runtime::new().unwrap()),
+        focuser_move_action: None
     }));
+
+    gui::set_up_focuser_move_action(&program_data_rc);
 
     if !disabled_drivers.is_empty() {
         println!("The following drivers are disabled in the configuration file:");

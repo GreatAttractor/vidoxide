@@ -14,9 +14,10 @@ mod dream_focuser_mini;
 mod focuscube3;
 mod simulator;
 
-use crate::devices::DeviceConnection;
-use std::error::Error;
+use crate::{ProgramData, devices::DeviceConnection};
+use std::{cell::RefCell, error::Error, rc::Rc};
 
+pub type DFminiConnection = dream_focuser_mini::Connection;
 pub type FC3Connection = focuscube3::Connection;
 
 #[derive(Copy, Clone, Debug)]
@@ -66,7 +67,7 @@ pub struct SpeedRange {
     pub max: Speed
 }
 
-pub struct DegC(pub f64);
+pub struct DegC(pub f32);
 
 pub struct State {
     pub pos: Position,
@@ -92,6 +93,7 @@ pub trait Focuser {
     fn stop(&mut self) -> Result<(), Box<dyn Error>>;
 }
 
+#[derive(Copy, Clone)]
 pub enum FocuserDir { Negative, Positive }
 
 pub struct FocuserWrapper {
@@ -118,15 +120,22 @@ impl FocuserWrapper {
     }
 }
 
-pub fn connect_to_focuser(connection: DeviceConnection) -> Result<FocuserWrapper, Box<dyn Error>> {
+pub fn connect_to_focuser(
+    connection: DeviceConnection,
+    program_data_rc: &Rc<RefCell<ProgramData>>
+) -> Result<FocuserWrapper, Box<dyn Error>> {
     match connection {
         DeviceConnection::FocusCube3{ connection } =>
             Ok(FocuserWrapper::new(Box::new(focuscube3::FocusCube3::new(connection)?))),
 
         DeviceConnection::FocuserSimulator => Ok(FocuserWrapper::new(Box::new(simulator::Simulator::new()?))),
 
-        DeviceConnection::DreamFocuserMini{ device } =>
-            Ok(FocuserWrapper::new(Box::new(dream_focuser_mini::DreamFocuserMini::new(&device)?))),
+        DeviceConnection::DreamFocuserMini{ connection } =>
+            Ok(FocuserWrapper::new(Box::new(dream_focuser_mini::DreamFocuserMini::new(
+                connection,
+                #[cfg(feature = "bluetooth")]
+                Rc::clone(&program_data_rc.borrow().tokio_rt)
+            )?))),
 
         _ => unimplemented!()
     }

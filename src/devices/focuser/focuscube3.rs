@@ -158,7 +158,7 @@ impl Focuser for FocusCube3 {
         let moving = Some(if parts[2].chars().nth(0).unwrap() == '0' { false } else { true });
         // TODO if the sensor is not connected, returns 0.0 - add some logic to detect recent other values and decide
         // if we should return `Some` or `None`.
-        let temperature = Some(DegC(parts[3].parse::<f64>()?));
+        let temperature = Some(DegC(parts[3].parse::<f32>()?));
 
         Ok(State{ pos, moving, temperature })
     }

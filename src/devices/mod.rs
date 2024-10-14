@@ -28,7 +28,7 @@ pub enum DeviceConnection {
     AscomMount{ prog_id: String },
     ZWOMountSerial{ device: String },
     FocuserSimulator,
-    DreamFocuserMini{ device: String },
+    DreamFocuserMini{ connection: focuser::DFminiConnection },
     FocusCube3{ connection: focuser::FC3Connection },
 }
 
