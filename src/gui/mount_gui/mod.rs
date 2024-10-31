@@ -274,20 +274,22 @@ fn on_calibration_timer(program_data_rc: &Rc<RefCell<ProgramData>>) {
                 }
             }
         } else {
-            pd.mount_data.calibration.as_mut().unwrap().secondary_dir = dir_getter();
+            if let Some(dir) = dir_getter() {
+                pd.mount_data.calibration.as_mut().unwrap().secondary_dir = Some(dir);
 
-            let (primary_dir, secondary_dir) = (
-                *pd.mount_data.calibration.as_mut().unwrap().primary_dir.as_ref().unwrap(),
-                *pd.mount_data.calibration.as_mut().unwrap().secondary_dir.as_ref().unwrap()
-            );
+                let (primary_dir, secondary_dir) = (
+                    *pd.mount_data.calibration.as_mut().unwrap().primary_dir.as_ref().unwrap(),
+                    *pd.mount_data.calibration.as_mut().unwrap().secondary_dir.as_ref().unwrap()
+                );
 
-            match guiding::create_img_to_mount_axes_matrix(primary_dir, secondary_dir) {
-                Ok(matrix) => { pd.mount_data.calibration.as_mut().unwrap().img_to_mount_axes = Some(matrix); },
-                _ => {
-                    must_show_error.replace(
-                        Some("Mount-axes-to-image transformation matrix is non-invertible.".to_string())
-                    );
-                    break 'block;
+                match guiding::create_img_to_mount_axes_matrix(primary_dir, secondary_dir) {
+                    Ok(matrix) => { pd.mount_data.calibration.as_mut().unwrap().img_to_mount_axes = Some(matrix); },
+                    _ => {
+                        must_show_error.replace(
+                            Some("Mount-axes-to-image transformation matrix is non-invertible.".to_string())
+                        );
+                        break 'block;
+                    }
                 }
             }
         }
