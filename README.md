@@ -29,15 +29,15 @@ Demonstration video: [link](https://www.youtube.com/watch?v=7s_nibrTrsU)
   - Builds & runs on any platform supporting Rust and GTK
 
 **Supported camera APIs:**
-  - IIDC (DC1394); multiplatform
-  - FlyCapture2 (FLIR, formerly Point Grey); multiplatform
-  - Spinnaker (FLIR); multiplatform
-  - ASICamera2 (ZWO); multiplatform
+  - IIDC (DC1394)
+  - FlyCapture2 (FLIR, formerly Point Grey)
+  - Spinnaker (FLIR)
+  - ASICamera2 (ZWO)
   - Video4Linux2 – extremely basic support (only YUYV video modes, no camera controls); Linux only
 
 **Supported telescope mounts:**
-  - Sky-Watcher direct serial connection (tested with a 2014 HEQ5), multiplatform
-  - iOptron direct serial connection, multiplatform
+  - Sky-Watcher direct serial connection (tested with a 2014 HEQ5)
+  - iOptron direct serial connection
   - ASCOM (tested with ASCOM/EQMod and a 2014 HEQ5), MS Windows only
   - ZWO Mounts direct serial connection (tested on AM3/AM5)
 
@@ -52,7 +52,7 @@ Demonstration video: [link](https://www.youtube.com/watch?v=7s_nibrTrsU)
 
 **Game controller support:**
   - slewing the mount
-  - other actions (upcoming)
+  - focuser operation
 
 **Dispersion indicator**: helps to adjust an Atmospheric Dispersion Corrector down to 0.1-pixel accuracy (of R-G, B-G channel offset)
 
