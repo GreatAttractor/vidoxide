@@ -42,7 +42,7 @@ impl ConnectionCreator for ZWOConnectionCreator {
     fn create(&self, configuration: &crate::config::Configuration) -> Result<DeviceConnection, Box<dyn Error>> {
         let device = self.controls.connection_string();
         configuration.set_zwo_last_device(&device);
-        Ok(DeviceConnection::IoptronMountSerial{device})
+        Ok(DeviceConnection::ZWOMountSerial{device})
     }
 
     fn label(&self) -> &'static str { "ZWO (direct serial connection)" }
