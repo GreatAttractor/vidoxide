@@ -1,6 +1,6 @@
 //
 // Vidoxide - Image acquisition for amateur astronomy
-// Copyright (c) 2020-2022 Filip Szczerek <ga.software@yahoo.com>
+// Copyright (c) 2020-2024 Filip Szczerek <ga.software@yahoo.com>
 //
 // This project is licensed under the terms of the MIT license
 // (see the LICENSE file for details).
@@ -10,8 +10,8 @@
 //! Informational overlay.
 //!
 
-use cgmath::Point2;
-use crate::{MountCalibration, ProgramData, TrackingMode};
+use cgmath::{InnerSpace, Point2};
+use crate::{gui::MouseMode, MountCalibration, ProgramData, TrackingMode};
 use ga_image::Rect;
 use gtk::cairo;
 
@@ -26,7 +26,21 @@ const GUIDING_BLINK_OFF: std::time::Duration = std::time::Duration::from_millis(
 /// Size (in pixels) of the font used in the informational overlay.
 const DEFAULT_INFO_OVERLAY_FONT_SIZE: f64 = 10.0;
 
-/// Rectangular selection made by mouse in preview area; image coordinates.
+enum SelectionType {
+    Line,
+    Rectangle,
+}
+
+impl SelectionType {
+    fn from_mouse_mode(mouse_mode: MouseMode) -> SelectionType {
+        match mouse_mode {
+            MouseMode::MeasureDistance => SelectionType::Line,
+            _ => SelectionType::Rectangle
+        }
+    }
+}
+
+/// Selection made by mouse in preview area; image coordinates.
 pub struct ScreenSelection {
     pub start: Point2<i32>,
     pub end: Point2<i32>
@@ -62,7 +76,9 @@ pub fn draw_info_overlay(
     let font_size = program_data.config.info_overlay_font_size().unwrap_or(DEFAULT_INFO_OVERLAY_FONT_SIZE);
 
     if let Some(sel) = &program_data.gui.as_ref().unwrap().info_overlay.screen_sel {
-        draw_screen_selection(ctx, zoom, sel);
+        draw_screen_selection(
+            ctx, zoom, sel, SelectionType::from_mouse_mode(program_data.gui.as_ref().unwrap().mouse_mode), font_size
+        );
     }
 
     if let Some(tracking) = &program_data.tracking {
@@ -131,14 +147,48 @@ fn draw_guiding_info(ctx: &cairo::Context, zoom: f64, guiding_pos: Point2<i32>, 
     }
 }
 
-fn draw_screen_selection(ctx: &cairo::Context, zoom: f64, sel: &ScreenSelection) {
-    ctx.set_source_rgba(1.0, 0.0, 0.0, 0.5);
-    let pos_x = sel.start.x.min(sel.end.x) as f64 * zoom;
-    let pos_y = sel.start.y.min(sel.end.y) as f64 * zoom;
-    let width = (sel.start.x - sel.end.x).abs() as f64 * zoom;
-    let height = (sel.start.y - sel.end.y).abs() as f64 * zoom;
-    ctx.rectangle(pos_x, pos_y, width, height);
-    ctx.fill().unwrap();
+fn draw_screen_selection(
+    ctx: &cairo::Context,
+    zoom: f64,
+    sel: &ScreenSelection,
+    sel_type: SelectionType,
+    font_size: f64
+) {
+    let x1 = sel.start.x as f64 * zoom;
+    let y1 = sel.start.y as f64 * zoom;
+    let x2 = sel.end.x as f64 * zoom;
+    let y2 = sel.end.y as f64 * zoom;
+
+    match sel_type {
+        SelectionType::Rectangle => {
+            let pos_x = x1.min(x2);
+            let pos_y = y1.min(y2);
+            let width =  (x1 - x2).abs();
+            let height = (y1 - y2).abs();
+            ctx.set_source_rgba(1.0, 0.0, 0.0, 0.5);
+            ctx.rectangle(pos_x, pos_y, width, height);
+            ctx.fill().unwrap();
+
+            ctx.set_source_rgba(1.0, 1.0, 1.0, 1.0);
+            ctx.move_to(pos_x + font_size / 2.0, pos_y + 1.5 * font_size);
+            ctx.set_font_size(font_size);
+            let pix_width = (sel.start.x - sel.end.x).abs();
+            let pix_height = (sel.start.y - sel.end.y).abs();
+            let _ = ctx.show_text(&format!("{}x{}", pix_width, pix_height));
+        },
+
+        SelectionType::Line => {
+           ctx.move_to(x1, y1);
+           ctx.line_to(x2, y2);
+           ctx.set_source_rgba(1.0, 0.0, 0.0, 0.5);
+           let _ = ctx.stroke();
+           ctx.set_source_rgba(1.0, 0.0, 0.0, 1.0);
+           ctx.move_to(x1 + font_size / 2.0, y1 - font_size / 2.0);
+           ctx.set_font_size(font_size);
+           let dist = (sel.start.cast::<f64>().unwrap() - sel.end.cast::<f64>().unwrap()).magnitude();
+           let _ = ctx.show_text(&format!("{}", dist as i32));
+        }
+    }
 }
 
 fn draw_calibration(ctx: &cairo::Context, zoom: f64, calibration: &MountCalibration, target_pos: Point2<i32>) {

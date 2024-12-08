@@ -134,22 +134,25 @@ impl PreviewProcessing {
 }
 
 /// Current mode of behavior of the left mouse button for the preview area.
+#[derive(Copy, Clone)]
 enum MouseMode {
     None,
     SelectROI,
     SelectCentroidArea,
     PlaceTrackingAnchor,
     SelectCropArea,
-    SelectHistogramArea
+    SelectHistogramArea,
+    MeasureDistance
 }
 
 impl MouseMode {
-    pub fn is_rect_selection(&self) -> bool {
+    pub fn is_selection(&self) -> bool {
         match self {
             MouseMode::SelectROI
             | MouseMode::SelectCentroidArea
             | MouseMode::SelectCropArea
-            | MouseMode::SelectHistogramArea => true,
+            | MouseMode::SelectHistogramArea
+            | MouseMode::MeasureDistance => true,
 
             MouseMode::None
             | MouseMode::PlaceTrackingAnchor => false

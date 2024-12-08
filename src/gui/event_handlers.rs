@@ -51,7 +51,7 @@ use std::{cell::RefCell, sync::atomic::Ordering, path::Path, rc::Rc};
 
 pub fn on_preview_area_button_down(pos: Point2<i32>, program_data_rc: &Rc<RefCell<ProgramData>>) {
     let mut program_data = program_data_rc.borrow_mut();
-    if program_data.gui.as_ref().unwrap().mouse_mode.is_rect_selection() {
+    if program_data.gui.as_ref().unwrap().mouse_mode.is_selection() {
         program_data.gui.as_mut().unwrap().info_overlay.screen_sel =
             Some(ScreenSelection{ start: pos, end: pos });
     }
@@ -114,6 +114,8 @@ pub fn on_preview_area_button_up(pos: Point2<i32>, program_data_rc: &Rc<RefCell<
                     },
 
                     MouseMode::SelectROI => send_to_cap_thread_res = initiate_set_roi(sel_rect, &mut program_data),
+
+                    MouseMode::MeasureDistance => (),
 
                     MouseMode::None | MouseMode::PlaceTrackingAnchor => ()
                 }

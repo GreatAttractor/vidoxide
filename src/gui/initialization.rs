@@ -249,6 +249,18 @@ fn create_mouse_mode_tb_buttons(
     }));
     toolbar.insert(&btn_mouse_histogram, -1);
 
+    let btn_mouse_measure = gtk::RadioToolButtonBuilder::new()
+        .label("📏")
+        .tooltip_text("Mouse mode: measure distance")
+        .build();
+    btn_mouse_measure.join_group(Some(&btn_mouse_none));
+    btn_mouse_measure.connect_toggled(clone!(@weak program_data_rc => @default-panic, move |btn| {
+        if btn.is_active() {
+            program_data_rc.borrow_mut().gui.as_mut().unwrap().mouse_mode = MouseMode::MeasureDistance;
+        }
+    }));
+    toolbar.insert(&btn_mouse_measure, -1);
+
     btn_mouse_none
 }
 
