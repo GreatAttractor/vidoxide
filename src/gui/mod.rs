@@ -10,6 +10,7 @@
 //! GUI module.
 //!
 
+mod actions;
 mod basic_connection_controls;
 mod camera_gui;
 mod checked_listbox;
@@ -18,11 +19,13 @@ mod controller;
 mod dec_intervals;
 mod device_connection_dialog;
 mod dispersion_dialog;
+mod event_handlers;
 mod focuser_gui;
 mod freezeable;
 mod histogram_utils;
 mod histogram_view;
 mod img_view;
+mod initialization;
 mod info_overlay;
 mod mount_gui;
 mod preview_processing;
@@ -38,30 +41,23 @@ use camera_gui::{
     NumberControlWidgets,
     BooleanControlWidgets
 };
-use cgmath::{EuclideanSpace, Point2, Vector2, Zero};
+use cgmath::Point2;
 #[cfg(feature = "controller")]
-use controller::{ControllerDialog, init_controller_menu};
-use crate::{CameraControlChange, NewControlValue, OnCapturePauseAction, ProgramData};
+use controller::ControllerDialog;
+use crate::ProgramData;
 use crate::camera;
 use crate::camera::CameraError;
-use crate::devices::{DeviceConnection, DeviceConnectionDiscriminants};
-use crate::mount;
-use crate::mount::RadPerSec;
-use crate::resources;
-use crate::workers::capture::{CaptureToMainThreadMsg, MainToCaptureThreadMsg};
-use crate::workers::histogram::{Histogram, HistogramRequest, MainToHistogramThreadMsg};
-use crate::workers::recording::RecordingToMainThreadMsg;
+use crate::devices::DeviceConnectionDiscriminants;
 use dispersion_dialog::DispersionDialog;
 use ga_image;
 use ga_image::Rect;
 use preview_processing::create_preview_processing_dialog;
-use glib::clone;
 use gtk::cairo;
 use gtk::prelude::*;
 use histogram_view::HistogramView;
 use img_view::ImgView;
 use info_overlay::{InfoOverlay, ScreenSelection, draw_info_overlay};
-use focuser_gui::{FocuserWidgets};
+use focuser_gui::FocuserWidgets;
 use mount_gui::MountWidgets;
 use num_traits::cast::{FromPrimitive, AsPrimitive};
 use psf_dialog::PsfDialog;
@@ -70,17 +66,20 @@ use reticle_dialog::create_reticle_dialog;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::error::Error;
-use std::path::Path;
 use std::rc::Rc;
-use std::sync::atomic::Ordering;
 
+pub use basic_connection_controls::BasicConnectionControls;
 #[cfg(feature = "controller")]
 pub use crate::controller::on_controller_event;
-pub use focuser_gui::focuser_move;
-
-pub use focuser_gui::set_up_focuser_move_action;
+pub use event_handlers::{
+    on_capture_thread_message,
+    on_histogram_thread_message,
+    on_recording_thread_message,
+    on_timer
+};
+pub use focuser_gui::{focuser_move, set_up_focuser_move_action};
+pub use initialization::init_main_window;
 pub use mount_gui::{axis_slew, on_mount_error};
-pub use basic_connection_controls::BasicConnectionControls;
 
 /// Control padding in pixels.
 const PADDING: u32 = 10;
@@ -93,27 +92,7 @@ const MAX_ZOOM: f64 = 20.0;
 
 const ZOOM_CHANGE_FACTOR: f64 = 1.10;
 
-const DEFAULT_TOOLBAR_ICON_SIZE: i32 = 32;
 
-mod gtk_signals {
-    pub const ACTIVATE: &'static str = "activate";
-}
-
-mod actions {
-    // action group name
-    pub const PREFIX: &'static str = "vidoxide";
-
-    // action names to be used for constructing `gio::SimpleAction`
-    pub const DISCONNECT_CAMERA: &'static str = "disconnect camera";
-    pub const TAKE_SNAPSHOT:     &'static str = "take snapshot";
-    pub const SET_ROI:           &'static str = "set roi";
-    pub const UNDOCK_PREVIEW:    &'static str = "undock preview area";
-
-    /// Returns prefixed action name to be used with `ActionableExt::set_action_name`.
-    pub fn prefixed(s: &str) -> String {
-        format!("{}.{}", PREFIX, s)
-    }
-}
 
 struct StatusBarFields {
     preview_fps: gtk::Label,
@@ -121,30 +100,6 @@ struct StatusBarFields {
     temperature: gtk::Label,
     current_recording_info: gtk::Label,
     recording_overview: gtk::Label
-}
-
-/// Current mode of behavior of the left mouse button for the preview area.
-enum MouseMode {
-    None,
-    SelectROI,
-    SelectCentroidArea,
-    PlaceTrackingAnchor,
-    SelectCropArea,
-    SelectHistogramArea
-}
-
-impl MouseMode {
-    pub fn is_rect_selection(&self) -> bool {
-        match self {
-            MouseMode::SelectROI
-            | MouseMode::SelectCentroidArea
-            | MouseMode::SelectCropArea
-            | MouseMode::SelectHistogramArea => true,
-
-            MouseMode::None
-            | MouseMode::PlaceTrackingAnchor => false
-        }
-    }
 }
 
 pub struct Reticle {
@@ -175,6 +130,30 @@ pub struct PreviewProcessing {
 impl PreviewProcessing {
     pub fn is_effective(&self) -> bool {
         self.gamma != 1.0 || self.gain.0 != 0.0 || self.stretch_histogram
+    }
+}
+
+/// Current mode of behavior of the left mouse button for the preview area.
+enum MouseMode {
+    None,
+    SelectROI,
+    SelectCentroidArea,
+    PlaceTrackingAnchor,
+    SelectCropArea,
+    SelectHistogramArea
+}
+
+impl MouseMode {
+    pub fn is_rect_selection(&self) -> bool {
+        match self {
+            MouseMode::SelectROI
+            | MouseMode::SelectCentroidArea
+            | MouseMode::SelectCropArea
+            | MouseMode::SelectHistogramArea => true,
+
+            MouseMode::None
+            | MouseMode::PlaceTrackingAnchor => false
+        }
     }
 }
 
@@ -280,656 +259,6 @@ pub fn make_creator(
     }
 }
 
-
-fn create_status_bar() -> (gtk::Frame, StatusBarFields) {
-    let status_bar_box = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-    let preview_fps = gtk::Label::new(None);
-    let capture_fps = gtk::Label::new(None);
-    let temperature = gtk::Label::new(None);
-    let current_recording_info = gtk::LabelBuilder::new().justify(gtk::Justification::Left).build();
-    let recording_overview = gtk::LabelBuilder::new().justify(gtk::Justification::Left).build();
-
-    status_bar_box.pack_start(&preview_fps, false, false, PADDING);
-    status_bar_box.pack_start(&gtk::Separator::new(gtk::Orientation::Vertical), false, false, PADDING);
-    status_bar_box.pack_start(&capture_fps, false, false, PADDING);
-    status_bar_box.pack_start(&gtk::Separator::new(gtk::Orientation::Vertical), false, false, PADDING);
-    status_bar_box.pack_start(&temperature, false, false, PADDING);
-    status_bar_box.pack_start(&gtk::Separator::new(gtk::Orientation::Vertical), false, false, PADDING);
-    status_bar_box.pack_start(&current_recording_info, false, false, PADDING);
-    status_bar_box.pack_start(&gtk::Separator::new(gtk::Orientation::Vertical), false, false, PADDING);
-    status_bar_box.pack_start(&recording_overview, false, false, PADDING);
-
-    let status_bar_frame = gtk::Frame::new(None);
-    status_bar_frame.set_shadow_type(gtk::ShadowType::In);
-    status_bar_frame.add(&status_bar_box);
-
-    (status_bar_frame, StatusBarFields{ preview_fps, capture_fps, temperature, current_recording_info, recording_overview })
-}
-
-fn on_preview_area_button_down(pos: Point2<i32>, program_data_rc: &Rc<RefCell<ProgramData>>) {
-    let mut program_data = program_data_rc.borrow_mut();
-    if program_data.gui.as_ref().unwrap().mouse_mode.is_rect_selection() {
-        program_data.gui.as_mut().unwrap().info_overlay.screen_sel =
-            Some(ScreenSelection{ start: pos, end: pos });
-    }
-}
-
-fn on_preview_area_button_up(pos: Point2<i32>, program_data_rc: &Rc<RefCell<ProgramData>>) {
-    let preview_img_size = program_data_rc.borrow().gui.as_ref().unwrap().preview_area.image_size();
-
-    let sel_rect: Option<Rect> = if let Some(ssel) = program_data_rc.borrow().gui.as_ref().unwrap().info_overlay.screen_sel.as_ref() {
-        let mut rect = Rect{
-            x: ssel.start.x.min(ssel.end.x).max(0),
-            y: ssel.start.y.min(ssel.end.y).max(0),
-            width: (ssel.start.x - ssel.end.x).abs() as u32,
-            height: (ssel.start.y - ssel.end.y).abs() as u32
-        };
-
-        if let Some((img_w, img_h)) = preview_img_size {
-            if rect.x as u32 + rect.width > img_w as u32 { rect.width = (img_w - rect.x) as u32 }
-            if rect.y as u32 + rect.height > img_h as u32 { rect.height = (img_h - rect.y) as u32 }
-        }
-
-        Some(rect)
-    } else {
-        None
-    };
-
-    let mut show_crop_error = false;
-    let mut send_to_cap_thread_res = Ok(());
-
-    {
-        let mut program_data = program_data_rc.borrow_mut();
-        program_data.gui.as_mut().unwrap().info_overlay.screen_sel = None;
-        if let Some(ref data) = program_data.capture_thread_data {
-            if let Some(sel_rect) = sel_rect {
-                match program_data.gui.as_ref().unwrap().mouse_mode {
-                    MouseMode::SelectCentroidArea =>
-                    {
-                        send_to_cap_thread_res =
-                            data.sender.send(MainToCaptureThreadMsg::EnableCentroidTracking(sel_rect));
-                        log::info!("enabled target tracking via centroid");
-                    },
-
-                    MouseMode::SelectCropArea => {
-                        if !program_data.rec_job_active {
-                            send_to_cap_thread_res =
-                                data.sender.send(MainToCaptureThreadMsg::EnableRecordingCrop(sel_rect));
-
-                            if send_to_cap_thread_res.is_ok() {
-                                program_data.crop_area = Some(sel_rect);
-                            }
-                        } else {
-                            // cannot call `show_message` here, as it would start calling event handlers in a nested
-                            // event loop, and we still have an active borrow of `program_data`
-                            show_crop_error = true;
-                        }
-                    },
-
-                    MouseMode::SelectHistogramArea => {
-                        program_data.histogram_area = Some(sel_rect);
-                    },
-
-                    MouseMode::SelectROI => send_to_cap_thread_res = initiate_set_roi(sel_rect, &mut program_data),
-
-                    MouseMode::None | MouseMode::PlaceTrackingAnchor => ()
-                }
-            } else {
-                match program_data.gui.as_ref().unwrap().mouse_mode {
-                    MouseMode::PlaceTrackingAnchor => {
-                        send_to_cap_thread_res = data.sender.send(MainToCaptureThreadMsg::EnableAnchorTracking(pos));
-                        log::info!("enabled target tracking via anchor");
-                    },
-
-                    _ => ()
-                }
-            }
-        };
-    }
-
-    {
-        // need to clone the button handle first, so that `program_data_rc` is no longer borrowed
-        // when button's toggle handler runs due to `set_active` call below
-        let btn = program_data_rc.borrow().gui.as_ref().unwrap().default_mouse_mode_button.clone();
-        btn.set_active(true);
-    }
-
-    if send_to_cap_thread_res.is_err() {
-        crate::on_capture_thread_failure(program_data_rc);
-    } else if show_crop_error {
-        show_message("Cannot set crop area during recording.", "Error", gtk::MessageType::Error, program_data_rc);
-    }
-}
-
-fn on_preview_area_mouse_move(pos: Point2<i32>, program_data_rc: &Rc<RefCell<ProgramData>>) {
-    let mut program_data = program_data_rc.borrow_mut();
-    let gui = program_data.gui.as_mut().unwrap();
-    if let Some(screen_sel) = &mut gui.info_overlay.screen_sel {
-        screen_sel.end = pos;
-        gui.preview_area.refresh();
-    }
-}
-
-pub fn init_main_window(app: &gtk::Application, program_data_rc: &Rc<RefCell<ProgramData>>) {
-    let app_window = gtk::ApplicationWindow::new(app);
-    app_window.set_title("Vidoxide");
-
-    let action_map = set_up_actions(&app_window, program_data_rc);
-
-    {
-        let config = &program_data_rc.borrow().config;
-
-        if let Some(pos) = program_data_rc.borrow().config.main_window_pos() {
-            app_window.move_(pos.x, pos.y);
-            app_window.resize(pos.width, pos.height);
-        } else {
-            app_window.resize(800, 600);
-        }
-
-        if let Some(is_maximized) = config.main_window_maximized() {
-            if is_maximized { app_window.maximize(); }
-        }
-    }
-
-    let preview_area = ImgView::new(
-        Box::new(clone!(@weak program_data_rc => @default-panic, move |pos| { on_preview_area_button_down(pos, &program_data_rc); })),
-        Box::new(clone!(@weak program_data_rc => @default-panic, move |pos| { on_preview_area_button_up(pos, &program_data_rc); })),
-        Box::new(clone!(@weak program_data_rc => @default-panic, move |pos| { on_preview_area_mouse_move(pos, &program_data_rc); })),
-        Box::new(clone!(@weak program_data_rc => @default-panic, move |ctx, zoom| {
-            draw_info_overlay(ctx, zoom, &mut program_data_rc.borrow_mut());
-        })),
-        Box::new(clone!(@weak program_data_rc => @default-panic, move |ctx| {
-            draw_reticle(ctx, &program_data_rc.borrow());
-        })),
-    );
-
-    let camera_controls_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    camera_controls_box.set_baseline_position(gtk::BaselinePosition::Top);//?
-
-    let camera_controls_scroller = gtk::ScrolledWindow::new::<gtk::Adjustment, gtk::Adjustment>(None, None);
-    camera_controls_scroller.add(&camera_controls_box);
-
-    let histogram_view = HistogramView::new();
-
-    let cam_controls_and_histogram = gtk::Paned::new(gtk::Orientation::Vertical);
-    cam_controls_and_histogram.pack1(&camera_controls_scroller, false, false);
-    cam_controls_and_histogram.pack2(histogram_view.top_widget(), true, true);
-    if let Some(paned_pos) = program_data_rc.borrow().config.camera_controls_paned_pos() {
-        cam_controls_and_histogram.set_position(paned_pos);
-    } else {
-        cam_controls_and_histogram.set_position(app_window.size().1 / 2);
-    }
-
-    let controls_notebook = gtk::Notebook::new();
-
-    controls_notebook.append_page(&cam_controls_and_histogram, Some(&gtk::Label::new(Some("Camera controls"))));
-
-    let (rec_box, rec_widgets) = rec_gui::create_recording_panel(program_data_rc);
-    controls_notebook.append_page(&rec_box, Some(&gtk::Label::new(Some("Recording"))));
-
-    let mount_widgets = mount_gui::create_mount_box(program_data_rc);
-    controls_notebook.append_page(mount_widgets.wbox(), Some(&gtk::Label::new(Some("Mount"))));
-
-    let focuser_widgets = focuser_gui::create_focuser_box(program_data_rc);
-    controls_notebook.append_page(focuser_widgets.wbox(), Some(&gtk::Label::new(Some("Focuser"))));
-
-    let controls_notebook_scroller = gtk::ScrolledWindow::new::<gtk::Adjustment, gtk::Adjustment>(None, None);
-    controls_notebook_scroller.add(&controls_notebook);
-
-    let (menu_bar, camera_menu, camera_menu_items) = init_menu(&app_window, program_data_rc);
-
-    let window_contents = gtk::Paned::new(gtk::Orientation::Horizontal);
-    window_contents.set_wide_handle(true);
-    window_contents.pack1(preview_area.top_widget(), true, true);
-    window_contents.pack2(&controls_notebook_scroller, false, false);
-
-    if let Some(paned_pos) = program_data_rc.borrow().config.main_window_paned_pos() {
-        window_contents.set_position(paned_pos);
-    } else {
-        window_contents.set_position(app_window.size().0 - 400);
-    }
-
-    let (status_bar_frame, status_bar) = create_status_bar();
-
-    let top_lvl_v_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    top_lvl_v_box.pack_start(&menu_bar, false, false, PADDING);
-    let (toolbar, default_mouse_mode_button, stabilization_button) = create_toolbar(&app_window, &program_data_rc);
-    top_lvl_v_box.pack_start(&toolbar, false, false, 0);
-    top_lvl_v_box.pack_start(&window_contents, true, true, PADDING);
-    top_lvl_v_box.pack_start(&status_bar_frame, false, false, PADDING);
-
-    app_window.add(&top_lvl_v_box);
-
-    app_window.show_all();
-
-    app_window.connect_delete_event(clone!(
-        @weak program_data_rc,
-        @weak window_contents,
-        @weak cam_controls_and_histogram
-        => @default-panic, move |wnd, _| {
-            on_main_window_delete(
-                wnd,
-                &window_contents,
-                &cam_controls_and_histogram,
-                &program_data_rc);
-            gtk::Inhibit(false)
-        }
-    ));
-
-    let rtc_opacity = 1.0;
-    let rtc_diameter = 100.0;
-    let rtc_step = 10.0;
-    let rtc_line_width = 2.0;
-
-    let gui = GuiData{
-        app_window: app_window.clone(),
-        controls_box: camera_controls_box,
-        status_bar,
-        control_widgets: Default::default(),
-        camera_menu,
-        camera_menu_items,
-        preview_area,
-        rec_widgets,
-        focuser_widgets,
-        mount_widgets,
-        info_overlay: InfoOverlay::new(),
-        reticle: Reticle{
-            enabled: false,
-            dialog: create_reticle_dialog(&app_window, &program_data_rc, rtc_opacity, rtc_diameter, rtc_step, rtc_line_width),
-            diameter: rtc_diameter,
-            opacity: rtc_opacity,
-            step: rtc_step,
-            line_width: rtc_line_width
-        },
-        stabilization: Stabilization{
-            position: Point2::origin(),
-            toggle_button: stabilization_button
-        },
-        preview_processing: PreviewProcessing {
-            dialog: create_preview_processing_dialog(&app_window, &program_data_rc),
-            gamma: 1.0,
-            gain: Decibel(0.0),
-            stretch_histogram: false
-        },
-        #[cfg(feature = "controller")]
-        controller_dialog: ControllerDialog::new(&app_window, &program_data_rc),
-        dispersion_dialog: DispersionDialog::new(&app_window, &program_data_rc),
-        psf_dialog: PsfDialog::new(&app_window, &program_data_rc),
-        mouse_mode: MouseMode::None,
-        default_mouse_mode_button,
-        histogram_view,
-        action_map,
-        window_contents
-    };
-
-    program_data_rc.borrow_mut().gui = Some(gui);
-}
-
-fn set_up_actions(app_window: &gtk::ApplicationWindow, program_data_rc: &Rc<RefCell<ProgramData>>)
--> HashMap<&'static str, gtk::gio::SimpleAction> {
-    let action_group = gtk::gio::SimpleActionGroup::new();
-    let mut action_map = HashMap::new();
-
-    // ----------------------------
-    let disconnect_action = gtk::gio::SimpleAction::new(actions::DISCONNECT_CAMERA, None);
-    disconnect_action.connect_activate(clone!(@weak program_data_rc => @default-panic, move |_, _| {
-        disconnect_camera(&program_data_rc, true);
-    }));
-    disconnect_action.set_enabled(false);
-    action_group.add_action(&disconnect_action);
-    action_map.insert(actions::DISCONNECT_CAMERA, disconnect_action);
-
-    // ----------------------------
-    let snapshot_action = gtk::gio::SimpleAction::new(actions::TAKE_SNAPSHOT, None);
-    snapshot_action.connect_activate(clone!(@weak program_data_rc => @default-panic, move |_, _| {
-        on_snapshot(&program_data_rc);
-    }));
-    snapshot_action.set_enabled(false);
-    action_group.add_action(&snapshot_action);
-    action_map.insert(actions::TAKE_SNAPSHOT, snapshot_action);
-
-    //-----------------------------
-    let set_roi_action = gtk::gio::SimpleAction::new(actions::SET_ROI, None);
-    set_roi_action.connect_activate(clone!(@weak program_data_rc => @default-panic, move |_, _| {
-        on_set_roi(&program_data_rc);
-    }));
-    set_roi_action.set_enabled(false);
-    action_group.add_action(&set_roi_action);
-    action_map.insert(actions::SET_ROI, set_roi_action);
-
-    // ----------------------------
-    let undock_preview_action = gtk::gio::SimpleAction::new(actions::UNDOCK_PREVIEW, None);
-    undock_preview_action.set_enabled(true);
-    undock_preview_action.connect_activate(clone!(@weak program_data_rc => @default-panic, move |action, _| {
-        on_undock_preview_area(&program_data_rc);
-        action.set_enabled(false);
-    }));
-    action_group.add_action(&undock_preview_action);
-    action_map.insert(actions::UNDOCK_PREVIEW, undock_preview_action);
-
-    // ----------------------------
-    app_window.insert_action_group(actions::PREFIX, Some(&action_group));
-
-    action_map
-}
-
-fn initiate_set_roi(rect: Rect, program_data: &mut ProgramData)
--> Result<(), std::sync::mpsc::SendError<crate::workers::capture::MainToCaptureThreadMsg>> {
-    let result = program_data.capture_thread_data.as_mut().unwrap().sender.send(
-        MainToCaptureThreadMsg::Pause
-    );
-
-    if result.is_ok() {
-        program_data.on_capture_pause_action = Some(OnCapturePauseAction::SetROI(rect));
-    }
-
-    result
-}
-
-fn on_set_roi(program_data_rc: &Rc<RefCell<ProgramData>>) {
-    if let Some(roi_rect) = roi_dialog::show_roi_dialog(program_data_rc) {
-        let result = initiate_set_roi(roi_rect, &mut program_data_rc.borrow_mut());
-        if result.is_err() {
-            crate::on_capture_thread_failure(program_data_rc);
-        }
-    }
-}
-
-fn on_snapshot(program_data_rc: &Rc<RefCell<ProgramData>>) {
-    let mut program_data = program_data_rc.borrow_mut();
-    let gui_data = program_data.gui.as_ref().unwrap();
-
-    if program_data.last_displayed_preview_image.is_none() {
-        println!("WARNING: No image captured yet, cannot take a snapshot.");
-        return;
-    }
-
-    let dest_dir = gui_data.rec_widgets.dest_dir();
-    let mut dest_path;
-    loop {
-        dest_path = Path::new(&dest_dir).join(format!("snapshot_{:04}.tif", program_data.snapshot_counter));
-        if !dest_path.exists() {
-            break
-        }
-        program_data.snapshot_counter += 1;
-    }
-
-    //TODO: demosaic raw color first
-    program_data.last_displayed_preview_image.as_ref().unwrap()
-        .view().save(&dest_path.to_str().unwrap().to_string(), ga_image::FileType::Tiff).unwrap();
-}
-
-/// Returns (toolbar, default mouse mode button, stabilization button).
-fn create_toolbar(
-    main_wnd: &gtk::ApplicationWindow,
-    program_data_rc: &Rc<RefCell<ProgramData>>
-) -> (gtk::Toolbar, gtk::RadioToolButton, gtk::ToggleToolButton) {
-    let toolbar = gtk::Toolbar::new();
-
-    let icon_size = if let Some(s) = program_data_rc.borrow().config.toolbar_icon_size() {
-        s
-    } else {
-        program_data_rc.borrow().config.set_toolbar_icon_size(DEFAULT_TOOLBAR_ICON_SIZE);
-        DEFAULT_TOOLBAR_ICON_SIZE
-    };
-
-    create_preview_tb_buttons(&toolbar, program_data_rc, main_wnd, icon_size);
-
-    toolbar.insert(&gtk::SeparatorToolItem::new(), -1);
-
-    let btn_toggle_info_overlay = gtk::ToggleToolButtonBuilder::new()
-        .label("i")
-        .tooltip_text("Toggle informational overlay")
-        .active(true)
-        .build();
-    btn_toggle_info_overlay.connect_toggled(clone!(@weak program_data_rc => @default-panic, move |btn| {
-        program_data_rc.borrow_mut().gui.as_mut().unwrap().info_overlay.enabled = btn.is_active();
-        program_data_rc.borrow_mut().gui.as_ref().unwrap().preview_area.refresh();
-    }));
-    toolbar.insert(&btn_toggle_info_overlay, -1);
-
-    let btn_toggle_reticle = gtk::ToggleToolButtonBuilder::new()
-        .label("⊚")
-        .tooltip_text("Toggle reticle")
-        .active(false)
-        .build();
-    btn_toggle_reticle.connect_toggled(clone!(@weak program_data_rc => @default-panic, move |btn| {
-        program_data_rc.borrow_mut().gui.as_mut().unwrap().reticle.enabled = btn.is_active();
-        program_data_rc.borrow_mut().gui.as_ref().unwrap().preview_area.refresh();
-    }));
-    toolbar.insert(&btn_toggle_reticle, -1);
-
-    let btn_toggle_stabilization = gtk::ToggleToolButtonBuilder::new()
-        .label("⚓") // TODO: use some image
-        .tooltip_text("Toggle video stabilization")
-        .active(false)
-        .build();
-    btn_toggle_stabilization.connect_toggled(clone!(@weak program_data_rc => @default-panic, move |btn| {
-        let tracking_enabled = program_data_rc.borrow().tracking.is_some();
-        if btn.is_active() && !tracking_enabled {
-            btn.set_active(false);
-            show_message("Tracking is not enabled.", "Error", gtk::MessageType::Error, &program_data_rc);
-            return;
-        }
-
-        if btn.is_active() {
-            let mut pd = program_data_rc.borrow_mut();
-            let tracking_pos = pd.tracking.as_ref().unwrap().pos;
-            let gui = pd.gui.as_mut().unwrap();
-            gui.stabilization.position = tracking_pos;
-        }
-
-        log::info!("preview image stabilization {}", if btn.is_active() { "enabled" } else { "disabled" });
-    }));
-    toolbar.insert(&btn_toggle_stabilization, -1);
-
-    toolbar.insert(&gtk::SeparatorToolItem::new(), -1);
-
-    let btn_mouse_none = create_mouse_mode_tb_buttons(&toolbar, program_data_rc,  icon_size);
-
-    toolbar.insert(&gtk::SeparatorToolItem::new(), -1);
-
-    let btn_set_roi = gtk::ToolButtonBuilder::new()
-        .label("ROI")
-        .tooltip_text("Set ROI by providing its position and size")
-        .build();
-    btn_set_roi.set_action_name(Some(&actions::prefixed(actions::SET_ROI)));
-    toolbar.insert(&btn_set_roi, -1);
-
-    let btn_unset_roi = gtk::ToolButton::new(
-        Some(&resources::load_svg(resources::ToolbarIcon::RoiOff, icon_size).unwrap()), None
-    );
-    btn_unset_roi.set_tooltip_text(Some("Disable ROI"));
-    btn_unset_roi.connect_clicked(clone!(@weak program_data_rc => @default-panic, move |_| {
-        let mut cap_send_result = Ok(());
-
-        {
-            let mut pd = program_data_rc.borrow_mut();
-            if pd.capture_thread_data.is_some() {
-                cap_send_result = pd.capture_thread_data.as_mut().unwrap().sender.send(MainToCaptureThreadMsg::Pause);
-                if cap_send_result.is_ok() {
-                    pd.on_capture_pause_action = Some(OnCapturePauseAction::DisableROI);
-                }
-            }
-        } // end borrow of `program_data_rc`
-
-        if cap_send_result.is_err() {
-            crate::on_capture_thread_failure(&program_data_rc);
-        }
-    }));
-    toolbar.insert(&btn_unset_roi, -1);
-
-    let btn_undock_preview_area = gtk::ToolButtonBuilder::new()
-        .label("⮹") // TODO create an icon
-        .tooltip_text("Undock preview area")
-        .build();
-    btn_undock_preview_area.set_action_name(Some(&actions::prefixed(actions::UNDOCK_PREVIEW)));
-    toolbar.insert(&btn_undock_preview_area, -1);
-
-    (toolbar, btn_mouse_none, btn_toggle_stabilization)
-}
-
-fn on_undock_preview_area(program_data_rc: &Rc<RefCell<ProgramData>>) {
-    let preview_wnd = gtk::WindowBuilder::new()
-        .type_(gtk::WindowType::Toplevel)
-        .title("Vidoxide - preview")
-        .build();
-
-    let pd = program_data_rc.borrow();
-    let gui = pd.gui.as_ref().unwrap();
-
-    let pw = gui.preview_area.top_widget();
-    gui.window_contents.remove(pw);
-    preview_wnd.add(pw);
-    preview_wnd.show_all();
-
-    preview_wnd.connect_delete_event(clone!(
-        @weak program_data_rc
-        => @default-panic, move |wnd, _| {
-            let pd = program_data_rc.borrow();
-            let gui = pd.gui.as_ref().unwrap();
-            let pw = gui.preview_area.top_widget();
-            wnd.remove(pw);
-            gui.window_contents.pack1(pw, true, true);
-            gui.action_map.get(actions::UNDOCK_PREVIEW).unwrap().set_enabled(true);
-            gtk::Inhibit(false)
-        }
-    ));
-}
-
-/// Returns "default mouse mode" button.
-fn create_mouse_mode_tb_buttons(
-    toolbar: &gtk::Toolbar,
-    program_data_rc: &Rc<RefCell<ProgramData>>,
-    icon_size: i32
-) -> gtk::RadioToolButton {
-    let btn_mouse_none = gtk::RadioToolButtonBuilder::new()
-        .label("⨉")
-        .tooltip_text("Mouse mode: none")
-        .build();
-    btn_mouse_none.connect_toggled(clone!(@weak program_data_rc => @default-panic, move |btn| {
-        if btn.is_active() { program_data_rc.borrow_mut().gui.as_mut().unwrap().mouse_mode = MouseMode::None; }
-    }));
-    toolbar.insert(&btn_mouse_none, -1);
-
-    let btn_mouse_roi = gtk::RadioToolButtonBuilder::new()
-        .icon_widget(&resources::load_svg(resources::ToolbarIcon::SelectRoi, icon_size).unwrap())
-        .tooltip_text("Mouse mode: select ROI")
-        .build();
-    btn_mouse_roi.join_group(Some(&btn_mouse_none));
-    btn_mouse_roi.connect_toggled(clone!(@weak program_data_rc => @default-panic, move |btn| {
-        if btn.is_active() { program_data_rc.borrow_mut().gui.as_mut().unwrap().mouse_mode = MouseMode::SelectROI; }
-    }));
-    toolbar.insert(&btn_mouse_roi, -1);
-
-    let btn_mouse_centroid = gtk::RadioToolButtonBuilder::new()
-        .label("✹")
-        .tooltip_text("Mouse mode: select centroid tracking area")
-        .build();
-    btn_mouse_centroid.join_group(Some(&btn_mouse_none));
-    btn_mouse_centroid.connect_toggled(clone!(@weak program_data_rc => @default-panic, move |btn| {
-        if btn.is_active() { program_data_rc.borrow_mut().gui.as_mut().unwrap().mouse_mode = MouseMode::SelectCentroidArea; }
-    }));
-    toolbar.insert(&btn_mouse_centroid, -1);
-
-    let btn_mouse_anchor = gtk::RadioToolButtonBuilder::new()
-        .label("✛")
-        .tooltip_text("Mouse mode: place tracking anchor")
-        .build();
-    btn_mouse_anchor.join_group(Some(&btn_mouse_none));
-    btn_mouse_anchor.connect_toggled(clone!(@weak program_data_rc => @default-panic, move |btn| {
-        if btn.is_active() { program_data_rc.borrow_mut().gui.as_mut().unwrap().mouse_mode = MouseMode::PlaceTrackingAnchor; }
-    }));
-    toolbar.insert(&btn_mouse_anchor, -1);
-
-    let btn_mouse_crop = gtk::RadioToolButtonBuilder::new()
-        .label("✂")
-        .tooltip_text("Mouse mode: select recording crop area")
-        .build();
-    btn_mouse_crop.join_group(Some(&btn_mouse_none));
-    btn_mouse_crop.connect_toggled(clone!(@weak program_data_rc => @default-panic, move |btn| {
-        if btn.is_active() { program_data_rc.borrow_mut().gui.as_mut().unwrap().mouse_mode = MouseMode::SelectCropArea; }
-    }));
-    toolbar.insert(&btn_mouse_crop, -1);
-
-    let btn_mouse_histogram = gtk::RadioToolButtonBuilder::new()
-        .label("H")
-        .tooltip_text("Mouse mode: select histogram calculation area")
-        .build();
-    btn_mouse_histogram.join_group(Some(&btn_mouse_none));
-    btn_mouse_histogram.connect_toggled(clone!(@weak program_data_rc => @default-panic, move |btn| {
-        if btn.is_active() { program_data_rc.borrow_mut().gui.as_mut().unwrap().mouse_mode = MouseMode::SelectHistogramArea; }
-    }));
-    toolbar.insert(&btn_mouse_histogram, -1);
-
-    btn_mouse_none
-}
-
-fn create_preview_tb_buttons(
-    toolbar: &gtk::Toolbar,
-    program_data_rc: &Rc<RefCell<ProgramData>>,
-    main_wnd: &gtk::ApplicationWindow,
-    icon_size: i32
-) {
-    let btn_zoom_in = gtk::ToolButton::new(Some(&resources::load_svg(resources::ToolbarIcon::ZoomIn, icon_size).unwrap()), None);
-    btn_zoom_in.set_tooltip_text(Some("Zoom in"));
-    btn_zoom_in.connect_clicked(clone!(@weak program_data_rc => @default-panic, move |_| {
-        program_data_rc.borrow_mut().gui.as_mut().unwrap().preview_area.change_zoom(ZOOM_CHANGE_FACTOR);
-    }));
-
-    let btn_zoom_out = gtk::ToolButton::new(
-        Some(&resources::load_svg(resources::ToolbarIcon::ZoomOut, icon_size).unwrap()),
-        None
-    );
-    btn_zoom_out.set_tooltip_text(Some("Zoom out"));
-    btn_zoom_out.connect_clicked(clone!(@weak program_data_rc => @default-panic, move |_| {
-        program_data_rc.borrow_mut().gui.as_mut().unwrap().preview_area.change_zoom(1.0 / ZOOM_CHANGE_FACTOR);
-    }));
-
-    let btn_zoom_custom = gtk::ToolButton::new(
-        Some(&resources::load_svg(resources::ToolbarIcon::ZoomCustom, icon_size).unwrap()),
-        None
-    );
-    btn_zoom_custom.set_tooltip_text(Some("Custom zoom level"));
-    btn_zoom_custom.connect_clicked(clone!(@weak program_data_rc, @weak main_wnd => @default-panic, move |_| {
-        let old_zoom = program_data_rc.borrow().gui.as_ref().unwrap().preview_area.get_zoom();
-        if let Some(new_zoom) = show_custom_zoom_dialog(&main_wnd, old_zoom, &program_data_rc) {
-            program_data_rc.borrow_mut().gui.as_mut().unwrap().preview_area.set_zoom(new_zoom);
-        }
-    }));
-
-    let btn_zoom_reset = gtk::ToolButton::new(
-        None::<&gtk::Widget>,
-        Some("1:1")
-    );
-    btn_zoom_reset.set_tooltip_text(Some("Reset to 100%"));
-    btn_zoom_reset.connect_clicked(clone!(@weak program_data_rc => @default-panic, move |_| {
-        program_data_rc.borrow_mut().gui.as_mut().unwrap().preview_area.set_zoom(1.0);
-    }));
-
-
-    toolbar.insert(&btn_zoom_in, -1);
-    toolbar.insert(&btn_zoom_out, -1);
-    toolbar.insert(&btn_zoom_custom, -1);
-    toolbar.insert(&btn_zoom_reset, -1);
-}
-
-fn on_main_window_delete(
-    wnd: &gtk::ApplicationWindow,
-    main_wnd_contents: &gtk::Paned,
-    cam_controls_and_histogram: &gtk::Paned,
-    program_data_rc: &Rc<RefCell<ProgramData>>
-) {
-    let (x, y) = wnd.position();
-    let (width, height) = wnd.size();
-    let config = &program_data_rc.borrow().config;
-    config.set_main_window_pos(gtk::Rectangle{ x, y, width, height });
-    config.set_main_window_maximized(wnd.is_maximized());
-    config.set_main_window_paned_pos(main_wnd_contents.position());
-    config.set_camera_controls_paned_pos(cam_controls_and_histogram.position());
-    //TODO: encode a `Path` somehow;  config.set_recording_dest_path(&program_data_rc.borrow().gui.as_ref().unwrap().rec_widgets.dest_dir());
-}
-
 /// WARNING: this recursively enters the main event loop until the message dialog closes; therefore active borrows
 /// of `program_data_rc` MUST NOT be held when calling this function.
 pub fn show_message(msg: &str, title: &str, msg_type: gtk::MessageType, program_data_rc: &Rc<RefCell<ProgramData>>) {
@@ -948,131 +277,6 @@ pub fn show_message(msg: &str, title: &str, msg_type: gtk::MessageType, program_
     dialog.close();
 }
 
-/// Returns (menu bar, camera menu, camera menu items).
-fn init_menu(
-    window: &gtk::ApplicationWindow,
-    program_data_rc: &Rc<RefCell<ProgramData>>
-) -> (gtk::MenuBar, gtk::Menu, Vec<(gtk::CheckMenuItem, glib::SignalHandlerId)>) {
-    let accel_group = gtk::AccelGroup::new();
-    window.add_accel_group(&accel_group);
-
-    let about_item = gtk::MenuItem::with_label("About");
-    about_item.connect_activate(
-        clone!(@weak program_data_rc => @default-panic, move |_| show_about_dialog(&program_data_rc))
-    );
-
-    let quit_item = gtk::MenuItem::with_label("Quit");
-    quit_item.connect_activate(clone!(@weak window => @default-panic, move |_| {
-        window.close();
-    }));
-    // `Primary` is `Ctrl` on Windows and Linux, and `command` on macOS
-    // It isn't available directly through `gdk::ModifierType`, since it has
-    // different values on different platforms.
-    let (key, modifier) = gtk::accelerator_parse("<Primary>Q");
-    quit_item.add_accelerator(gtk_signals::ACTIVATE, &accel_group, key, modifier, gtk::AccelFlags::VISIBLE);
-
-    let file_menu = gtk::Menu::new();
-    file_menu.append(&about_item);
-    file_menu.append(&quit_item);
-
-    let file_menu_item = gtk::MenuItem::with_label("File");
-    file_menu_item.set_submenu(Some(&file_menu));
-
-    let menu_bar = gtk::MenuBar::new();
-    menu_bar.append(&file_menu_item);
-
-    let camera_menu_item = gtk::MenuItem::with_label("Camera");
-    let (camera_menu, camera_menu_items) = camera_gui::init_camera_menu(program_data_rc);
-    camera_menu_item.set_submenu(Some(&camera_menu));
-    menu_bar.append(&camera_menu_item);
-
-    let devices_menu_item = gtk::MenuItem::with_label("Devices");
-    devices_menu_item.set_submenu(Some(&init_devices_menu(program_data_rc)));
-    menu_bar.append(&devices_menu_item);
-
-    let preview_menu_item = gtk::MenuItem::with_label("Preview");
-    preview_menu_item.set_submenu(Some(&init_preview_menu(program_data_rc, &accel_group)));
-    menu_bar.append(&preview_menu_item);
-
-    #[cfg(feature = "controller")]
-    {
-        let controller_menu_item = gtk::MenuItem::with_label("Controller");
-        controller_menu_item.set_submenu(Some(&init_controller_menu(program_data_rc)));
-        menu_bar.append(&controller_menu_item);
-    }
-
-    (menu_bar, camera_menu, camera_menu_items)
-}
-
-fn init_devices_menu(program_data_rc: &Rc<RefCell<ProgramData>>) -> gtk::Menu {
-    let menu = gtk::Menu::new();
-
-    let mount_menu_item = gtk::MenuItem::with_label("Mount");
-    mount_menu_item.set_submenu(Some(&mount_gui::init_mount_menu(program_data_rc)));
-    menu.append(&mount_menu_item);
-
-    let focuser_menu_item = gtk::MenuItem::with_label("Focuser");
-    focuser_menu_item.set_submenu(Some(&focuser_gui::init_focuser_menu(program_data_rc)));
-    menu.append(&focuser_menu_item);
-
-    menu
-}
-
-fn init_preview_menu(
-    program_data_rc: &Rc<RefCell<ProgramData>>,
-    accel_group: &gtk::AccelGroup
-) -> gtk::Menu {
-    let menu = gtk::Menu::new();
-
-    let snapshot = gtk::MenuItem::with_label("Take snapshot");
-    snapshot.set_action_name(Some(&actions::prefixed(actions::TAKE_SNAPSHOT)));
-    let (key, modifier) = gtk::accelerator_parse("F12");
-    snapshot.add_accelerator(gtk_signals::ACTIVATE, accel_group, key, modifier, gtk::AccelFlags::VISIBLE);
-    menu.append(&snapshot);
-
-    let demosaic_raw_color = gtk::CheckMenuItem::with_label("Demosaic raw color");
-    demosaic_raw_color.connect_activate(clone!(@weak program_data_rc => @default-panic, move |_| {
-        program_data_rc.borrow_mut().demosaic_preview ^= true;
-    }));
-    menu.append(&demosaic_raw_color);
-
-    let disable_histogram_area = gtk::MenuItem::with_label("Disable histogram area");
-    disable_histogram_area.connect_activate(clone!(@weak program_data_rc => @default-panic, move |_| {
-        program_data_rc.borrow_mut().histogram_area = None;
-    }));
-    menu.append(&disable_histogram_area);
-
-    let reticle_settings = gtk::MenuItem::with_label("Reticle settings...");
-    reticle_settings.connect_activate(clone!(@weak program_data_rc => @default-panic, move |_| {
-        program_data_rc.borrow().gui.as_ref().unwrap().reticle.dialog.show();
-    }));
-    menu.append(&reticle_settings);
-
-    let preview_processing = gtk::MenuItem::with_label("Processing...");
-    preview_processing.connect_activate(clone!(@weak program_data_rc => @default-panic, move |_| {
-        program_data_rc.borrow().gui.as_ref().unwrap().preview_processing.dialog.show();
-    }));
-    menu.append(&preview_processing);
-
-    let dispersion = gtk::MenuItem::with_label("Atmospheric dispersion indicator...");
-    dispersion.connect_activate(clone!(@weak program_data_rc => @default-panic, move |_| {
-        program_data_rc.borrow().gui.as_ref().unwrap().dispersion_dialog.show();
-    }));
-    menu.append(&dispersion);
-
-    let psf = gtk::MenuItem::with_label("Collimation assistant...");
-    psf.connect_activate(clone!(@weak program_data_rc => @default-panic, move |_| {
-        program_data_rc.borrow().gui.as_ref().unwrap().psf_dialog.show();
-    }));
-    menu.append(&psf);
-
-    let undock = gtk::MenuItem::with_label("Undock preview area");
-    undock.set_action_name(Some(&actions::prefixed(actions::UNDOCK_PREVIEW)));
-    menu.append(&undock);
-
-    menu
-}
-
 fn show_about_dialog(program_data_rc: &Rc<RefCell<ProgramData>>) {
     show_message(
         &format!(
@@ -1088,34 +292,6 @@ fn show_about_dialog(program_data_rc: &Rc<RefCell<ProgramData>>) {
         gtk::MessageType::Info,
         program_data_rc
     );
-}
-
-pub fn on_recording_thread_message(
-    msg: RecordingToMainThreadMsg,
-    program_data_rc: &Rc<RefCell<ProgramData>>
-) {
-    match msg {
-        RecordingToMainThreadMsg::Info(msg_str) => {
-            program_data_rc.borrow().gui.as_ref().unwrap().status_bar.recording_overview.set_label(
-                &format!("{}", msg_str)
-            )
-        },
-
-        RecordingToMainThreadMsg::CaptureThreadEnded => {
-            rec_gui::on_stop_recording(program_data_rc);
-            crate::on_capture_thread_failure(program_data_rc);
-        },
-
-        RecordingToMainThreadMsg::Error(err) => {
-            rec_gui::on_stop_recording(program_data_rc);
-            show_message(
-                &format!("Error during recording:\n{}", err),
-                "Recording error",
-                gtk::MessageType::Error,
-                program_data_rc
-            );
-        }
-    }
 }
 
 fn update_preview_info(program_data_rc: &Rc<RefCell<ProgramData>>) {
@@ -1244,64 +420,6 @@ fn update_recording_info(program_data_rc: &Rc<RefCell<ProgramData>>) {
     }
 }
 
-/// Called ca. once per second to update the status bar and refresh any readable camera controls.
-pub fn on_timer(program_data_rc: &Rc<RefCell<ProgramData>>) {
-    if !program_data_rc.borrow().camera.is_some() { return; }
-
-    update_preview_info(program_data_rc);
-    update_refreshable_camera_controls(program_data_rc);
-    update_recording_info(program_data_rc);
-}
-
-fn on_tracking_ended(program_data_rc: &Rc<RefCell<ProgramData>>) {
-    let mut reenable_calibration = false;
-    {
-        let mut pd = program_data_rc.borrow_mut();
-        if pd.mount_data.calibration_in_progress() {
-            pd.mount_data.calibration_timer.stop();
-            pd.mount_data.calibration = None;
-            reenable_calibration = true;
-        }
-        pd.mount_data.guiding_timer.stop();
-        pd.mount_data.guiding_pos = None;
-        pd.tracking = None;
-    }
-
-    let sd_on = program_data_rc.borrow().mount_data.sky_tracking_on;
-    let has_mount = program_data_rc.borrow().mount_data.mount.is_some();
-
-    if has_mount {
-        program_data_rc.borrow_mut().mount_data.guide_slewing = false;
-
-        //TODO: stop only if a guiding or calibration slew is in progress, not one started by user via an arrow button
-
-        let mut error;
-        'block: {
-            let mut pd = program_data_rc.borrow_mut();
-            let mount = pd.mount_data.mount.as_mut().unwrap();
-
-            error = mount.guide(RadPerSec(0.0), RadPerSec(0.0));
-            if error.is_err() { break 'block; }
-
-            error = mount.slew(mount::Axis::Primary, mount::SlewSpeed::zero());
-            if error.is_err() { break 'block; }
-
-            error = mount.slew(mount::Axis::Secondary, mount::SlewSpeed::zero());
-        }
-
-        if let Err(e) = &error {
-            mount_gui::on_mount_error(e, program_data_rc);
-        }
-    }
-
-    let pd = program_data_rc.borrow();
-    let gui = pd.gui.as_ref().unwrap();
-    gui.mount_widgets.on_target_tracking_ended(reenable_calibration);
-    gui.stabilization.toggle_button.set_active(false);
-
-    log::info!("target tracking disabled");
-}
-
 fn apply_gamma_correction<T>(image: &mut ga_image::Image, max_value: T, gamma: f32, fragment: Rect)
 where T: Default + FromPrimitive + AsPrimitive<f32>
 {
@@ -1390,239 +508,6 @@ where T: Default + FromPrimitive + AsPrimitive<f32>
     }
 }
 
-fn on_preview_image_ready(
-    program_data_rc: &Rc<RefCell<ProgramData>>,
-    img: std::sync::Arc<ga_image::Image>,
-    tracking_pos: Option<Point2<i32>>
-) {
-    let mut program_data = program_data_rc.borrow_mut();
-
-    let now = std::time::Instant::now();
-    if let Some(fps_limit) = program_data.preview_fps_limit {
-        if let Some(last_preview_ts) = program_data.last_displayed_preview_image_timestamp {
-            if (now - last_preview_ts).as_secs_f64() < 1.0 / fps_limit as f64 {
-                return;
-            }
-        }
-    }
-    program_data.last_displayed_preview_image_timestamp = Some(now);
-
-    if let Some(area) = program_data.histogram_area {
-        if !img.img_rect().contains_rect(&area) {
-            println!("WARNING: histogram calculation area outside image boundaries; disabling.");
-            program_data.histogram_area = None;
-        }
-    }
-
-    let helpers_update_area: Option<Rect> = match &program_data.tracking {
-        Some(tracking) => match tracking.mode {
-            crate::TrackingMode::Centroid(centroid_area) => Some(centroid_area),
-            _ => None
-        },
-        _ => None
-    };
-    let dispersion_img_view = ga_image::ImageView::new(&*img, helpers_update_area);
-
-    program_data.gui.as_mut().unwrap().dispersion_dialog.update(&dispersion_img_view);
-
-    program_data.gui.as_mut().unwrap().psf_dialog.update(&*img, helpers_update_area);
-
-    let preview_processing = program_data.gui.as_ref().unwrap().preview_processing.clone();
-
-    let mut displayed_img = std::sync::Arc::clone(&img);
-
-    let mut processed_img: Option<ga_image::Image> = if preview_processing.is_effective() {
-        Some((*displayed_img).clone())
-    } else {
-        None
-    };
-
-    if preview_processing.gain.0 != 0.0 {
-        let gf = preview_processing.gain.get_gain_factor();
-        apply_gain(processed_img.as_mut().unwrap(), gf, program_data.histogram_area.unwrap_or(img.img_rect()));
-    }
-
-    if preview_processing.gamma != 1.0 {
-        gamma_correct(
-            processed_img.as_mut().unwrap(),
-            preview_processing.gamma,
-            program_data.histogram_area.unwrap_or(img.img_rect())
-        );
-    }
-
-    if preview_processing.stretch_histogram {
-        processed_img =
-            Some(histogram_utils::stretch_histogram(processed_img.as_ref().unwrap(), &program_data.histogram_area));
-    }
-
-    if let Some(processed_img) = processed_img {
-        displayed_img = std::sync::Arc::new(processed_img);
-    }
-
-    let stabilization_offset = if program_data.gui.as_ref().unwrap().stabilization.toggle_button.is_active() {
-        if let Some(t_pos) = &tracking_pos {
-            t_pos - program_data.gui.as_ref().unwrap().stabilization.position
-        } else {
-            // tracking has been disabled, `on_tracking_ended` will be called shortly
-            Vector2::zero()
-        }
-    } else {
-        Vector2::zero()
-    };
-
-    let img_bgra24 = displayed_img.convert_pix_fmt(
-        ga_image::PixelFormat::BGRA8,
-        if program_data.demosaic_preview { Some(ga_image::DemosaicMethod::Simple) } else { None }
-    );
-
-    let stride = img_bgra24.bytes_per_line() as i32;
-    program_data.gui.as_ref().unwrap().preview_area.set_image(
-        cairo::ImageSurface::create_for_data(
-            img_bgra24.take_pixel_data(),
-            cairo::Format::Rgb24, // actually means: BGRA
-            img.width() as i32,
-            img.height() as i32,
-            stride
-        ).unwrap(),
-        stabilization_offset
-    );
-    program_data.gui.as_ref().unwrap().preview_area.refresh();
-
-    const HISTOGRAM_UPDATE_INTERVAL: std::time::Duration = std::time::Duration::from_millis(250);
-    if program_data.t_last_histogram.is_none() ||
-       program_data.t_last_histogram.as_ref().unwrap().elapsed() >= HISTOGRAM_UPDATE_INTERVAL {
-
-        program_data.histogram_sender.send(MainToHistogramThreadMsg::CalculateHistogram(HistogramRequest{
-            image: (*img).clone(),
-            fragment: program_data.histogram_area.clone()
-        })).unwrap();
-
-        program_data.t_last_histogram = Some(std::time::Instant::now());
-    }
-
-    program_data.last_displayed_preview_image = Some((*img).clone());
-
-    program_data.preview_fps_counter += 1;
-}
-
-fn on_capture_paused(
-    program_data_rc: &Rc<RefCell<ProgramData>>
-) {
-    let mut show_error: Option<CameraError> = None;
-    let action = program_data_rc.borrow().on_capture_pause_action;
-    match action {
-        Some(action) => match action {
-            OnCapturePauseAction::ControlChange(CameraControlChange{ id, value }) => {
-                let res = match value {
-                    NewControlValue::ListOptionIndex(option_idx) =>
-                        program_data_rc.borrow_mut().camera.as_mut().unwrap().set_list_control(id, option_idx),
-
-                    NewControlValue::Boolean(state) =>
-                        program_data_rc.borrow_mut().camera.as_mut().unwrap().set_boolean_control(id, state),
-
-                    NewControlValue::Numerical(num_val) =>
-                        program_data_rc.borrow_mut().camera.as_mut().unwrap().set_number_control(id, num_val),
-                };
-
-                if let Err(e) = res {
-                    show_message(
-                        &format!("Failed to set camera control:\n{:?}", e),
-                        "Error",
-                        gtk::MessageType::Error,
-                        program_data_rc
-                    );
-                } else {
-                    camera_gui::schedule_refresh(program_data_rc);
-                }
-            },
-
-            OnCapturePauseAction::SetROI(rect) => {
-                let result = program_data_rc.borrow_mut().camera.as_mut().unwrap().set_roi(
-                    rect.x as u32,
-                    rect.y as u32,
-                    rect.width,
-                    rect.height
-                );
-                match result {
-                    Err(err) => show_error = Some(err),
-                    _ => camera_gui::schedule_refresh(program_data_rc)
-                }
-            },
-
-            OnCapturePauseAction::DisableROI => {
-                program_data_rc.borrow_mut().camera.as_mut().unwrap().unset_roi().unwrap();
-                camera_gui::schedule_refresh(program_data_rc);
-            }
-        },
-        _ => ()
-    }
-
-    if program_data_rc.borrow_mut().capture_thread_data.as_mut().unwrap().sender.send(
-        MainToCaptureThreadMsg::Resume
-    ).is_err() {
-        crate::on_capture_thread_failure(program_data_rc);
-    }
-
-    if let Some(error) = show_error {
-        show_message(
-            &format!("Failed to set ROI:\n{:?}", error),
-            "Error",
-            gtk::MessageType::Error,
-            program_data_rc
-        );
-    }
-}
-
-fn on_capture_thread_message(
-    msg: CaptureToMainThreadMsg,
-    program_data_rc: &Rc<RefCell<ProgramData>>
-) {
-    let mut received_preview_image = false;
-
-    loop { match msg {
-        CaptureToMainThreadMsg::PreviewImageReady((img, tracking_pos)) => {
-            received_preview_image = true;
-            on_preview_image_ready(program_data_rc, img, tracking_pos);
-        },
-
-        CaptureToMainThreadMsg::TrackingUpdate((tracking, crop_area)) => if program_data_rc.borrow().capture_thread_data.is_some() {
-            program_data_rc.borrow_mut().tracking = Some(tracking);
-            program_data_rc.borrow_mut().crop_area = crop_area;
-        },
-
-        CaptureToMainThreadMsg::TrackingFailed => on_tracking_ended(program_data_rc),
-
-        CaptureToMainThreadMsg::Paused => on_capture_paused(program_data_rc),
-
-        CaptureToMainThreadMsg::CaptureError(error) => {
-            //TODO: show a message box
-            println!("Capture error: {:?}", error);
-            let _ = program_data_rc.borrow_mut().capture_thread_data.take().unwrap().join_handle.take().unwrap().join();
-            disconnect_camera(&program_data_rc, false);
-        },
-
-        CaptureToMainThreadMsg::RecordingFinished => rec_gui::on_recording_finished(&program_data_rc),
-
-        CaptureToMainThreadMsg::Info(info) => {
-            let pd = program_data_rc.borrow();
-            let status_bar = &pd.gui.as_ref().unwrap().status_bar;
-
-            status_bar.capture_fps.set_label(&format!("Capture: {:.1} fps", info.capture_fps));
-
-            if let Some(msg) = info.recording_info {
-                status_bar.current_recording_info.set_label(&msg);
-            }
-        }
-    } break; }
-
-    if let Some(ref mut capture_thread_data) = program_data_rc.borrow_mut().capture_thread_data {
-        if received_preview_image  {
-            // doing it here, to make sure the `Arc` received in `PreviewImageReady` is already released
-            capture_thread_data.new_preview_wanted.store(true, Ordering::Relaxed);
-        }
-    }
-}
-
 pub fn disconnect_camera(program_data_rc: &Rc<RefCell<ProgramData>>, finish_capture_thread: bool) {
     if finish_capture_thread {
         program_data_rc.borrow_mut().finish_capture_thread();
@@ -1657,13 +542,6 @@ pub fn disconnect_camera(program_data_rc: &Rc<RefCell<ProgramData>>, finish_capt
     pd.crop_area = None;
 
     log::info!("disconnected from camera");
-}
-
-pub fn on_histogram_thread_message(
-    msg: Histogram,
-    program_data_rc: &Rc<RefCell<ProgramData>>
-) {
-    program_data_rc.borrow_mut().gui.as_mut().unwrap().histogram_view.set_histogram(msg);
 }
 
 /// Returns new zoom factor chosen by user or `None` if the dialog was canceled or there was an invalid input.

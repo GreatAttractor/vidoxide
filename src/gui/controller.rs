@@ -179,6 +179,7 @@ fn create_controls(
     (box_all, Widgets{ device_list })
 }
 
+#[cfg(feature = "controller")]
 pub fn init_controller_menu(
     program_data_rc: &Rc<RefCell<ProgramData>>
 ) -> gtk::Menu {
