@@ -14,7 +14,6 @@ mod utils;
 
 pub mod focuser;
 
-use gtk::prelude::*;
 use strum_macros as sm;
 use strum::EnumIter;
 
