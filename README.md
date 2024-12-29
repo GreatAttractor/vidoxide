@@ -68,12 +68,12 @@ Demonstration video: [link](https://www.youtube.com/watch?v=7s_nibrTrsU)
 
 Clone the repository:
 ```Bash
-$ git clone --recurse-submodules https://github.com/GreatAttractor/vidoxide.git
+git clone --recurse-submodules https://github.com/GreatAttractor/vidoxide.git
 ```
 
 Camera drivers to build are selected as features in invocation of `cargo`, e.g.:
 ```Bash
-$ cargo build --release --features "camera_iidc camera_v4l2 camera_flycap2 camera_spinnaker camera_asi"
+cargo build --release --features "camera_iidc camera_v4l2 camera_flycap2 camera_spinnaker camera_asi"
 ```
 will build Vidoxide with the IIDC, V4L2, FlyCapture 2, Spinnaker and ASI drivers.
 
@@ -95,24 +95,24 @@ Download MSYS2 from http://www.msys2.org/ and follow its installation instructio
 
 Open the "MSYS2 MinGW 64-bit" shell (from the Start menu, or directly via `C:\msys64\msys2_shell.cmd -mingw64`), and install the build prerequisites:
 ```bash
-$ pacman -S git base-devel mingw-w64-x86_64-toolchain mingw-w64-x86_64-gtk3
+pacman -S git base-devel mingw-w64-x86_64-toolchain mingw-w64-x86_64-gtk3
 ```
 
 From now on it is assumed that the FlyCapture2, Spinnaker and ZWO ASI camera APIs are to be used. Download and install the FlyCapture2, Spinnaker & ZWO ASI SDKs, go to the location of FC2 binaries (by default, "C:\Program Files\Point Grey Research\FlyCapture2\bin64") and check if the `FlyCapture2_C.dll` file exists. If not, make a copy of the corresponding versioned file (e.g., `FlyCapture2_C_v100.dll`) in the same location and rename it `FlyCapture2_C.dll` (this is required due to the `libflycapture2-sys` crate's expectations).
 
 Pull Rust binaries into `$PATH`:
 ```bash
-$ export PATH=$PATH:/c/Users/MY_USERNAME/.cargo/bin
+export PATH=$PATH:/c/Users/MY_USERNAME/.cargo/bin
 ```
 then change to the Vidoxide source directory and build it:
 ```bash
-$ SPINNAKER_LIBDIR="C:\Program Files\FLIR Systems\Spinnaker\bin64\vs2015" FLYCAP_LIBDIR="C:\Program Files\Point Grey Research\FlyCapture2\bin64" ASICAMERA_LIBDIR="C:\Downloads\ASI SDK\lib\x64" cargo build --release --features "camera_flycap2 camera_spinnaker camera_asi mount_ascom"
+SPINNAKER_LIBDIR="C:\Program Files\FLIR Systems\Spinnaker\bin64\vs2015" FLYCAP_LIBDIR="C:\Program Files\Point Grey Research\FlyCapture2\bin64" ASICAMERA_LIBDIR="C:\Downloads\ASI SDK\lib\x64" cargo build --release --features "camera_flycap2 camera_spinnaker camera_asi mount_ascom"
 ```
 Initially it will take several minutes, as all dependencies have to be downloaded and built first. Note that the location of FC2 DLLs must be given in `FLYCAP_LIBDIR`, Spinnaker DLLs in `SPINNAKER_LIBDIR`, and ASI DLL in `ASICAMERA_LIBDIR`.
 
 After a successful build, Vidoxide can be run locally with:
 ```bash
-$ PATH="$PATH:C:\Program Files\Point Grey Research\FlyCapture2\bin64:C:\Program Files\FLIR Systems\Spinnaker\bin64\vs2015:C:\Downloads\ASI SDK\lib\x64" target/release/vidoxide.exe
+PATH="$PATH:C:\Program Files\Point Grey Research\FlyCapture2\bin64:C:\Program Files\FLIR Systems\Spinnaker\bin64\vs2015:C:\Downloads\ASI SDK\lib\x64" target/release/vidoxide.exe
 ```
 
 *Upcoming: creating a binary distribution*
@@ -124,5 +124,14 @@ $ PATH="$PATH:C:\Program Files\Point Grey Research\FlyCapture2\bin64:C:\Program 
 
 Increase the USB-FS buffer size, e.g. (run as root):
 ```
-# echo 1000 > /sys/module/usbcore/parameters/usbfs_memory_mb
+echo 1000 > /sys/module/usbcore/parameters/usbfs_memory_mb
+```
+
+#### Slow preview frame rate under Wayland
+
+It appears sometimes GTK3 will not use HW acceleration for bitmap scaling under Wayland, resulting in slow preview frame rate if the preview area occupies a large area on screen. (Seen in 2024-12, Fedora 40 / 6.12.6-100.fc40.x86_64, Mesa Intel(R) Xe Graphics (TGL GT2) (0x9a49), 24.1.7.)
+
+As a workaround, force the GDK backend to X11 when running Vidoxide, e.g.:
+```
+GDK_BACKEND=x11 /target/release/vidoxide
 ```
