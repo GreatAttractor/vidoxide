@@ -133,5 +133,5 @@ It appears sometimes GTK3 will not use HW acceleration for bitmap scaling under 
 
 As a workaround, force the GDK backend to X11 when running Vidoxide, e.g.:
 ```
-GDK_BACKEND=x11 /target/release/vidoxide
+GDK_BACKEND=x11 target/release/vidoxide
 ```
