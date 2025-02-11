@@ -15,3 +15,5 @@ pub mod capture;
 pub mod controller;
 pub mod histogram;
 pub mod recording;
+#[cfg(feature = "scripting")]
+pub mod script;

@@ -49,6 +49,8 @@ use crate::{
 };
 #[cfg(feature = "controller")]
 use crate::gui::{ControllerDialog, controller::init_controller_menu};
+#[cfg(feature = "scripting")]
+use crate::gui::script_dialog::show_script_dialog;
 use glib::clone;
 use gtk::prelude::*;
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
@@ -84,6 +86,17 @@ fn init_menu(
 
     let file_menu = gtk::Menu::new();
     file_menu.append(&about_item);
+
+    #[cfg(feature = "scripting")]
+    {
+        let run_script_item = gtk::MenuItem::with_label("Run script...");
+        run_script_item.connect_activate(
+            clone!(@weak program_data_rc => @default-panic, move |_| show_script_dialog(&program_data_rc))
+        );
+        file_menu.append(&run_script_item);
+    }
+
+    file_menu.append(&gtk::SeparatorMenuItem::new());
     file_menu.append(&quit_item);
 
     let file_menu_item = gtk::MenuItem::with_label("File");

@@ -1,6 +1,6 @@
 //
 // Vidoxide - Image acquisition for amateur astronomy
-// Copyright (c) 2020-2024 Filip Szczerek <ga.software@yahoo.com>
+// Copyright (c) 2020-2025 Filip Szczerek <ga.software@yahoo.com>
 //
 // This project is licensed under the terms of the MIT license
 // (see the LICENSE file for details).
@@ -22,6 +22,8 @@ mod input;
 mod lim_freq_action;
 mod mount;
 mod output;
+#[cfg(feature = "scripting")]
+mod scripting;
 mod resources;
 mod timer;
 mod tracking;

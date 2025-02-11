@@ -33,6 +33,8 @@ mod psf_dialog;
 mod rec_gui;
 mod reticle_dialog;
 mod roi_dialog;
+#[cfg(feature = "scripting")]
+mod script_dialog;
 
 use camera_gui::{
     CommonControlWidgets,

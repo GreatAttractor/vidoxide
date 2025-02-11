@@ -5,7 +5,7 @@ authors = ["Filip Szczerek <ga.software@yahoo.com>"]
 edition = "2018"
 
 [features]
-default = ["bluetooth", "controller"]
+default = ["bluetooth", "controller", "scripting"]
 
 # required for DreamFocuser mini Bluetooth connection
 bluetooth = ["btleplug", "tokio", "uuid"]
@@ -16,6 +16,7 @@ camera_v4l2 = ["ioctl-rs", "mmap", "v4l2-sys"]
 camera_spinnaker = ["libspinnaker-sys"]
 controller = ["stick", "pasts", "hex"]
 mount_ascom = ["com", "uuid", "winapi"]
+scripting = ["mlua"]
 
 [dependencies]
 atomic_float = "0.1.0"
@@ -36,6 +37,7 @@ libasicamera-sys = { path = "ext/libasicamera-sys", optional = true }
 libdc1394-sys = { version = "0.2.2", optional = true }
 libflycapture2-sys = { version = "0.1.1", optional = true }
 libspinnaker-sys = { version = "0.1.0", optional = true }
+mlua = { version = "0.10.2", features = ["lua54", "vendored"], optional = true }
 mmap = { version = "0.1.1", optional = true }
 num-traits = "0.2.12"
 os_info = "3.0"
