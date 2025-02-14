@@ -50,7 +50,7 @@ use crate::{
 #[cfg(feature = "controller")]
 use crate::gui::{ControllerDialog, controller::init_controller_menu};
 #[cfg(feature = "scripting")]
-use crate::gui::script_dialog::show_script_dialog;
+use crate::gui::create_script_dialog;
 use glib::clone;
 use gtk::prelude::*;
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
@@ -91,7 +91,9 @@ fn init_menu(
     {
         let run_script_item = gtk::MenuItem::with_label("Run script...");
         run_script_item.connect_activate(
-            clone!(@weak program_data_rc => @default-panic, move |_| show_script_dialog(&program_data_rc))
+            clone!(@weak program_data_rc => @default-panic, move |_| {
+                program_data_rc.borrow().gui.as_ref().unwrap().script_dialog.show();
+            })
         );
         file_menu.append(&run_script_item);
     }
@@ -658,7 +660,8 @@ pub fn init_main_window(app: &gtk::Application, program_data_rc: &Rc<RefCell<Pro
         default_mouse_mode_button,
         histogram_view,
         action_map,
-        window_contents
+        window_contents,
+        script_dialog: create_script_dialog(&app_window, &program_data_rc),
     };
 
     program_data_rc.borrow_mut().gui = Some(gui);

@@ -65,6 +65,8 @@ use num_traits::cast::{FromPrimitive, AsPrimitive};
 use psf_dialog::PsfDialog;
 use rec_gui::RecWidgets;
 use reticle_dialog::create_reticle_dialog;
+#[cfg(feature = "scripting")]
+use script_dialog::create_script_dialog;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::error::Error;
@@ -193,7 +195,9 @@ pub struct GuiData {
     // We must store an action map ourselves (and not e.g. reuse `SimpleActionGroup`), because currently (0.14.0) with
     // `gio` one cannot access a group's action in a way allowing to change its enabled state.
     action_map: HashMap<&'static str, gtk::gio::SimpleAction>,
-    window_contents: gtk::Paned
+    window_contents: gtk::Paned,
+    #[cfg(feature = "scripting")]
+    script_dialog: gtk::Dialog
 }
 
 impl GuiData {
