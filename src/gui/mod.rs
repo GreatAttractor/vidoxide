@@ -1,6 +1,6 @@
 //
 // Vidoxide - Image acquisition for amateur astronomy
-// Copyright (c) 2020-2024 Filip Szczerek <ga.software@yahoo.com>
+// Copyright (c) 2020-2025 Filip Szczerek <ga.software@yahoo.com>
 //
 // This project is licensed under the terms of the MIT license
 // (see the LICENSE file for details).
@@ -284,7 +284,7 @@ fn show_about_dialog(program_data_rc: &Rc<RefCell<ProgramData>>) {
     show_message(
         &format!(
             "<big><big><b>Vidoxide</b></big></big>\n\n\
-            Copyright © 2020-2024 Filip Szczerek (ga.software@yahoo.com)\n\n\
+            Copyright © 2020-2025 Filip Szczerek (ga.software@yahoo.com)\n\n\
             This project is licensed under the terms of the MIT license (see the LICENSE file for details).\n\n\
             version: {}\n\
             OS: {}",
