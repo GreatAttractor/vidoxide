@@ -41,6 +41,7 @@ impl SelectionType {
 }
 
 /// Selection made by mouse in preview area; image coordinates.
+#[derive(Debug)]
 pub struct ScreenSelection {
     pub start: Point2<i32>,
     pub end: Point2<i32>
@@ -136,7 +137,10 @@ fn draw_guiding_info(ctx: &cairo::Context, zoom: f64, guiding_pos: Point2<i32>, 
     ctx.set_source_rgb(1.0, 0.0, 0.0);
     ctx.set_line_width(1.0);
     ctx.set_dash(&[6.0, 4.0], 0.0);
-    ctx.arc(guiding_pos.x as f64 * zoom, guiding_pos.y as f64 * zoom, GUIDING_POS_CIRCLE_R, 0.0, 2.0 * std::f64::consts::PI);
+    let gpx = guiding_pos.x as f64 * zoom;
+    let gpy = guiding_pos.y as f64 * zoom;
+    ctx.move_to(gpx + GUIDING_POS_CIRCLE_R, gpy);
+    ctx.arc(gpx, gpy, GUIDING_POS_CIRCLE_R, 0.0, 2.0 * std::f64::consts::PI);
     ctx.stroke().unwrap();
 
     if blink_on {
@@ -244,6 +248,7 @@ fn draw_histogram_area(ctx: &cairo::Context, zoom: f64, font_size: f64, area: Re
 }
 
 fn draw_tracking_target_pos(ctx: &cairo::Context, zoom: f64, pos: Point2<i32>) {
+    ctx.set_source_rgb(1.0, 0.0, 0.0);
     ctx.set_line_width(1.0);
     let pos_x = pos.x as f64 * zoom;
     let pos_y = pos.y as f64 * zoom;
@@ -282,6 +287,10 @@ fn draw_centroid_rect(ctx: &cairo::Context, rect: Rect, zoom: f64, font_size: f6
 fn draw_anchor(ctx: &cairo::Context, pos: Point2<i32>, zoom: f64) {
     ctx.set_line_width(1.0);
     ctx.set_source_rgb(1.0, 0.0, 0.0);
-    ctx.arc(pos.x as f64 * zoom, pos.y as f64 * zoom, 32.0, 0.0, 6.0);
+    const RADIUS: f64 = 32.0;
+    let cx = pos.x as f64 * zoom;
+    let cy = pos.y as f64 * zoom;
+    ctx.move_to(cx + RADIUS, cy);
+    ctx.arc(cx, cy, RADIUS, 0.0, 2.0 * std::f64::consts::PI);
     ctx.stroke().unwrap();
 }
