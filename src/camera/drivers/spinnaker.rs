@@ -1116,7 +1116,7 @@ impl FrameCapturer for SpinnakerFrameCapturer {
             dest_image.pixel_format() != f_pix_fmt {
 
             // there may be some padding at the end of `frame_pixels` which we do not need
-            let num_bytes_to_use = f_height as usize * f_stride as usize * f_pix_fmt.bytes_per_pixel();
+            let num_bytes_to_use = f_height as usize * f_stride as usize;
             let frame_pixels = &frame_pixels[..num_bytes_to_use];
 
             *dest_image = Image::new_from_pixels(
@@ -1129,7 +1129,7 @@ impl FrameCapturer for SpinnakerFrameCapturer {
             );
         } else {
             // there may be some padding at the end of `frame_pixels` which we do not need
-            let num_bytes_to_use = f_height as usize * f_stride as usize * f_pix_fmt.bytes_per_pixel();
+            let num_bytes_to_use = f_height as usize * f_stride as usize;
             dest_image.raw_pixels_mut().copy_from_slice(&frame_pixels[..num_bytes_to_use]);
         }
 
