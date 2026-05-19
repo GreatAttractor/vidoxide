@@ -209,8 +209,7 @@ fn update_anchor(anchor_pos: &mut Point2<i32>, ref_block: &Image, image: &Image,
         search_step /= 2;
     }
 
-    // exponential damping
-    *anchor_pos += (best_pos - *anchor_pos) / 2;
+    *anchor_pos = best_pos;
 
     Ok(())
 }
